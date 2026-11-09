@@ -1,11 +1,29 @@
-"""FastAPI entrypoint. Keep this module thin; routes live in their packages."""
+"""FastAPI entrypoint. Keep this module the composition root."""
 
-from fastapi import FastAPI, Request
+from __future__ import annotations
+
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.arenas.routes import bind_arena_routes
+from app.auth.deps import bind_current_user
+from app.auth.routes import bind_auth_routes, bind_me_routes
 from app.config import Settings, get_settings
+from app.db.models import GameRow
+from app.db.session import create_schema, lifespan_resources
 from app.errors import ApiError, ErrorCode, GameRuleError
+from app.games.routes import bind_game_routes
+from app.games.service import GameService
 from app.logging_setup import configure_logging
+from app.presets.routes import router as presets_router
+from app.realtime.manager import SessionManager
+from app.realtime.ws import bind_ws
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -13,8 +31,42 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings.validate_startup()
     configure_logging(settings.manhunt_env)
 
-    app = FastAPI(title="Manhunt", version="0.1.0")
+    engine, factory = lifespan_resources(settings)
+    manager = SessionManager(qr_key=settings.manhunt_qr_signing_key)
+    service = GameService(manager)
+
+    async def get_session() -> AsyncIterator[AsyncSession]:
+        async with factory() as session:
+            yield session
+
+    def settings_dep() -> Settings:
+        return settings
+
+    current_user = bind_current_user(get_session, settings_dep)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        await create_schema(engine)
+        # TODO: Phase 2 replay event logs instead of abandoning.
+        async with factory() as session:
+            await session.execute(
+                update(GameRow)
+                .where(GameRow.status.in_(["head_start", "active", "paused"]))
+                .values(status="abandoned")
+            )
+            await session.commit()
+        task = None
+        if settings.manhunt_tick_loop:
+            task = asyncio.create_task(manager.tick_loop(True))
+        yield
+        if task:
+            task.cancel()
+        await engine.dispose()
+
+    app = FastAPI(title="Manhunt", version="0.1.0", lifespan=lifespan)
     app.state.settings = settings
+    app.state.manager = manager
+    app.state.session_factory = factory
 
     @app.exception_handler(ApiError)
     async def api_error_handler(_request: Request, exc: ApiError) -> JSONResponse:
@@ -34,11 +86,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse(
             status_code=409,
             content={
-                "error": {
-                    "code": exc.code.value,
-                    "message": exc.message,
-                    "details": {},
-                }
+                "error": {"code": exc.code.value, "message": exc.message, "details": {}},
             },
         )
 
@@ -49,12 +97,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/readyz")
     @app.get("/v1/readyz")
-    async def readyz() -> dict[str, str]:
-        # TODO: Phase 2 report active game count so deploys can wait.
-        return {"status": "ok"}
+    async def readyz() -> dict[str, str | int]:
+        active = sum(
+            1
+            for s in manager.sessions.values()
+            if s.state.phase in {"lobby", "head_start", "active", "paused"}
+        )
+        return {"status": "ok", "active_games": active}
 
-    # Silence unused import until auth routes register ErrorCode.INTERNAL.
-    _ = ErrorCode.INTERNAL
+    app.include_router(bind_auth_routes(get_session, settings_dep, current_user))
+    app.include_router(bind_me_routes(get_session, current_user))
+    app.include_router(bind_arena_routes(get_session, current_user))
+    app.include_router(presets_router)
+    app.include_router(bind_game_routes(get_session, current_user, service))
+    app.include_router(bind_ws(manager, settings_dep))
+    _ = Depends, select, ErrorCode
     return app
 
 

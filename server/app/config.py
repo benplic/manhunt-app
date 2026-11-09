@@ -13,9 +13,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
     manhunt_env: Literal["local", "test", "home", "azure", "prod"] = "local"
-    manhunt_database_url: str = (
-        "postgresql+psycopg://manhunt:manhunt@127.0.0.1:5432/manhunt"
-    )
+    manhunt_database_url: str = "postgresql+psycopg://manhunt:manhunt@127.0.0.1:5432/manhunt"
     manhunt_session_signing_key: str = "dev-session-signing-key-change-me"
     manhunt_qr_signing_key: str = "dev-qr-signing-key-change-me"
     manhunt_apple_audience: str = "app.manhunt.ios"

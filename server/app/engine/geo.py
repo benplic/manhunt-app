@@ -115,5 +115,3 @@ def polygon_inside_play_area(zone: list[GeoPoint], play: list[GeoPoint]) -> bool
     if zone_poly.is_empty:
         return False
     return bool(play_poly.covers(zone_poly))
-
-
