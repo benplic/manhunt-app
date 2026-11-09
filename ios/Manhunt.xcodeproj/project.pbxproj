@@ -54,7 +54,7 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		A10000000000000000000009 /* */ = {
+		A10000000000000000000009 = {
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000005 /* Manhunt */,
@@ -218,7 +218,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = Support/Info.plist;
+				INFOPLIST_FILE = Support/Info-Debug.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
