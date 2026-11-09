@@ -1,0 +1,89 @@
+import XCTest
+@testable import Manhunt
+
+/// Client navigation against FakeGameService. No network.
+final class AppStoreTests: XCTestCase {
+    @MainActor
+    func testStartsSignedOutAndSignInOpensHome() {
+        let store = AppStore.makePreview()
+        XCTAssertEqual(store.screen, .signedOut)
+        XCTAssertNil(store.session)
+        store.signInPreview()
+        XCTAssertEqual(store.screen, .home)
+        XCTAssertEqual(store.session?.displayName, "Casey Lee")
+    }
+
+    @MainActor
+    func testUnknownArenaIsAMissingArenaError() {
+        let store = AppStore.makePreview()
+        store.signInPreview()
+        store.createMatch(arenaID: UUID(), presetID: "classic")
+        XCTAssertEqual(store.lastError, .missingArena)
+        XCTAssertEqual(store.screen, .home)
+        XCTAssertNil(store.match)
+    }
+
+    @MainActor
+    func testCreateThenStartBeforeRolesNeedsBothRoles() {
+        let store = AppStore.makePreview()
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        XCTAssertEqual(store.screen, .lobby)
+        XCTAssertTrue(store.isHost)
+        XCTAssertEqual(store.startMatch(), .needBothRoles)
+        XCTAssertEqual(store.screen, .lobby)
+        XCTAssertEqual(store.lastError, .needBothRoles)
+    }
+
+    @MainActor
+    func testMalformedJoinCodeNeverHitsTheService() {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        XCTAssertEqual(store.join(code: "park4"), .invalidFormat)
+        XCTAssertEqual(fake.joinCalls, 0)
+        XCTAssertEqual(store.screen, .home)
+    }
+
+    @MainActor
+    func testUnknownJoinCodeIsNotFound() {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        XCTAssertEqual(store.join(code: "ABCDEF"), .notFound)
+        XCTAssertEqual(fake.joinCalls, 1)
+        XCTAssertEqual(store.screen, .home)
+    }
+
+    @MainActor
+    func testPark42JoinsAsANonHost() {
+        let store = AppStore.makePreview()
+        store.signInPreview()
+        XCTAssertNil(store.join(code: "park42"))
+        XCTAssertEqual(store.screen, .lobby)
+        XCTAssertEqual(store.joinCode, "PARK42")
+        XCTAssertFalse(store.isHost)
+    }
+
+    @MainActor
+    func testSignOutDropsTheMatch() {
+        let store = AppStore.makePreview()
+        store.signInPreview()
+        _ = store.join(code: "PARK42")
+        XCTAssertNotNil(store.match)
+        store.signOut()
+        XCTAssertEqual(store.screen, .signedOut)
+        XCTAssertNil(store.match)
+        XCTAssertNil(store.session)
+    }
+
+    @MainActor
+    func testRandomizeThenStartOpensLive() {
+        let store = AppStore.makePreview()
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.randomizeRoles(hiderCount: 1)
+        XCTAssertNil(store.startMatch())
+        XCTAssertEqual(store.screen, .live)
+    }
+}

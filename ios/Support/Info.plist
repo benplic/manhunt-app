@@ -45,5 +45,14 @@
 	<string>Manhunt uses Ultra Wideband to confirm that a tag happened within a few meters.</string>
 	<key>NSLocationDefaultAccuracyReduced</key>
 	<false/>
+	<key>ManhuntAPIBaseURL</key>
+	<string>$(MANHUNT_API_BASE_URL)</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 </dict>
 </plist>

@@ -16,6 +16,9 @@ final class ArenaEditorModel {
     private var safeCenter: GeoPoint?
     private var history: [(Polygon, [ArenaZone], GeoPoint?)] = []
 
+    /// True after the first tap of a safe-circle pair, before the radius tap.
+    var hasPendingSafeCenter: Bool { safeCenter != nil }
+
     var issues: [ArenaIssue] {
         ArenaValidator.issues(
             in: Arena(id: UUID(), name: "Draft", boundary: boundary, zones: zones)

@@ -1,53 +1,39 @@
 import SwiftUI
 
-private struct ResultRow: Identifiable {
-    var id: String
-    var place: String
-    var name: String
-    var detail: String
-    var points: Int
-}
-
 struct ResultsView: View {
-    @Environment(VisualStore.self) private var store
-
-    private let rows = [
-        ResultRow(id: "jordan", place: "1", name: "Jordan Blake", detail: "Seeker · 2 tags", points: 110),
-        ResultRow(id: "casey", place: "2", name: "Casey Lee", detail: "Seeker · 1 tag", points: 85),
-        ResultRow(id: "quinn", place: "3", name: "Quinn Adler", detail: "Hider · still out", points: 70),
-        ResultRow(id: "riley", place: "4", name: "Riley Chen", detail: "Hider · tagged", points: 40),
-        ResultRow(id: "sam", place: "5", name: "Sam Patel", detail: "Hider · tagged", points: 25),
-    ]
+    @Environment(AppStore.self) private var store
 
     var body: some View {
-        ScrollView {
+        let result = store.match?.snapshot.result
+        let winner = result?.winner ?? "none"
+        return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("SEEKERS WIN")
+                Text(winnerTitle(winner))
                     .font(.caption.weight(.bold))
                     .tracking(1.6)
                     .foregroundStyle(HuntColor.signal)
-                Text("Riverside Green")
+                Text(store.arena.name)
                     .font(HuntFont.title(40))
                     .foregroundStyle(HuntColor.paper)
-                Text("Called when the last hider was tagged. 28 minutes.")
+                Text(result?.reason ?? "The host ended the hunt.")
                     .foregroundStyle(HuntColor.muted)
 
                 VStack(spacing: 8) {
-                    ForEach(rows) { row in
+                    ForEach(Array(ranked.enumerated()), id: \.element.id) { index, player in
                         HStack {
-                            Text(row.place)
+                            Text("\(index + 1)")
                                 .font(.headline.monospacedDigit())
                                 .frame(width: 24, alignment: .leading)
                                 .foregroundStyle(HuntColor.signal)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(row.name)
+                                Text(player.name)
                                     .font(.body.weight(.semibold))
-                                Text(row.detail)
+                                Text(player.role.rawValue)
                                     .font(.caption)
                                     .foregroundStyle(HuntColor.muted)
                             }
                             Spacer()
-                            Text("\(row.points)")
+                            Text("\(player.points)")
                                 .font(.headline.monospacedDigit())
                         }
                         .foregroundStyle(HuntColor.paper)
@@ -56,35 +42,23 @@ struct ResultsView: View {
                     }
                 }
 
-                Text("WHAT HAPPENED")
-                    .font(.caption.weight(.bold))
-                    .tracking(1.2)
-                    .foregroundStyle(HuntColor.muted)
-                VStack(alignment: .leading, spacing: 8) {
-                    event("Head start ended. Seekers released.")
-                    event("Quinn popped Ghost and skipped a reveal.")
-                    event("Jordan tagged Riley at the south gate.")
-                    event("Sam went dark. Last fix shown to both sides.")
-                    event("Casey tagged Sam. Seekers win.")
-                }
-                .font(.subheadline)
-                .foregroundStyle(HuntColor.paper)
-
-                HuntButton(title: "Back home", action: store.goHome)
+                HuntButton(title: "Back home", action: store.leaveResults)
                     .accessibilityIdentifier("back-home")
-                Text("Names and scores on this screen are sample copy so the layout is visible.")
-                    .font(.footnote)
-                    .foregroundStyle(HuntColor.muted)
             }
             .padding(20)
         }
         .background(HuntColor.ink)
     }
 
-    private func event(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Circle().fill(HuntColor.signal).frame(width: 6, height: 6).padding(.top, 6)
-            Text(text)
+    private var ranked: [VisualPlayer] {
+        store.players.sorted { $0.points > $1.points }
+    }
+
+    private func winnerTitle(_ winner: String) -> String {
+        switch winner {
+        case "hiders": return "HIDERS WIN"
+        case "seekers": return "SEEKERS WIN"
+        default: return "HUNT OVER"
         }
     }
 }

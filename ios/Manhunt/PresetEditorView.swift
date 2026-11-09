@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PresetEditorView: View {
-    @Environment(VisualStore.self) private var store
+    @Environment(AppStore.self) private var store
 
     var body: some View {
         @Bindable var store = store

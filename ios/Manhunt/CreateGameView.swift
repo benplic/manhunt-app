@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct CreateGameView: View {
-    @Environment(VisualStore.self) private var store
+    @Environment(AppStore.self) private var store
 
     var body: some View {
         @Bindable var store = store
@@ -13,9 +13,9 @@ struct CreateGameView: View {
                     .font(.caption.weight(.bold))
                     .tracking(1.2)
                     .foregroundStyle(HuntColor.muted)
-                ForEach(SamplePark.arenas) { arena in
+                ForEach(store.arenas) { arena in
                     Button {
-                        store.arenaID = arena.id
+                        store.arenaID = arena.id.uuidString
                     } label: {
                         Card {
                             HStack {
@@ -23,13 +23,13 @@ struct CreateGameView: View {
                                     Text(arena.name)
                                         .font(.headline)
                                         .foregroundStyle(HuntColor.paper)
-                                    Text("\(arena.place) · \(arena.zones.count) zones")
+                                    Text("\(arena.zones.count) zones")
                                         .font(.subheadline)
                                         .foregroundStyle(HuntColor.muted)
                                 }
                                 Spacer()
-                                Image(systemName: store.arenaID == arena.id ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(store.arenaID == arena.id ? HuntColor.signal : HuntColor.muted)
+                                Image(systemName: store.arenaID == arena.id.uuidString ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(store.arenaID == arena.id.uuidString ? HuntColor.signal : HuntColor.muted)
                             }
                         }
                     }

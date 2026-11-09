@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct HomeView: View {
-    @Environment(VisualStore.self) private var store
+    @Environment(AppStore.self) private var store
 
     var body: some View {
         @Bindable var store = store
@@ -63,9 +63,9 @@ struct HomeView: View {
                 }
 
                 sectionTitle("Arenas")
-                ForEach(SamplePark.arenas) { arena in
+                ForEach(store.arenas) { arena in
                     Button {
-                        store.editArena(arena.id)
+                        store.editArena(arena.id.uuidString)
                     } label: {
                         Card {
                             HStack {
@@ -73,7 +73,7 @@ struct HomeView: View {
                                     Text(arena.name)
                                         .font(.headline)
                                         .foregroundStyle(HuntColor.paper)
-                                    Text(arena.place)
+                                    Text("\(arena.zones.count) zones")
                                         .font(.subheadline)
                                         .foregroundStyle(HuntColor.muted)
                                 }

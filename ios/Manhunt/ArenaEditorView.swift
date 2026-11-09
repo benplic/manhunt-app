@@ -2,14 +2,13 @@ import MapKit
 import SwiftUI
 
 struct ArenaEditorView: View {
-    @Environment(VisualStore.self) private var store
+    @Environment(AppStore.self) private var store
 
     var body: some View {
         @Bindable var store = store
         return VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
                 ScreenHeader(title: store.arenaID == "new" ? "New arena" : store.arena.name, subtitle: "Center the crosshair, then drop a point.", onBack: {
-                    store.note = "Arena kept for this preview."
                     store.goHome()
                 })
                 Picker("Tool", selection: $store.tool) {
@@ -40,6 +39,11 @@ struct ArenaEditorView: View {
                     .font(.subheadline)
                     .foregroundStyle(HuntColor.paper)
                     .fixedSize(horizontal: false, vertical: true)
+                ForEach(store.editorIssues, id: \.self) { issue in
+                    Text(issue)
+                        .font(.footnote)
+                        .foregroundStyle(HuntColor.warning)
+                }
                 HStack {
                     legend(HuntColor.signal, "Play")
                     legend(HuntColor.safe, "Safe")
@@ -50,6 +54,7 @@ struct ArenaEditorView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(HuntColor.signal)
                 }
+                HuntButton(title: "Save arena", action: store.saveArena)
             }
             .padding(16)
             .background(HuntColor.ink)
@@ -65,13 +70,13 @@ struct ArenaEditorView: View {
     }
 
     private var statusLine: String {
-        if store.safeArm != nil {
+        if store.editor.hasPendingSafeCenter {
             return "Safe center set. Drop a second point to set the radius."
         }
         if store.tool == .playArea && store.draftBoundary.count < 3 {
             return "Add at least 3 points to close the play area."
         }
-        return "Yellow is the play area. Other zones have to sit inside it. Crossed lines get rejected when the real editor lands."
+        return "Yellow is the play area. Other zones have to sit inside it."
     }
 
     private func legend(_ color: Color, _ title: String) -> some View {

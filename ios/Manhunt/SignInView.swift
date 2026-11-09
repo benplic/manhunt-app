@@ -1,10 +1,11 @@
 import SwiftUI
 
 struct SignInView: View {
-    @Environment(VisualStore.self) private var store
+    @Environment(AppStore.self) private var store
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        @Bindable var store = store
+        return ZStack(alignment: .bottom) {
             TopoField()
             VStack(alignment: .leading, spacing: 20) {
                 Spacer()
@@ -20,9 +21,39 @@ struct SignInView: View {
                     rule("Hiders run. Seekers hunt.")
                     rule("The phone only keeps score.")
                 }
-                .padding(.bottom, 12)
+                .padding(.bottom, 8)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Display name")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(HuntColor.muted)
+                    TextField("Casey Lee", text: $store.displayName)
+                        .textInputAutocapitalization(.words)
+                        .padding(12)
+                        .background(HuntColor.ink, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .foregroundStyle(HuntColor.paper)
+                        .accessibilityIdentifier("display-name")
+                    Text("Server URL")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(HuntColor.muted)
+                    TextField("http://localhost:8000", text: $store.serverURL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+                        .padding(12)
+                        .background(HuntColor.ink, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .foregroundStyle(HuntColor.paper)
+                        .accessibilityIdentifier("server-url")
+                }
+
+                if let note = store.note {
+                    Text(note)
+                        .font(.footnote)
+                        .foregroundStyle(HuntColor.warning)
+                }
+
                 Button(action: store.signIn) {
-                    Label("Sign in with Apple", systemImage: "apple.logo")
+                    Text("Play")
                         .font(.body.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .frame(minHeight: 54)
@@ -31,7 +62,7 @@ struct SignInView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("sign-in")
-                Text("Precise location stays on during a game. Manhunt does not ask for Always.")
+                Text("Precise location stays on during a game. Manhunt does not ask for Always. Sign in with Apple arrives in Phase 2.")
                     .font(.footnote)
                     .foregroundStyle(HuntColor.muted)
                     .fixedSize(horizontal: false, vertical: true)
