@@ -24,5 +24,6 @@ A roadmap bullet is done only when its acceptance line in the remaining-benchmar
 ## Checks
 
 - Server: `cd server && . .venv/bin/activate && pytest -q && ruff check .`
-- iOS: `xcodebuild test -project ios/Manhunt.xcodeproj -scheme Manhunt -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.4'`
+- iOS, on a machine that has the 18.4 simulator: `xcodebuild test -project ios/Manhunt.xcodeproj -scheme Manhunt -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.4'`
+- GitHub Actions uses that scheme and device, but selects an installed runtime. The macos-15 image's default Xcode is 16.4, whose simulator is iOS 18.5. Pinning 18.4 there makes `xcodebuild` exit 70 before tests start.
 - `ArenaEditorModel` is not `@MainActor`. The engine does not call `datetime.now()` or the global `random`. Distances use 111,320 m per degree, not haversine. `is_decoy` never goes out on the wire.
