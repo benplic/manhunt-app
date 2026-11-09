@@ -110,6 +110,9 @@ class GameService:
             await session.commit()
             game = self._live(row)
             game.add_player(user.id, user.display_name, is_host=False)
+            # The host is already on the socket. Push the new roster instead of
+            # waiting for the next tick, which tests leave disabled.
+            await self.manager.broadcast(row.id)
         return row
 
     def _live(self, row: GameRow) -> GameSession:
@@ -161,6 +164,7 @@ class GameService:
             if member:
                 member.role = player.role
         await session.commit()
+        await self.manager.broadcast(game_id)
         return game
 
     async def start(self, session: AsyncSession, user: User, game_id: UUID) -> GameSession:
