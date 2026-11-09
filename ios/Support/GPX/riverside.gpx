@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Manhunt">
+  <metadata>
+    <name>Riverside Green loop</name>
+    <desc>Prospect Park sample used by the simulator playtest. Xcode → Debug → Simulate Location.</desc>
+  </metadata>
+  <trk>
+    <name>riverside</name>
+    <trkseg>
+      <trkpt lat="40.66070" lon="-73.96940"><ele>30</ele></trkpt>
+      <trkpt lat="40.66110" lon="-73.97010"><ele>30</ele></trkpt>
+      <trkpt lat="40.66185" lon="-73.97075"><ele>30</ele></trkpt>
+      <trkpt lat="40.66240" lon="-73.96840"><ele>30</ele></trkpt>
+      <trkpt lat="40.66290" lon="-73.96960"><ele>30</ele></trkpt>
+      <trkpt lat="40.66355" lon="-73.96995"><ele>30</ele></trkpt>
+      <trkpt lat="40.66320" lon="-73.96785"><ele>30</ele></trkpt>
+      <trkpt lat="40.66155" lon="-73.96735"><ele>30</ele></trkpt>
+      <trkpt lat="40.66140" lon="-73.96790"><ele>30</ele></trkpt>
+      <trkpt lat="40.66025" lon="-73.96835"><ele>30</ele></trkpt>
+      <trkpt lat="40.66015" lon="-73.97015"><ele>30</ele></trkpt>
+      <trkpt lat="40.66070" lon="-73.96940"><ele>30</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

@@ -48,10 +48,14 @@ services:
       db:
         condition: service_healthy
 
+  # Quick tunnel (no Cloudflare account). Logs print https://….trycloudflare.com.
+  # Named tunnel: set TUNNEL_TOKEN and change command to
+  #   tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+  # Never commit TUNNEL_TOKEN.
   tunnel:
     image: cloudflare/cloudflared:latest
     profiles: ["tunnel"]
-    command: tunnel --no-autoupdate run
+    command: tunnel --no-autoupdate --url http://server:8000
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
     depends_on:
