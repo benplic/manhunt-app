@@ -153,6 +153,13 @@ final class FakeGameService: GameService {
         if token.isEmpty { throw ServiceError(code: .tokenInvalid, message: "Empty token.") }
     }
 
+    func purchase(gameID: UUID, powerID: String, extra: [String: Double]) async throws -> PlayerViewDTO {
+        guard let game = games[gameID] else { throw ServiceError(code: .gameNotFound, message: "") }
+        _ = extra
+        _ = powerID
+        return game.view()
+    }
+
     private func mutate(_ gameID: UUID, _ body: (inout FakeGame) -> Void) throws -> PlayerViewDTO {
         guard var game = games[gameID] else { throw ServiceError(code: .gameNotFound, message: "") }
         body(&game)

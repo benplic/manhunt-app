@@ -37,10 +37,14 @@ class RevealFuzzyModule(BaseModule):
             if getattr(player, "ghost_next_reveal", False):
                 player.ghost_next_reveal = False  # type: ignore[attr-defined]
                 continue
-            reading = player.last_precise or player.location
-            if reading is None or reading.accuracy_m > ACCURACY_CUTOFF_M:
-                continue
-            origin = reading.point
+            if player.decoy_point is not None:
+                origin = player.decoy_point
+                player.decoy_point = None
+            else:
+                reading = player.last_precise or player.location
+                if reading is None or reading.accuracy_m > ACCURACY_CUTOFF_M:
+                    continue
+                origin = reading.point
             if fuzz <= 0:
                 pin = origin
             else:

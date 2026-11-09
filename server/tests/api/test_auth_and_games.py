@@ -14,9 +14,22 @@ def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-def test_apple_is_stubbed(client: TestClient) -> None:
+def test_apple_rejects_garbage(client: TestClient) -> None:
     response = client.post("/v1/auth/apple", json={"identity_token": "nope"})
-    assert response.status_code == 501
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "TOKEN_INVALID"
+
+
+def test_refresh_rotates(client: TestClient) -> None:
+    first = client.post("/v1/auth/dev", json={"display_name": "Casey"})
+    assert first.status_code == 200
+    body = first.json()
+    assert body.get("refresh_token")
+    rotated = client.post("/v1/auth/refresh", json={"refresh_token": body["refresh_token"]})
+    assert rotated.status_code == 200, rotated.text
+    assert rotated.json()["refresh_token"] != body["refresh_token"]
+    replay = client.post("/v1/auth/refresh", json={"refresh_token": body["refresh_token"]})
+    assert replay.status_code == 401
 
 
 def test_create_join_start_needs_both_roles(client: TestClient) -> None:

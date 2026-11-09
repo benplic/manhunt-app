@@ -125,4 +125,92 @@ def bind_game_routes(get_session, current_user, service: GameService):
         await service.qr_tag(session, user, game_id, body.token)
         return {"result": "accepted"}
 
+    @router.post("/games/{game_id}/players/{player_id}/remove")
+    async def remove_player(
+        game_id: UUID,
+        player_id: UUID,
+        session: AsyncSession = Depends(get_session),
+        user=Depends(current_user),
+    ) -> dict:
+        from app.engine.views import build_view
+
+        game = await service.remove_player(session, user, game_id, player_id)
+        return build_view(game, user.id)
+
+    @router.post("/games/{game_id}/tags/undo")
+    async def undo_tag(
+        game_id: UUID,
+        session: AsyncSession = Depends(get_session),
+        user=Depends(current_user),
+    ) -> dict:
+        from app.engine.views import build_view
+
+        return build_view(await service.undo_tag(session, user, game_id), user.id)
+
+    @router.post("/games/{game_id}/power-ups")
+    async def buy_power(
+        game_id: UUID,
+        body: dict[str, Any],
+        session: AsyncSession = Depends(get_session),
+        user=Depends(current_user),
+    ) -> dict:
+        from app.engine.views import build_view
+
+        power_id = str(body.get("id", ""))
+        extra = {k: v for k, v in body.items() if k != "id"}
+        return build_view(await service.purchase(session, user, game_id, power_id, extra), user.id)
+
+    @router.post("/games/{game_id}/taunt")
+    async def taunt(
+        game_id: UUID,
+        session: AsyncSession = Depends(get_session),
+        user=Depends(current_user),
+    ) -> dict:
+        from app.engine.views import build_view
+
+        return build_view(await service.taunt(session, user, game_id), user.id)
+
+    @router.post("/games/{game_id}/safety/ack")
+    async def ack_safety(
+        game_id: UUID,
+        session: AsyncSession = Depends(get_session),
+        user=Depends(current_user),
+    ) -> dict:
+        from app.engine.views import build_view
+
+        return build_view(await service.ack_safety(session, user, game_id), user.id)
+
+    @router.get("/games/{game_id}/invite")
+    async def invite(
+        game_id: UUID,
+        session: AsyncSession = Depends(get_session),
+        user=Depends(current_user),
+    ) -> dict:
+        row, _ = await service.require_member(session, game_id, user)
+        return {
+            "join_code": row.join_code,
+            "url": f"https://app.manhunt.ios/join/{row.join_code}",
+        }
+
+    @router.get("/games/{game_id}/events")
+    async def timeline(
+        game_id: UUID,
+        session: AsyncSession = Depends(get_session),
+        user=Depends(current_user),
+    ) -> dict:
+        await service.require_member(session, game_id, user)
+        from sqlalchemy import select as sel
+
+        from app.db.models import AuditLog, GameEventRow
+
+        _ = AuditLog
+        rows = (
+            await session.execute(
+                sel(GameEventRow)
+                .where(GameEventRow.game_id == game_id, GameEventRow.sensitive.is_(False))
+                .order_by(GameEventRow.seq)
+            )
+        ).scalars()
+        return {"events": [{"seq": r.seq, "type": r.type, "payload": r.payload} for r in rows]}
+
     return router

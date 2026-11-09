@@ -158,7 +158,7 @@ struct LiveGameView: View {
                     Text("\(store.shownPoints) pts")
                         .font(.title2.weight(.semibold))
                         .monospacedDigit()
-                    Text(youAreHider ? "Warmth is hidden from you." : "Hints arrive in Phase 3.")
+                    Text(hintLine(youAreHider: youAreHider))
                         .font(.footnote)
                         .foregroundStyle(HuntColor.muted)
                 }
@@ -204,7 +204,7 @@ struct LiveGameView: View {
                     ForEach(SamplePark.powerUps.filter { $0.role == store.viewingRole }) { chip in
                         let armed = store.armedPowerUps.contains(chip.id)
                         Button {
-                            store.togglePower(chip)
+                            store.buyPower(chip)
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(chip.title)
@@ -252,6 +252,16 @@ struct LiveGameView: View {
 
     private func clock(_ seconds: Int) -> String {
         String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
+    private func hintLine(youAreHider: Bool) -> String {
+        if youAreHider { return "Warmth is hidden from you." }
+        if let hint = store.match?.snapshot.you.hint, let band = hint.band {
+            let name = hint.name ?? "A hider"
+            let meters = hint.meters.map { "\($0) m" } ?? ""
+            return "\(name) is \(band) \(meters)".trimmingCharacters(in: .whitespaces)
+        }
+        return "No hint yet."
     }
 }
 

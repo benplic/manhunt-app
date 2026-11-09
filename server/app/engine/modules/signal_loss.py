@@ -28,6 +28,7 @@ class SignalLossModule(BaseModule):
             elapsed = (now - last).total_seconds()
             if elapsed >= silence and player.status != "signal_lost":
                 player.status = "signal_lost"
+                s.state.safety_needs_ack = True
                 s.state.banners.append(
                     Banner(
                         banner_id=uuid4(),
@@ -53,3 +54,18 @@ class SignalLossModule(BaseModule):
                     for b in s.state.banners
                     if b.player_id != player.player_id or b.tone != "safety"
                 ]
+            penalty_after = int(self.settings.get("penalty_after", 180))
+            penalty = str(self.settings.get("penalty", "none"))
+            if (
+                player.status == "signal_lost"
+                and penalty == "eliminate"
+                and elapsed >= penalty_after
+                and player.role == "hider"
+            ):
+                player.status = "eliminated"
+                s.emit(
+                    "signal_loss_penalty",
+                    {"text": f"{player.display_name} was eliminated after going dark."},
+                    player_id=player.player_id,
+                    tone="warning",
+                )

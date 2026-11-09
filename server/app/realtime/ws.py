@@ -48,6 +48,28 @@ def bind_ws(manager: SessionManager, get_settings):
         from app.engine.views import build_view
 
         await ws.send_json(envelope("view", build_view(session, user_id)))
+        last_seq = data.get("last_seq")
+        if last_seq is not None:
+            try:
+                last_seq = int(last_seq)
+            except (TypeError, ValueError):
+                last_seq = 0
+            for event in session.state.event_log:
+                if event.seq <= last_seq or event.sensitive:
+                    continue
+                await ws.send_json(
+                    envelope(
+                        "event",
+                        {
+                            "seq": event.seq,
+                            "type": event.type,
+                            "text": event.text,
+                            "tone": event.tone,
+                            "at": event.created_at.isoformat() if event.created_at else None,
+                            "player_id": str(event.player_id) if event.player_id else None,
+                        },
+                    )
+                )
         last_loc = 0.0
         try:
             while True:

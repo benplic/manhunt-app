@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     manhunt_apple_audience: str = "app.manhunt.ios"
     manhunt_dev_auth: bool = False
     manhunt_tick_loop: bool = True
+    manhunt_trail_key: str = "ab" * 32
+    manhunt_trail_key_id: str = "v1"
 
     def validate_startup(self) -> None:
         """Refuse to boot if fake sign-in is enabled in a cloud environment."""

@@ -64,6 +64,7 @@ class GameService:
             arena_snapshot=arena_to_dict(arena),
             preset_snapshot=preset,
             seed=seed,
+            inputs=[],
         )
         session.add(row)
         session.add(GamePlayerRow(game_id=row.id, user_id=host.id, role="unassigned"))
@@ -193,6 +194,68 @@ class GameService:
         game.end("The host ended the hunt.", winner="none")
         row.status = "ended"
         row.ended_at = datetime.now(UTC)
+        await self.persist_inputs(session, game)
+        await session.commit()
+        return game
+
+    async def remove_player(
+        self, session: AsyncSession, user: User, game_id: UUID, player_id: UUID
+    ) -> GameSession:
+        row = await self.require_host(session, game_id, user)
+        game = self._live(row)
+        try:
+            game.remove_player(player_id)
+        except GameRuleError as exc:
+            raise _http_for_rule(exc) from exc
+        member = await session.get(GamePlayerRow, (game_id, player_id))
+        if member:
+            await session.delete(member)
+        await self.persist_inputs(session, game)
+        await session.commit()
+        return game
+
+    async def undo_tag(self, session: AsyncSession, user: User, game_id: UUID) -> GameSession:
+        row = await self.require_host(session, game_id, user)
+        game = self._live(row)
+        try:
+            game.undo_tag()
+        except GameRuleError as exc:
+            raise _http_for_rule(exc) from exc
+        await self.persist_inputs(session, game)
+        await session.commit()
+        return game
+
+    async def purchase(
+        self, session: AsyncSession, user: User, game_id: UUID, power_id: str, extra: dict
+    ) -> GameSession:
+        row, _ = await self.require_member(session, game_id, user)
+        game = self._live(row)
+        try:
+            game.purchase(user.id, power_id, **extra)
+        except GameRuleError as exc:
+            raise _http_for_rule(exc) from exc
+        await self.persist_inputs(session, game)
+        await session.commit()
+        return game
+
+    async def taunt(self, session: AsyncSession, user: User, game_id: UUID) -> GameSession:
+        row, _ = await self.require_member(session, game_id, user)
+        game = self._live(row)
+        try:
+            game.taunt(user.id)
+        except GameRuleError as exc:
+            raise _http_for_rule(exc) from exc
+        await self.persist_inputs(session, game)
+        await session.commit()
+        return game
+
+    async def ack_safety(self, session: AsyncSession, user: User, game_id: UUID) -> GameSession:
+        row = await self.require_host(session, game_id, user)
+        game = self._live(row)
+        try:
+            game.ack_safety(user.id)
+        except GameRuleError as exc:
+            raise _http_for_rule(exc) from exc
         await session.commit()
         return game
 
@@ -210,18 +273,42 @@ class GameService:
         row.status = game.state.phase
         await session.commit()
 
+    async def persist_inputs(self, session: AsyncSession, game: GameSession) -> None:
+        row = await session.get(GameRow, game.state.game_id)
+        if row is not None:
+            row.inputs = list(game.state.inputs)
+            row.status = game.state.phase
+            if game.state.result:
+                row.result = {
+                    "winner": game.state.result.winner,
+                    "reason": game.state.result.reason,
+                }
+
     async def _persist_events(self, session: AsyncSession, game: GameSession) -> None:
+        from app.config import get_settings
+        from app.crypto import encrypt_payload, load_trail_key
+
+        settings = get_settings()
+        try:
+            key = load_trail_key(settings.manhunt_trail_key)
+        except Exception:
+            key = None
         for event in game.drain_events():
+            payload: dict = {"text": event.text, "tone": event.tone}
             if event.sensitive:
-                continue
+                if key is None:
+                    continue
+                payload = encrypt_payload(key, event.payload, settings.manhunt_trail_key_id)
             session.add(
                 GameEventRow(
                     game_id=game.state.game_id,
                     seq=event.seq,
                     type=event.type,
-                    payload={"text": event.text, "tone": event.tone},
+                    payload=payload,
+                    sensitive=event.sensitive,
                 )
             )
+        await self.persist_inputs(session, game)
 
     async def view(self, session: AsyncSession, user: User, game_id: UUID) -> dict:
         row, _ = await self.require_member(session, game_id, user)

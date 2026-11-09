@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.arenas.routes import bind_arena_routes
@@ -24,6 +24,8 @@ from app.logging_setup import configure_logging
 from app.presets.routes import router as presets_router
 from app.realtime.manager import SessionManager
 from app.realtime.ws import bind_ws
+from app.schemas.routes import bind_preset_save
+from app.schemas.routes import router as modules_router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -47,14 +49,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         await create_schema(engine)
-        # TODO: Phase 2 replay event logs instead of abandoning.
         async with factory() as session:
-            await session.execute(
-                update(GameRow)
-                .where(GameRow.status.in_(["head_start", "active", "paused"]))
-                .values(status="abandoned")
-            )
+            from app.engine.arena import arena_from_dict
+            from app.engine.recovery import rebuild_session
+
+            rows = (
+                await session.execute(
+                    select(GameRow).where(
+                        GameRow.status.in_(["head_start", "active", "paused", "lobby"])
+                    )
+                )
+            ).scalars()
+            restored = 0
+            for row in rows:
+                if row.inputs:
+                    game = rebuild_session(
+                        game_id=row.id,
+                        arena=arena_from_dict(row.arena_snapshot),
+                        preset=row.preset_snapshot,
+                        seed=row.seed,
+                        join_code=row.join_code,
+                        inputs=list(row.inputs),
+                        qr_key=settings.manhunt_qr_signing_key,
+                    )
+                    manager.sessions[row.id] = game
+                    restored += 1
+                elif row.status in {"head_start", "active", "paused"}:
+                    # No inputs to replay; mark abandoned so we never silently invent state.
+                    row.status = "abandoned"
             await session.commit()
+            _ = restored
         task = None
         if settings.manhunt_tick_loop:
             task = asyncio.create_task(manager.tick_loop(True))
@@ -109,6 +133,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(bind_me_routes(get_session, current_user))
     app.include_router(bind_arena_routes(get_session, current_user))
     app.include_router(presets_router)
+    app.include_router(modules_router)
+    app.include_router(bind_preset_save(get_session, current_user))
     app.include_router(bind_game_routes(get_session, current_user, service))
     app.include_router(bind_ws(manager, settings_dep))
     _ = Depends, select, ErrorCode

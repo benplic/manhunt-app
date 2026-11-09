@@ -46,6 +46,7 @@ class GameRow(Base):
     arena_snapshot: Mapped[dict] = mapped_column(JSON().with_variant(SQLITE_JSON, "sqlite"))
     preset_snapshot: Mapped[dict] = mapped_column(JSON().with_variant(SQLITE_JSON, "sqlite"))
     seed: Mapped[int] = mapped_column(Integer)
+    inputs: Mapped[list] = mapped_column(JSON().with_variant(SQLITE_JSON, "sqlite"), default=list)
     result: Mapped[dict | None] = mapped_column(
         JSON().with_variant(SQLITE_JSON, "sqlite"), nullable=True
     )
@@ -75,7 +76,29 @@ class GameEventRow(Base):
     type: Mapped[str] = mapped_column(String(64))
     payload: Mapped[dict] = mapped_column(JSON().with_variant(SQLITE_JSON, "sqlite"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    # Precise location never persisted in MVP. TODO: Phase 2 AES-GCM trails.
+    sensitive: Mapped[bool] = mapped_column(default=False)
+
+
+class RefreshToken(Base):
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RulePreset(Base):
+    __tablename__ = "rule_presets"
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    owner_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"))
+    name: Mapped[str] = mapped_column(String(80))
+    modules: Mapped[dict] = mapped_column(JSON().with_variant(SQLITE_JSON, "sqlite"))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class AuditLog(Base):

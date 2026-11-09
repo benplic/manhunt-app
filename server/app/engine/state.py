@@ -45,6 +45,16 @@ class Banner:
 
 
 @dataclass
+class Effect:
+    effect_id: UUID
+    owner_id: UUID
+    target_id: UUID | None
+    type: str
+    expires_at_game_s: int | None
+    payload: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class PlayerState:
     player_id: UUID
     display_name: str
@@ -62,6 +72,20 @@ class PlayerState:
     safe_expired: bool = False
     safe_cooldown_until_s: int | None = None
     last_location_at: datetime | None = None
+    ghost_next_reveal: bool = False
+    decoy_point: GeoPoint | None = None
+    shield_until_s: int | None = None
+    radar_until_s: int | None = None
+    jammer_until_s: int | None = None
+    tracker_until_s: int | None = None
+    lockdown_until_s: int | None = None
+    taunt_until_s: int | None = None
+    cooldowns: dict[str, int] = field(default_factory=dict)
+    close_near_since_s: int | None = None
+    last_survival_award_s: int = 0
+    hint: dict[str, Any] | None = None
+    uwb_token: str | None = None
+    battery: float | None = None
 
 
 @dataclass
@@ -90,3 +114,10 @@ class GameState:
     next_seq: int = 1
     last_reveal_at_s: int | None = None
     qr_by_hider: dict[UUID, tuple[str, datetime]] = field(default_factory=dict)
+    effects: list[Effect] = field(default_factory=list)
+    event_log: list = field(default_factory=list)
+    last_tag: dict[str, Any] | None = None
+    safety_needs_ack: bool = False
+    lockdown_until_s: int | None = None
+    jammer_until_s: int | None = None
+    inputs: list[dict[str, Any]] = field(default_factory=list)

@@ -29,6 +29,19 @@ CLASSIC_MODULES: dict[str, dict[str, Any]] = {
     },
     "signal_loss": {"silence": 45, "penalty_after": 180, "penalty": "none"},
     "win": {"condition": "either", "time_limit": 30},
+    "hot_cold": {"enabled": True},
+    "points": {
+        "survival_s": 300,
+        "survival_points": 10,
+        "close_m": 15,
+        "escape_m": 30,
+        "close_hold_s": 5,
+        "close_call_points": 20,
+        "others_tagged_points": 15,
+        "taunt_s": 8,
+    },
+    "power_ups": {"enabled": True},
+    "effects": {},
 }
 
 RANGES: dict[tuple[str, str], tuple[float, float]] = {

@@ -455,6 +455,16 @@ final class AppStore {
         }
     }
 
+    func buyPower(_ chip: PowerChip) {
+        togglePower(chip)
+        guard let id = match?.snapshot.gameId else { return }
+        Task {
+            if let view = try? await service.purchase(gameID: id, powerID: chip.id, extra: [:]) {
+                apply(view)
+            }
+        }
+    }
+
     func togglePower(_ chip: PowerChip) {
         if armedPowerUps.contains(chip.id) {
             armedPowerUps.removeAll { $0 == chip.id }

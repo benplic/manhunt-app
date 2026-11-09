@@ -1,0 +1,41 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Azure environment (dev or prod)
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - prod
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Build and push GHCR image
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker build -t ghcr.io/${{ github.repository }}/manhunt-server:${{ github.sha }} ./server
+          docker push ghcr.io/${{ github.repository }}/manhunt-server:${{ github.sha }}
+      - name: Deploy Bicep
+        run: |
+          az deployment group create \
+            --resource-group rg-manhunt-${{ inputs.environment }} \
+            --template-file infra/main.bicep \
+            --parameters infra/env/${{ inputs.environment }}.bicepparam \
+            --parameters containerImage=ghcr.io/${{ github.repository }}/manhunt-server:${{ github.sha }}

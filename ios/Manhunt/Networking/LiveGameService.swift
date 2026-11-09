@@ -110,4 +110,16 @@ final class LiveGameService: GameService {
     func disconnect() {
         socket.disconnect()
     }
+
+    func purchase(gameID: UUID, powerID: String, extra: [String: Double]) async throws -> PlayerViewDTO {
+        struct Body: Encodable {
+            var id: String
+            var lat: Double?
+            var lon: Double?
+        }
+        return try await client.post(
+            "/v1/games/\(gameID.uuidString)/power-ups",
+            body: Body(id: powerID, lat: extra["lat"], lon: extra["lon"])
+        )
+    }
 }

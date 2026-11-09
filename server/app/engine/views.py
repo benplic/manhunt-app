@@ -20,7 +20,7 @@ def build_view(session: GameSession, viewer_id: UUID) -> dict:
                 "role": player.role,
                 "status": player.status,
                 "is_host": player.is_host,
-                "location": _visible_location(state.phase, viewer, player),
+                "location": _visible_location(state, viewer, player),
             }
         )
     reveals = []
@@ -67,6 +67,8 @@ def build_view(session: GameSession, viewer_id: UUID) -> dict:
             },
             "safe_zone": you_safe,
             "points": viewer.points,
+            "hint": viewer.hint,
+            "effects": [e.type for e in state.effects if e.owner_id == viewer.player_id],
         },
         "players": players,
         "reveals": reveals,
@@ -84,8 +86,8 @@ def build_view(session: GameSession, viewer_id: UUID) -> dict:
     }
 
 
-def _visible_location(phase: str, viewer: PlayerState, other: PlayerState) -> dict | None:
-    if phase == "lobby":
+def _visible_location(state, viewer: PlayerState, other: PlayerState) -> dict | None:
+    if state.phase == "lobby":
         return None
     loc = other.last_precise or other.location
     if loc is None:
@@ -102,7 +104,7 @@ def _visible_location(phase: str, viewer: PlayerState, other: PlayerState) -> di
 
     if other.player_id == viewer.player_id:
         return pack("exact")
-    if phase == "ended":
+    if state.phase == "ended":
         return pack("last_known" if other.status == "signal_lost" else "exact")
     if other.status == "signal_lost":
         return pack("last_known")
@@ -110,5 +112,15 @@ def _visible_location(phase: str, viewer: PlayerState, other: PlayerState) -> di
         return pack("exact")
     # Seeker out of bounds is shown to everyone, including hiders.
     if other.role == "seeker" and other.oob_revealed:
+        return pack("exact")
+    now = state.game_elapsed_s
+    if (
+        viewer.role == "hider"
+        and other.role == "seeker"
+        and viewer.radar_until_s is not None
+        and viewer.radar_until_s > now
+    ):
+        return pack("exact")
+    if other.role == "hider" and other.taunt_until_s is not None and other.taunt_until_s > now:
         return pack("exact")
     return None

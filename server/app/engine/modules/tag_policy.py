@@ -48,7 +48,13 @@ class TagPolicyModule(BaseModule):
         # UWB dual-range is Phase 3. MVP QR still rejects a claimed range that is
         # present and larger than the tag radius so far-GPS cannot be "saved"
         # by a fake close reading when both ranges are supplied.
-        if claim.seeker_range is not None and claim.hider_range is not None:
+        method = str(self.settings.get("method", "qr"))
+        if method == "uwb":
+            if claim.seeker_range is None or claim.hider_range is None:
+                return ErrorCode.NOT_IN_RANGE
+            if claim.seeker_range > radius or claim.hider_range > radius:
+                return ErrorCode.NOT_IN_RANGE
+        elif claim.seeker_range is not None and claim.hider_range is not None:
             if claim.seeker_range > radius or claim.hider_range > radius:
                 return ErrorCode.NOT_IN_RANGE
         return None

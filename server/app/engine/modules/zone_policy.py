@@ -56,6 +56,8 @@ class ZonePolicyModule(BaseModule):
         hider = s.state.players.get(claim.hider_id)
         if hider is None:
             return ErrorCode.TARGET_NOT_ACTIVE
+        if s.state.lockdown_until_s is not None:
+            return None
         if hider.safe_zone_id is not None and not hider.safe_expired:
             return ErrorCode.TARGET_IN_SAFE_ZONE
         return None
