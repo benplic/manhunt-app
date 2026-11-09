@@ -7,7 +7,8 @@ protocol GameService: AnyObject {
     func signIn(displayName: String) async throws -> AuthOut
     func arenas() async throws -> [Arena]
     func createArena(_ arena: Arena) async throws -> Arena
-    func createGame(arenaID: UUID, presetID: String) async throws -> PlayerViewDTO
+    func createGame(arenaID: UUID, presetID: String, overrides: [String: [String: RuleValue]]) async throws -> PlayerViewDTO
+    func timeline(gameID: UUID) async throws -> [TimelineEventDTO]
     func join(code: String) async throws -> PlayerViewDTO
     func randomizeRoles(gameID: UUID, hiderCount: Int) async throws -> PlayerViewDTO
     func setRole(gameID: UUID, playerID: UUID, role: PlayerRole) async throws -> PlayerViewDTO

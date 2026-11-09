@@ -25,6 +25,9 @@ final class ArenaEditorModel {
         )
     }
 
+    // TODO: Arena drawing currently appends vertices, which can bowtie into an hourglass.
+    // Replace play-area editing with: select an edge, then drop a point that splits that edge.
+    // Keep rejecting self-intersections until that interaction lands.
     func addMapPoint(_ point: GeoPoint) {
         history.append((boundary, zones, safeCenter))
         switch tool {

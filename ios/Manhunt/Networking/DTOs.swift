@@ -178,6 +178,22 @@ struct ResultDTO: Codable {
     }
 }
 
+struct TimelineEventDTO: Codable, Identifiable, Hashable {
+    var seq: Int
+    var type: String
+    var payload: TimelinePayloadDTO
+    var id: Int { seq }
+}
+
+struct TimelinePayloadDTO: Codable, Hashable {
+    var text: String?
+    var tone: String?
+}
+
+struct TimelineOut: Codable {
+    var events: [TimelineEventDTO]
+}
+
 struct ServiceError: Error, Equatable {
     var code: ErrorCode
     var message: String

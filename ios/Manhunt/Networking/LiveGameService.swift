@@ -41,12 +41,21 @@ final class LiveGameService: GameService {
         try await client.post("/v1/arenas", body: arena)
     }
 
-    func createGame(arenaID: UUID, presetID: String) async throws -> PlayerViewDTO {
+    func createGame(
+        arenaID: UUID,
+        presetID: String,
+        overrides: [String: [String: RuleValue]]
+    ) async throws -> PlayerViewDTO {
         let created: GameCreatedDTO = try await client.post(
             "/v1/games",
-            body: CreateGameBody(arenaId: arenaID, presetId: presetID, overrides: [:])
+            body: CreateGameBody(arenaId: arenaID, presetId: presetID, overrides: overrides)
         )
         return try await view(gameID: created.id)
+    }
+
+    func timeline(gameID: UUID) async throws -> [TimelineEventDTO] {
+        let body: TimelineOut = try await client.get("/v1/games/\(gameID.uuidString)/events")
+        return body.events
     }
 
     func join(code: String) async throws -> PlayerViewDTO {

@@ -16,6 +16,8 @@ class RevealFuzzyModule(BaseModule):
     module_id: ClassVar[str] = "reveal_fuzzy"
 
     def on_tick(self, s: GameSession) -> None:
+        if not bool(self.settings.get("enabled", True)):
+            return
         live = [r for r in s.state.reveals if r.expires_at_game_s > s.state.game_elapsed_s]
         s.state.reveals = live
         if s.state.phase not in {"active", "head_start"}:

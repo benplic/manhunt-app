@@ -109,7 +109,7 @@ struct EmptyBody: Codable {}
 struct CreateGameBody: Encodable {
     var arenaId: UUID
     var presetId: String
-    var overrides: [String: [String: String]]
+    var overrides: [String: [String: RuleValue]]
 
     enum CodingKeys: String, CodingKey {
         case arenaId = "arena_id"

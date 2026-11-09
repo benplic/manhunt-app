@@ -58,6 +58,8 @@ final class AppStore {
     var locationAccuracy: LocationReporter.Accuracy = .notDetermined
     var pasteToken = ""
     var tagMessage: String?
+    var timeline: [TimelineEventDTO] = []
+    private var presetReturn: AppScreen = .home
 
     private let service: GameService
     private let fake: FakeGameService?
@@ -250,7 +252,14 @@ final class AppStore {
 
     func goHome() { screen = .home }
     func openCreate() { screen = .createGame }
-    func openPreset() { screen = .preset }
+    func openPreset() {
+        presetReturn = screen == .preset ? presetReturn : screen
+        screen = .preset
+    }
+
+    func closePreset() {
+        screen = presetReturn == .preset ? .home : presetReturn
+    }
 
     func openLobbyAsHost() {
         let id = selectedArenaID() ?? arenas.first?.id
@@ -268,7 +277,8 @@ final class AppStore {
             return
         }
         guard let fake else {
-            Task { await createMatchRemote(arenaID: arenaID, presetID: presetID) }
+            let overrides = PresetOverrides.from(modules: modules)
+            Task { await createMatchRemote(arenaID: arenaID, presetID: presetID, overrides: overrides) }
             return
         }
         do {
@@ -381,6 +391,7 @@ final class AppStore {
         location.stop()
         live?.disconnect()
         screen = .results
+        Task { await loadTimeline() }
     }
 
     func endLive() { endMatch() }
@@ -516,6 +527,7 @@ final class AppStore {
             location.stop()
             live?.disconnect()
             screen = .results
+            Task { await loadTimeline() }
         case .headStart:
             situation = .headStart
             paused = false
@@ -567,9 +579,20 @@ final class AppStore {
         }
     }
 
-    private func createMatchRemote(arenaID: UUID, presetID: String) async {
+    func loadTimeline() async {
+        guard let id = match?.snapshot.gameId else { return }
+        if let events = try? await service.timeline(gameID: id) {
+            timeline = events
+        }
+    }
+
+    private func createMatchRemote(
+        arenaID: UUID,
+        presetID: String,
+        overrides: [String: [String: RuleValue]]
+    ) async {
         do {
-            let view = try await service.createGame(arenaID: arenaID, presetID: presetID)
+            let view = try await service.createGame(arenaID: arenaID, presetID: presetID, overrides: overrides)
             apply(view)
             screen = .lobby
             live?.connect(gameID: view.gameId)

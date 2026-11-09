@@ -76,7 +76,7 @@ struct ArenaEditorView: View {
         if store.tool == .playArea && store.draftBoundary.count < 3 {
             return "Add at least 3 points to close the play area."
         }
-        return "Yellow is the play area. Other zones have to sit inside it."
+        return "Yellow is the play area. A bowtie is rejected. Edge-insert editing comes later."
     }
 
     private func legend(_ color: Color, _ title: String) -> some View {

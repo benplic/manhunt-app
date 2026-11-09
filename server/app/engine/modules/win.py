@@ -23,6 +23,8 @@ class WinModule(BaseModule):
             s.state.time_limit_remaining_s = max(0, s.state.time_limit_remaining_s - 1)
 
     def check_win(self, s: GameSession) -> WinResult | None:
+        if not bool(self.settings.get("enabled", True)):
+            return None
         if s.state.phase in {"lobby", "ended"}:
             return None
         condition = self.settings.get("condition", "either")

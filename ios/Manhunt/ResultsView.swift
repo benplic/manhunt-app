@@ -18,6 +18,23 @@ struct ResultsView: View {
                 Text(result?.reason ?? "The host ended the hunt.")
                     .foregroundStyle(HuntColor.muted)
 
+                if !store.timeline.isEmpty {
+                    Text("WHAT HAPPENED")
+                        .font(.caption.weight(.bold))
+                        .tracking(1.2)
+                        .foregroundStyle(HuntColor.muted)
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(store.timeline) { event in
+                            HStack(alignment: .top, spacing: 8) {
+                                Circle().fill(HuntColor.signal).frame(width: 6, height: 6).padding(.top, 6)
+                                Text(event.payload.text ?? event.type)
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(HuntColor.paper)
+                        }
+                    }
+                }
+
                 VStack(spacing: 8) {
                     ForEach(Array(ranked.enumerated()), id: \.element.id) { index, player in
                         HStack {

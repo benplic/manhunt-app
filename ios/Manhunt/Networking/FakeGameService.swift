@@ -44,8 +44,13 @@ final class FakeGameService: GameService {
         return arena
     }
 
-    func createGame(arenaID: UUID, presetID: String) async throws -> PlayerViewDTO {
-        try createGameSync(arenaID: arenaID, presetID: presetID)
+    func createGame(
+        arenaID: UUID,
+        presetID: String,
+        overrides: [String: [String: RuleValue]]
+    ) async throws -> PlayerViewDTO {
+        _ = overrides
+        return try createGameSync(arenaID: arenaID, presetID: presetID)
     }
 
     func createGameSync(arenaID: UUID, presetID: String) throws -> PlayerViewDTO {
@@ -146,6 +151,14 @@ final class FakeGameService: GameService {
     func view(gameID: UUID) async throws -> PlayerViewDTO {
         guard let game = games[gameID] else { throw ServiceError(code: .gameNotFound, message: "") }
         return game.view()
+    }
+
+    func timeline(gameID: UUID) async throws -> [TimelineEventDTO] {
+        guard games[gameID] != nil else { throw ServiceError(code: .gameNotFound, message: "") }
+        return [
+            TimelineEventDTO(seq: 1, type: "started", payload: TimelinePayloadDTO(text: "The hunt is on.", tone: "info")),
+            TimelineEventDTO(seq: 2, type: "ended", payload: TimelinePayloadDTO(text: "Host ended.", tone: "info")),
+        ]
     }
 
     func claimQR(gameID: UUID, token: String) async throws {

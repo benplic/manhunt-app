@@ -14,6 +14,8 @@ class SignalLossModule(BaseModule):
     module_id: ClassVar[str] = "signal_loss"
 
     def on_tick(self, s: GameSession) -> None:
+        if not bool(self.settings.get("enabled", True)):
+            return
         if s.state.phase in {"lobby", "ended"}:
             return
         silence = int(self.settings.get("silence", 45))

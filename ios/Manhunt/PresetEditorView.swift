@@ -10,7 +10,7 @@ struct PresetEditorView: View {
                 ScreenHeader(
                     title: "Classic",
                     subtitle: "Same form the phone will build from each rule's settings.",
-                    onBack: store.goHome
+                    onBack: store.closePreset
                 )
 
                 ForEach($store.modules) { $module in

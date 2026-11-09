@@ -24,6 +24,8 @@ class ZonePolicyModule(BaseModule):
     module_id: ClassVar[str] = "zone_policy"
 
     def on_tick(self, s: GameSession) -> None:
+        if not bool(self.settings.get("enabled", True)):
+            return
         margin = float(self.settings.get("margin_m", 5))
         countdown = int(self.settings.get("oob_countdown", 15))
         safe_visit = int(self.settings.get("safe_visit", 60))
