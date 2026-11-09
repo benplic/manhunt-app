@@ -146,6 +146,15 @@ struct DevAuthBody: Encodable {
     enum CodingKeys: String, CodingKey { case displayName = "display_name" }
 }
 
+struct AppleAuthBody: Encodable {
+    var identityToken: String
+    var displayName: String?
+    enum CodingKeys: String, CodingKey {
+        case identityToken = "identity_token"
+        case displayName = "display_name"
+    }
+}
+
 struct GameCreatedDTO: Codable {
     var id: UUID
     var joinCode: String

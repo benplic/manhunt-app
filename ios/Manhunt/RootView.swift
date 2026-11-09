@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -26,5 +27,8 @@ struct RootView: View {
         }
         .animation(.snappy(duration: 0.25), value: store.screen)
         .preferredColorScheme(.dark)
+        .onChange(of: scenePhase) { _, phase in
+            store.handleScenePhase(isBackground: phase == .background)
+        }
     }
 }

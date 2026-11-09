@@ -20,6 +20,20 @@ final class GameRulesTests: XCTestCase {
         XCTAssertEqual(generated.count, 6)
     }
 
+    func testLocationFlagSendsLowBatteryOncePerDipAndFinalWins() {
+        let first = LocationFlag.choose(battery: 0.04, isFinal: false, wasLow: false)
+        XCTAssertEqual(first.flag, "low_battery")
+        XCTAssertTrue(first.nowLow)
+        let again = LocationFlag.choose(battery: 0.04, isFinal: false, wasLow: true)
+        XCTAssertEqual(again.flag, "normal")
+        let recovered = LocationFlag.choose(battery: 0.40, isFinal: false, wasLow: true)
+        XCTAssertFalse(recovered.nowLow)
+        let ended = LocationFlag.choose(battery: 0.04, isFinal: true, wasLow: true)
+        XCTAssertEqual(ended.flag, "final")
+        let unknown = LocationFlag.choose(battery: -1, isFinal: false, wasLow: false)
+        XCTAssertEqual(unknown.flag, "normal")
+    }
+
     func testSquareContainsCenterAndBoundaryButNotTheBayOfAConcaveRing() {
         let square = Polygon(vertices: [
             Fixtures.meters(x: 0, y: 0),

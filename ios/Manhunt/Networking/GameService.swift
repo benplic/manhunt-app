@@ -5,6 +5,8 @@ protocol GameService: AnyObject {
     var joinCalls: Int { get }
 
     func signIn(displayName: String) async throws -> AuthOut
+    func signInWithApple(identityToken: String, displayName: String?) async throws -> AuthOut
+    func registerDeviceToken(_ token: String) async throws
     func arenas() async throws -> [Arena]
     func createArena(_ arena: Arena) async throws -> Arena
     func createGame(arenaID: UUID, presetID: String, overrides: [String: [String: RuleValue]]) async throws -> PlayerViewDTO

@@ -1,5 +1,6 @@
 import CoreLocation
 import Foundation
+import UIKit
 
 /// Precise location while a game is open. Never requests Always authorization.
 @MainActor
@@ -16,6 +17,8 @@ final class LocationReporter: NSObject {
     private var stream: Task<Void, Never>?
     private var lastSent: CLLocation?
     private var lastSentAt = Date.distantPast
+    /// Last precise fix, used for a best-effort `final` ping.
+    private(set) var lastFix: CLLocation?
 
     var onUpdate: ((CLLocation) -> Void)?
     var onAccuracy: ((Accuracy) -> Void)?
@@ -43,6 +46,7 @@ final class LocationReporter: NSObject {
 
     func start() {
         requestWhenInUse()
+        UIDevice.current.isBatteryMonitoringEnabled = true
         activity = CLBackgroundActivitySession()
         stream?.cancel()
         stream = Task { [weak self] in
@@ -71,6 +75,7 @@ final class LocationReporter: NSObject {
         let aged = Date().timeIntervalSince(lastSentAt) >= 2.5
         guard moved || aged else { return }
         lastSent = location
+        lastFix = location
         lastSentAt = Date()
         onUpdate?(location)
     }

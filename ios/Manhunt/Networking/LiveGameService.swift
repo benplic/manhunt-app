@@ -33,6 +33,20 @@ final class LiveGameService: GameService {
         return auth
     }
 
+    func signInWithApple(identityToken: String, displayName: String?) async throws -> AuthOut {
+        let auth: AuthOut = try await client.post(
+            "/v1/auth/apple",
+            body: AppleAuthBody(identityToken: identityToken, displayName: displayName)
+        )
+        client.token = auth.accessToken
+        return auth
+    }
+
+    func registerDeviceToken(_ token: String) async throws {
+        struct Body: Encodable { var token: String }
+        let _: EmptyBody = try await client.put("/v1/me/device-token", body: Body(token: token))
+    }
+
     func arenas() async throws -> [Arena] {
         try await client.get("/v1/arenas")
     }
@@ -112,8 +126,14 @@ final class LiveGameService: GameService {
         socket.connect(url: url, token: token)
     }
 
-    func sendLocation(lat: Double, lon: Double, accuracyM: Double, flag: String = "normal") {
-        socket.sendLocation(lat: lat, lon: lon, accuracyM: accuracyM, flag: flag)
+    func sendLocation(
+        lat: Double,
+        lon: Double,
+        accuracyM: Double,
+        flag: String = "normal",
+        battery: Float? = nil
+    ) {
+        socket.sendLocation(lat: lat, lon: lon, accuracyM: accuracyM, flag: flag, battery: battery)
     }
 
     func disconnect() {

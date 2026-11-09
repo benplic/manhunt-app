@@ -28,18 +28,24 @@ final class GameSocket: @unchecked Sendable {
         }
     }
 
-    func sendLocation(lat: Double, lon: Double, accuracyM: Double, flag: String = "normal") {
-        let payload: [String: Any] = [
-            "type": "location",
-            "data": [
-                "lat": lat,
-                "lon": lon,
-                "accuracy_m": accuracyM,
-                "recorded_at": ISO8601DateFormatter().string(from: Date()),
-                "flag": flag,
-            ],
+    func sendLocation(
+        lat: Double,
+        lon: Double,
+        accuracyM: Double,
+        flag: String = "normal",
+        battery: Float? = nil
+    ) {
+        var data: [String: Any] = [
+            "lat": lat,
+            "lon": lon,
+            "accuracy_m": accuracyM,
+            "recorded_at": ISO8601DateFormatter().string(from: Date()),
+            "flag": flag,
         ]
-        sendJSON(payload)
+        if let battery {
+            data["battery"] = battery
+        }
+        sendJSON(["type": "location", "data": data])
     }
 
     func disconnect() {

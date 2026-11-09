@@ -187,10 +187,19 @@ def bind_game_routes(get_session, current_user, service: GameService):
         user=Depends(current_user),
     ) -> dict:
         row, _ = await service.require_member(session, game_id, user)
+        await service.notify_invite(session, user, game_id)
         return {
             "join_code": row.join_code,
             "url": f"https://app.manhunt.ios/join/{row.join_code}",
         }
+
+    @router.get("/games/{game_id}/trail")
+    async def trail(
+        game_id: UUID,
+        session: AsyncSession = Depends(get_session),
+        user=Depends(current_user),
+    ) -> dict:
+        return await service.read_trail(session, user, game_id)
 
     @router.get("/games/{game_id}/events")
     async def timeline(
@@ -201,9 +210,8 @@ def bind_game_routes(get_session, current_user, service: GameService):
         await service.require_member(session, game_id, user)
         from sqlalchemy import select as sel
 
-        from app.db.models import AuditLog, GameEventRow
+        from app.db.models import GameEventRow
 
-        _ = AuditLog
         rows = (
             await session.execute(
                 sel(GameEventRow)

@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 
 struct SignInView: View {
@@ -62,7 +63,20 @@ struct SignInView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("sign-in")
-                Text("Precise location stays on during a game. Manhunt does not ask for Always. Sign in with Apple arrives in Phase 2.")
+                SignInWithAppleButton(.signIn) { request in
+                    request.requestedScopes = [.fullName]
+                } onCompletion: { result in
+                    if case let .success(auth) = result,
+                       let credential = auth.credential as? ASAuthorizationAppleIDCredential,
+                       let token = AppleSignIn.identityToken(from: credential)
+                    {
+                        store.signInWithApple(identityToken: token)
+                    }
+                }
+                .signInWithAppleButtonStyle(.white)
+                .frame(height: 54)
+                .accessibilityIdentifier("sign-in-apple")
+                Text("Precise location stays on during a game. Manhunt does not ask for Always. Display name is for home games; Sign in with Apple is for Azure.")
                     .font(.footnote)
                     .foregroundStyle(HuntColor.muted)
                     .fixedSize(horizontal: false, vertical: true)

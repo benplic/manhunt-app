@@ -11,7 +11,7 @@ from app.errors import ApiError
 from app.realtime.manager import SessionManager, envelope
 
 
-def bind_ws(manager: SessionManager, get_settings):
+def bind_ws(manager: SessionManager, get_settings, persist_location=None):
     router = APIRouter()
 
     @router.websocket("/v1/games/{game_id}/ws")
@@ -92,6 +92,8 @@ def bind_ws(manager: SessionManager, get_settings):
                         flag=str(payload.get("flag", "normal")),
                     )
                     session.record_location(user_id, reading)
+                    if persist_location is not None:
+                        await persist_location(session)
                     await manager.broadcast(game_id)
         except WebSocketDisconnect:
             manager.detach(game_id, user_id)

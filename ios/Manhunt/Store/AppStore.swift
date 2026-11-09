@@ -1,4 +1,6 @@
+import CoreLocation
 import Foundation
+import UIKit
 
 enum AppScreen: String, Equatable {
     case signedOut
@@ -60,6 +62,8 @@ final class AppStore {
     var tagMessage: String?
     var timeline: [TimelineEventDTO] = []
     private var presetReturn: AppScreen = .home
+    private var sentLowBattery = false
+    private var lastSentLocation: CLLocation?
 
     private let service: GameService
     private let fake: FakeGameService?
@@ -88,11 +92,7 @@ final class AppStore {
             arenas = fake.storedArenas
         }
         location.onUpdate = { [weak self] loc in
-            self?.live?.sendLocation(
-                lat: loc.coordinate.latitude,
-                lon: loc.coordinate.longitude,
-                accuracyM: loc.horizontalAccuracy
-            )
+            self?.sendFix(from: loc, isFinal: false)
         }
         location.onAccuracy = { [weak self] accuracy in
             self?.locationAccuracy = accuracy
@@ -235,7 +235,50 @@ final class AppStore {
             screen = .home
             return
         }
+        note = WakeCopy.message
         Task { await signInRemote() }
+    }
+
+    func signInWithApple(identityToken: String) {
+        lastError = nil
+        defaults.set(serverURL, forKey: Self.serverURLKey)
+        if let fake {
+            Task {
+                _ = try? await fake.signInWithApple(identityToken: identityToken, displayName: displayName)
+            }
+            session = Session(displayName: displayName, token: "fake")
+            screen = .home
+            return
+        }
+        note = WakeCopy.message
+        Task { await signInRemoteApple(identityToken: identityToken) }
+    }
+
+    /// Best-effort last ping when the hunt is backgrounded or the host ends it.
+    func handleScenePhase(isBackground: Bool) {
+        if isBackground, screen == .live {
+            sendFinalPing()
+        }
+    }
+
+    func sendFix(from location: CLLocation, isFinal: Bool, battery: Float? = nil) {
+        lastSentLocation = location
+        let level = battery ?? UIDevice.current.batteryLevel
+        let choice = LocationFlag.choose(battery: level, isFinal: isFinal, wasLow: sentLowBattery)
+        sentLowBattery = choice.nowLow
+        live?.sendLocation(
+            lat: location.coordinate.latitude,
+            lon: location.coordinate.longitude,
+            accuracyM: location.horizontalAccuracy,
+            flag: choice.flag,
+            battery: level >= 0 ? level : nil
+        )
+        fake?.recordLocationFlag(choice.flag)
+    }
+
+    func sendFinalPing() {
+        guard let fix = lastSentLocation ?? location.lastFix else { return }
+        sendFix(from: fix, isFinal: true)
     }
 
     func signOut() {
@@ -388,6 +431,7 @@ final class AppStore {
                 if let view = try? await service.end(gameID: id) { apply(view) }
             }
         }
+        sendFinalPing()
         location.stop()
         live?.disconnect()
         screen = .results
@@ -568,15 +612,36 @@ final class AppStore {
         live?.updateBaseURL(URL(string: serverURL) ?? URL(string: "http://localhost:8000")!)
         do {
             let auth = try await service.signIn(displayName: displayName)
-            try? keychain.saveToken(auth.accessToken)
-            session = Session(displayName: auth.user.displayName, token: auth.accessToken)
-            displayName = auth.user.displayName
-            if let loaded = try? await service.arenas() { arenas = loaded }
-            screen = .home
+            await finishRemoteAuth(auth)
         } catch {
             lastError = .unreachable
             note = "Is the home server running? Could not reach \(serverURL)."
         }
+    }
+
+    private func signInRemoteApple(identityToken: String) async {
+        live?.updateBaseURL(URL(string: serverURL) ?? URL(string: "http://localhost:8000")!)
+        do {
+            let auth = try await service.signInWithApple(
+                identityToken: identityToken,
+                displayName: displayName
+            )
+            await finishRemoteAuth(auth)
+        } catch {
+            lastError = .unreachable
+            note = "Is the home server running? Could not reach \(serverURL)."
+        }
+    }
+
+    private func finishRemoteAuth(_ auth: AuthOut) async {
+        try? keychain.saveToken(auth.accessToken)
+        session = Session(displayName: auth.user.displayName, token: auth.accessToken)
+        displayName = auth.user.displayName
+        note = nil
+        if let loaded = try? await service.arenas() { arenas = loaded }
+        screen = .home
+        // TODO: register the APNs device token with PUT /v1/me/device-token
+        // once the paid team adds the Push Notifications entitlement.
     }
 
     func loadTimeline() async {

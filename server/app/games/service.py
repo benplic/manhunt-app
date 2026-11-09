@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import random
 from datetime import UTC, datetime
 from typing import Any
@@ -8,10 +9,19 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ArenaRow, GameEventRow, GamePlayerRow, GameRow, User
+from app.db.models import (
+    ArenaRow,
+    AuditLog,
+    DeviceToken,
+    GameEventRow,
+    GamePlayerRow,
+    GameRow,
+    User,
+)
 from app.engine.arena import arena_from_dict, arena_to_dict, validate_arena
 from app.engine.modules.base import TagClaim
 from app.engine.qr import parse_qr_token
+from app.engine.recovery import rebuild_session
 from app.engine.session import GameSession
 from app.engine.views import build_view
 from app.errors import ApiError, ErrorCode, GameRuleError
@@ -19,6 +29,8 @@ from app.games.join_code import generate, is_valid, normalize
 from app.games.join_limit import JoinRateLimiter
 from app.presets.classic import CLASSIC_ID, classic_preset
 from app.realtime.manager import SessionManager
+
+log = logging.getLogger("manhunt.games")
 
 
 def _http_for_rule(exc: GameRuleError) -> ApiError:
@@ -80,6 +92,8 @@ class GameService:
             row.id, row.arena_snapshot, row.preset_snapshot, seed, join_code
         )
         game.add_player(host.id, host.display_name, is_host=True)
+        await self.persist_inputs(session, game)
+        await session.commit()
         return row
 
     async def join(self, session: AsyncSession, user: User, code: str) -> GameRow:
@@ -110,6 +124,8 @@ class GameService:
             await session.commit()
             game = self._live(row)
             game.add_player(user.id, user.display_name, is_host=False)
+            await self.persist_inputs(session, game)
+            await session.commit()
             # The host is already on the socket. Push the new roster instead of
             # waiting for the next tick, which tests leave disabled.
             await self.manager.broadcast(row.id)
@@ -117,6 +133,18 @@ class GameService:
 
     def _live(self, row: GameRow) -> GameSession:
         game = self.manager.get(row.id)
+        if game is None and row.inputs:
+            # Safety net if lifespan restore missed a row.
+            game = rebuild_session(
+                game_id=row.id,
+                arena=arena_from_dict(row.arena_snapshot),
+                preset=row.preset_snapshot,
+                seed=row.seed,
+                join_code=row.join_code,
+                inputs=list(row.inputs),
+                qr_key=self.manager.qr_key,
+            )
+            self.manager.sessions[row.id] = game
         if game is None:
             game = self.manager.register(
                 row.id, row.arena_snapshot, row.preset_snapshot, row.seed, row.join_code
@@ -163,6 +191,7 @@ class GameService:
             member = await session.get(GamePlayerRow, (game_id, player.player_id))
             if member:
                 member.role = player.role
+        await self.persist_inputs(session, game)
         await session.commit()
         await self.manager.broadcast(game_id)
         return game
@@ -176,6 +205,21 @@ class GameService:
             raise _http_for_rule(exc) from exc
         row.status = game.state.phase
         row.started_at = datetime.now(UTC)
+        await self._persist_events(session, game)
+        from app.notify import notifier
+
+        for player in game.state.players.values():
+            if player.player_id != user.id:
+                token_row = await session.get(DeviceToken, player.player_id)
+                notifier.notify(
+                    player.player_id,
+                    "Game starting",
+                    "The hunt is starting. Open Manhunt.",
+                    {
+                        "game_id": str(game_id),
+                        "device_token": token_row.token if token_row else None,
+                    },
+                )
         await session.commit()
         return game
 
@@ -187,6 +231,7 @@ class GameService:
         except GameRuleError as exc:
             raise _http_for_rule(exc) from exc
         row.status = game.state.phase
+        await self.persist_inputs(session, game)
         await session.commit()
         return game
 
@@ -198,6 +243,7 @@ class GameService:
         except GameRuleError as exc:
             raise _http_for_rule(exc) from exc
         row.status = game.state.phase
+        await self.persist_inputs(session, game)
         await session.commit()
         return game
 
@@ -269,6 +315,7 @@ class GameService:
             game.ack_safety(user.id)
         except GameRuleError as exc:
             raise _http_for_rule(exc) from exc
+        await self.persist_inputs(session, game)
         await session.commit()
         return game
 
@@ -297,7 +344,12 @@ class GameService:
                     "reason": game.state.result.reason,
                 }
 
+    async def persist_game(self, session: AsyncSession, game: GameSession) -> None:
+        await self._persist_events(session, game)
+
     async def _persist_events(self, session: AsyncSession, game: GameSession) -> None:
+        from sqlalchemy import func, select
+
         from app.config import get_settings
         from app.crypto import encrypt_payload, load_trail_key
 
@@ -306,7 +358,15 @@ class GameService:
             key = load_trail_key(settings.manhunt_trail_key)
         except Exception:
             key = None
-        for event in game.drain_events():
+        last = await session.scalar(
+            select(func.max(GameEventRow.seq)).where(GameEventRow.game_id == game.state.game_id)
+        )
+        last = int(last or 0)
+        # Persist from the full log so a WebSocket broadcast that drained
+        # _pending cannot drop sensitive location events.
+        for event in game.state.event_log:
+            if event.seq <= last:
+                continue
             payload: dict = {"text": event.text, "tone": event.tone}
             if event.sensitive:
                 if key is None:
@@ -321,7 +381,57 @@ class GameService:
                     sensitive=event.sensitive,
                 )
             )
+        game.drain_events()
         await self.persist_inputs(session, game)
+
+    async def read_trail(self, session: AsyncSession, user: User, game_id: UUID) -> dict:
+        await self.require_host(session, game_id, user)
+        from app.config import get_settings
+        from app.crypto import decrypt_payload, load_trail_key
+
+        settings = get_settings()
+        key = load_trail_key(settings.manhunt_trail_key)
+        rows = (
+            await session.execute(
+                select(GameEventRow)
+                .where(GameEventRow.game_id == game_id, GameEventRow.sensitive.is_(True))
+                .order_by(GameEventRow.seq)
+            )
+        ).scalars()
+        events = []
+        for row in rows:
+            try:
+                payload = decrypt_payload(key, row.payload)
+            except Exception:
+                # TODO: handle trail key rotation; skip rows this process cannot open.
+                continue
+            events.append({"seq": row.seq, "type": row.type, "payload": payload})
+        session.add(AuditLog(actor_id=user.id, action="trail_read", detail=str(game_id)))
+        await session.commit()
+        log.info("trail_read game_id=%s actor_id=%s count=%s", game_id, user.id, len(events))
+        return {"events": events}
+
+    async def notify_invite(self, session: AsyncSession, user: User, game_id: UUID) -> None:
+        row, _ = await self.require_member(session, game_id, user)
+        members = (
+            await session.execute(select(GamePlayerRow).where(GamePlayerRow.game_id == game_id))
+        ).scalars()
+        from app.notify import notifier
+
+        for member in members:
+            if member.user_id == user.id:
+                continue
+            token_row = await session.get(DeviceToken, member.user_id)
+            notifier.notify(
+                member.user_id,
+                "Manhunt invite",
+                f"Join with code {row.join_code}.",
+                {
+                    "game_id": str(game_id),
+                    "join_code": row.join_code,
+                    "device_token": token_row.token if token_row else None,
+                },
+            )
 
     async def view(self, session: AsyncSession, user: User, game_id: UUID) -> dict:
         row, _ = await self.require_member(session, game_id, user)

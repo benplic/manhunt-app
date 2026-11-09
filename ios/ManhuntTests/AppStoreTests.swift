@@ -1,3 +1,4 @@
+import CoreLocation
 import XCTest
 @testable import Manhunt
 
@@ -85,5 +86,43 @@ final class AppStoreTests: XCTestCase {
         store.randomizeRoles(hiderCount: 1)
         XCTAssertNil(store.startMatch())
         XCTAssertEqual(store.screen, .live)
+    }
+
+    @MainActor
+    func testSignInShowsWakingCopyOnTheLiveClient() {
+        let store = AppStore(
+            service: LiveGameService(baseURL: URL(string: "http://127.0.0.1:1")!),
+            serverURL: "http://127.0.0.1:1"
+        )
+        store.displayName = "Casey"
+        store.signIn()
+        XCTAssertEqual(store.note, WakeCopy.message)
+    }
+
+    @MainActor
+    func testLowBatteryThenEndSendsFinalFlag() {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.randomizeRoles(hiderCount: 1)
+        _ = store.startMatch()
+        let loc = CLLocation(latitude: 40.66, longitude: -73.97)
+        store.sendFix(from: loc, isFinal: false, battery: 0.04)
+        XCTAssertEqual(fake.lastLocationFlag, "low_battery")
+        store.sendFix(from: loc, isFinal: false, battery: 0.04)
+        XCTAssertEqual(fake.lastLocationFlag, "normal")
+        store.endMatch()
+        XCTAssertEqual(fake.lastLocationFlag, "final")
+    }
+
+    @MainActor
+    func testSignInWithAppleHitsTheFake() async throws {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInWithApple(identityToken: "identity-token")
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(fake.appleSignIns, 1)
+        XCTAssertEqual(store.screen, .home)
     }
 }
