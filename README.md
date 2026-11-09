@@ -4,13 +4,11 @@ iOS game for playing real-world Manhunt with friends. The host sets hiders and s
 
 Design: [docs/superpowers/specs/2026-11-08-manhunt-app-design.md](docs/superpowers/specs/2026-11-08-manhunt-app-design.md)
 
-## Layout (planned)
+## Layout
 
-- `ios/` — SwiftUI app
-- `server/` — FastAPI game server
-- `infra/` — Azure Bicep
-
-Nothing in those directories is implemented yet.
+- `ios/` — SwiftUI visual of the screens in the design (sample park, sample players). Open `ios/Manhunt.xcodeproj` and run the Manhunt scheme. The rules engine is not in the app yet. `ios/ManhuntTests` is the contract for that later work and does not build until those types exist.
+- `server/` — FastAPI game server (not started)
+- `infra/` — Azure Bicep (not started)
 
 ## License
 

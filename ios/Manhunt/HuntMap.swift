@@ -1,0 +1,137 @@
+import MapKit
+import SwiftUI
+
+/// Shared map chrome for the live game and the arena editor.
+struct HuntMap: View {
+    var boundary: [VisualPoint]
+    var zones: [VisualZone]
+    var people: [VisualPlayer]
+    var showHiders: Bool
+    var showSeekers: Bool
+    var fuzzyHiders: Bool
+    var region: MKCoordinateRegion
+    var onDrop: ((VisualPoint) -> Void)?
+
+    @State private var position: MapCameraPosition = .automatic
+    @State private var crosshair = VisualPoint(latitude: 40.6616, longitude: -73.9688)
+
+    var body: some View {
+        Map(position: $position) {
+                if boundary.count >= 3 {
+                    MapPolygon(coordinates: boundary.map(\.coordinate))
+                        .foregroundStyle(HuntColor.signal.opacity(0.18))
+                        .stroke(HuntColor.signal, lineWidth: 2)
+                }
+                ForEach(zones) { zone in
+                    zoneContent(zone)
+                }
+                ForEach(people) { person in
+                    if shouldShow(person) {
+                        Annotation(person.name, coordinate: displayPoint(for: person).coordinate, anchor: .center) {
+                            PlayerPin(person: person, fuzzy: fuzzyHiders && person.role == .hider && !person.isYou)
+                        }
+                    }
+                }
+            }
+            .mapStyle(.hybrid(elevation: .flat, pointsOfInterest: .excludingAll))
+            .onMapCameraChange(frequency: .continuous) { context in
+                let center = context.region.center
+                crosshair = VisualPoint(latitude: center.latitude, longitude: center.longitude)
+            }
+            .overlay(alignment: .center) {
+                if onDrop != nil {
+                    Image(systemName: "plus")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(HuntColor.paper)
+                        .shadow(color: .black.opacity(0.8), radius: 4)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if let onDrop {
+                    Button {
+                        onDrop(crosshair)
+                    } label: {
+                        Text("Drop point")
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(HuntColor.paper, in: Capsule())
+                            .foregroundStyle(HuntColor.ink)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 12)
+                }
+            }
+        .onAppear {
+            position = .region(region)
+            crosshair = VisualPoint(latitude: region.center.latitude, longitude: region.center.longitude)
+        }
+    }
+
+    private func shouldShow(_ person: VisualPlayer) -> Bool {
+        if person.role == .hider { return showHiders || person.isYou }
+        if person.role == .seeker { return showSeekers || person.isYou }
+        return person.isYou
+    }
+
+    /// Fuzzy pins are offset so the picture reads as "approximate", not exact.
+    private func displayPoint(for person: VisualPlayer) -> VisualPoint {
+        guard fuzzyHiders, person.role == .hider, !person.isYou else { return person.point }
+        return VisualPoint(
+            latitude: person.point.latitude + 0.00035,
+            longitude: person.point.longitude - 0.00028
+        )
+    }
+
+    @MapContentBuilder
+    private func zoneContent(_ zone: VisualZone) -> some MapContent {
+        let tint = tint(for: zone.kind)
+        if zone.kind == .safe, let center = zone.points.first, let radius = zone.radiusMeters {
+            MapCircle(center: center.coordinate, radius: radius)
+                .foregroundStyle(tint.opacity(0.28))
+                .stroke(tint, lineWidth: 2)
+        } else if zone.points.count >= 3 {
+            MapPolygon(coordinates: zone.points.map(\.coordinate))
+                .foregroundStyle(tint.opacity(0.28))
+                .stroke(tint, lineWidth: 2)
+        }
+    }
+
+    private func tint(for kind: VisualZone.Kind) -> Color {
+        switch kind {
+        case .safe: HuntColor.safe
+        case .outOfBounds: HuntColor.warning
+        case .spawn: HuntColor.seeker
+        }
+    }
+}
+
+struct PlayerPin: View {
+    var person: VisualPlayer
+    var fuzzy: Bool
+
+    var body: some View {
+        VStack(spacing: 2) {
+            ZStack {
+                Circle()
+                    .fill(person.role.tint)
+                    .frame(width: fuzzy ? 36 : 18, height: fuzzy ? 36 : 18)
+                    .opacity(fuzzy ? 0.35 : 1)
+                if !fuzzy {
+                    Circle()
+                        .stroke(HuntColor.paper, lineWidth: 2)
+                        .frame(width: 18, height: 18)
+                }
+            }
+            if !fuzzy {
+                Text(person.isYou ? "You" : person.name.split(separator: " ").first.map(String.init) ?? person.name)
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.black.opacity(0.72), in: Capsule())
+                    .foregroundStyle(HuntColor.paper)
+            }
+        }
+    }
+}
