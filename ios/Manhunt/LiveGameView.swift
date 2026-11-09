@@ -1,9 +1,10 @@
 import SwiftUI
 
 struct LiveGameView: View {
-    @Environment(VisualStore.self) private var store
+    @Environment(AppStore.self) private var store
     @State private var showCode = false
     @State private var showHost = false
+    @State private var showScanner = false
 
     var body: some View {
         @Bindable var store = store
@@ -11,11 +12,11 @@ struct LiveGameView: View {
         return ZStack(alignment: .top) {
             HuntMap(
                 boundary: store.arena.boundary,
-                zones: store.arena.zones,
-                people: store.players,
-                showHiders: youAreHider ? false : store.situation != .headStart,
+                zones: store.liveZones,
+                people: store.livePeople,
+                showHiders: true,
                 showSeekers: youAreHider ? store.radarOn : true,
-                fuzzyHiders: store.situation != .signalLost,
+                fuzzyHiders: false,
                 region: store.arena.region,
                 onDrop: nil
             )
@@ -29,22 +30,32 @@ struct LiveGameView: View {
                         .tracking(1.4)
                     Text("Seekers wait here.")
                         .font(HuntFont.title(28))
-                    Text("Hiders still have 0:42.")
-                        .foregroundStyle(HuntColor.muted)
+                    if let remaining = store.match?.snapshot.phaseRemainingS {
+                        Text("Hiders still have \(clock(remaining)).")
+                            .foregroundStyle(HuntColor.muted)
+                    }
                 }
                 .foregroundStyle(HuntColor.paper)
             }
 
             VStack(spacing: 10) {
                 topBar
+                if store.locationAccuracy == .denied || store.locationAccuracy == .reduced {
+                    locationBlock
+                }
+                ForEach(store.match?.snapshot.banners ?? []) { banner in
+                    self.banner(title: banner.title, detail: banner.detail, tint: tone(banner.tone))
+                }
                 if store.situation == .reconnecting {
                     banner(title: "Reconnecting", detail: "The last event will catch up when the socket returns.", tint: HuntColor.paper)
                 }
                 if store.situation == .outOfBounds {
-                    banner(title: "Out of bounds · 0:12", detail: "Get back inside the yellow line before the penalty.", tint: HuntColor.warning)
-                }
-                if store.situation == .signalLost {
-                    banner(title: "Sam went dark", detail: "Last precise fix is on the map for everyone. Safety overrides the hunt.", tint: HuntColor.danger)
+                    let remaining = store.match?.snapshot.you.bounds.remainingS
+                    banner(
+                        title: remaining.map { "Out of bounds · \(clock($0))" } ?? "Out of bounds",
+                        detail: "Get back inside the yellow line before the penalty.",
+                        tint: HuntColor.warning
+                    )
                 }
                 if store.paused {
                     banner(title: "Paused", detail: "The host stopped the clock.", tint: HuntColor.paper)
@@ -65,16 +76,38 @@ struct LiveGameView: View {
             .padding(.bottom, 12)
         }
         .sheet(isPresented: $showCode) {
-            TagCodeSheet()
+            TagCodeSheet(token: store.match?.qrToken ?? "manhunt-preview")
                 .presentationDetents([.medium])
         }
-        .confirmationDialog("Host", isPresented: $showHost, titleVisibility: .visible) {
-            Button(store.paused ? "Resume" : "Pause") { store.paused.toggle() }
-            Button("Remove Sam from the preview") {
-                store.players.removeAll { $0.id == "sam" }
+        .sheet(isPresented: $showScanner) {
+            VStack {
+                QRScannerView { token in
+                    store.submitQR(token)
+                    showScanner = false
+                }
+                .ignoresSafeArea()
+                #if DEBUG
+                TextField("Paste token", text: $store.pasteToken)
+                    .textInputAutocapitalization(.never)
+                    .padding(12)
+                Button("Submit token") {
+                    store.submitQR(store.pasteToken)
+                    showScanner = false
+                }
+                .padding(.bottom, 12)
+                #endif
             }
+            .background(HuntColor.ink)
+        }
+        .confirmationDialog("Host", isPresented: $showHost, titleVisibility: .visible) {
+            Button(store.paused ? "Resume" : "Pause", action: store.pauseOrResume)
             Button("End game", role: .destructive, action: store.endLive)
             Button("Cancel", role: .cancel) {}
+        }
+        .onChange(of: store.situation) { _, situation in
+            if situation == .outOfBounds {
+                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            }
         }
     }
 
@@ -95,22 +128,6 @@ struct LiveGameView: View {
                     .foregroundStyle(HuntColor.muted)
             }
             Spacer()
-            Menu {
-                Picker("See the game as", selection: Bindable(store).viewingRole) {
-                    Text("Seeker").tag(VisualRole.seeker)
-                    Text("Hider").tag(VisualRole.hider)
-                }
-                Picker("Situation", selection: Bindable(store).situation) {
-                    ForEach(LiveSituation.allCases) { situation in
-                        Text(situation.rawValue).tag(situation)
-                    }
-                }
-            } label: {
-                Image(systemName: "eye")
-                    .frame(width: 40, height: 40)
-                    .background(.black.opacity(0.55), in: Circle())
-            }
-            .accessibilityLabel("Preview role and situation")
             if store.isHost {
                 Button {
                     showHost = true
@@ -126,6 +143,14 @@ struct LiveGameView: View {
         .foregroundStyle(HuntColor.paper)
     }
 
+    private var locationBlock: some View {
+        banner(
+            title: store.locationAccuracy == .denied ? "Location is off" : "Precise location is off",
+            detail: "Open Settings and allow precise location while you play. Manhunt never asks for Always.",
+            tint: HuntColor.danger
+        )
+    }
+
     private func dock(youAreHider: Bool) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -133,26 +158,17 @@ struct LiveGameView: View {
                     Text("\(store.shownPoints) pts")
                         .font(.title2.weight(.semibold))
                         .monospacedDigit()
-                    Text(youAreHider ? "Warmth is hidden from you." : "Riley is warm · about 60 m")
+                    Text(hintLine(youAreHider: youAreHider))
                         .font(.footnote)
                         .foregroundStyle(HuntColor.muted)
                 }
                 Spacer()
-                if !youAreHider {
-                    Image(systemName: "location.north.fill")
-                        .font(.title2)
-                        .rotationEffect(.degrees(28))
-                        .foregroundStyle(HuntColor.signal)
-                }
             }
             if !youAreHider && store.situation != .headStart {
-                HStack {
-                    proximity("Riley", "18 m")
-                    proximity("Quinn", "46 m")
-                    proximity("Sam", "90 m")
-                }
-                Button(action: {}) {
-                    Text("Tag")
+                Button {
+                    showScanner = true
+                } label: {
+                    Text("Scan tag")
                         .font(.title3.weight(.bold))
                         .frame(maxWidth: .infinity)
                         .frame(minHeight: 52)
@@ -161,7 +177,12 @@ struct LiveGameView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("tag")
-                Text("Tag sends a claim. Both phones have to agree you are inside 2 m, and a safe zone or shield blocks it.")
+                if let tagMessage = store.tagMessage {
+                    Text(tagMessage)
+                        .font(.caption)
+                        .foregroundStyle(HuntColor.warning)
+                }
+                Text("Scan the hider's rotating code. Both phones have to be within pairing range.")
                     .font(.caption2)
                     .foregroundStyle(HuntColor.muted)
             }
@@ -183,7 +204,7 @@ struct LiveGameView: View {
                     ForEach(SamplePark.powerUps.filter { $0.role == store.viewingRole }) { chip in
                         let armed = store.armedPowerUps.contains(chip.id)
                         Button {
-                            store.togglePower(chip)
+                            store.buyPower(chip)
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(chip.title)
@@ -206,16 +227,6 @@ struct LiveGameView: View {
         .colorScheme(.dark)
     }
 
-    private func proximity(_ name: String, _ distance: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(name).font(.caption.weight(.semibold))
-            Text(distance).font(.caption2).foregroundStyle(HuntColor.muted)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(HuntColor.ink.opacity(0.85), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-    }
-
     private func banner(title: String, detail: String, tint: Color) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Circle().fill(tint).frame(width: 8, height: 8).padding(.top, 6)
@@ -229,54 +240,45 @@ struct LiveGameView: View {
         .background(HuntColor.ink.opacity(0.88), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .foregroundStyle(HuntColor.paper)
     }
+
+    private func tone(_ raw: String) -> Color {
+        switch raw {
+        case "warning": return HuntColor.warning
+        case "safety", "danger": return HuntColor.danger
+        case "success": return HuntColor.signal
+        default: return HuntColor.paper
+        }
+    }
+
+    private func clock(_ seconds: Int) -> String {
+        String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
+    private func hintLine(youAreHider: Bool) -> String {
+        if youAreHider { return "Warmth is hidden from you." }
+        if let hint = store.match?.snapshot.you.hint, let band = hint.band {
+            let name = hint.name ?? "A hider"
+            let meters = hint.meters.map { "\($0) m" } ?? ""
+            return "\(name) is \(band) \(meters)".trimmingCharacters(in: .whitespaces)
+        }
+        return "No hint yet."
+    }
 }
 
 private struct TagCodeSheet: View {
+    var token: String
+
     var body: some View {
         VStack(spacing: 16) {
             Text("Tag code")
                 .font(HuntFont.title(28))
-            SampleCodeMark()
+            QRCodeView(token: token)
                 .frame(width: 220, height: 220)
-            Text("This mark stands in for a code the server signs and rotates every 30 seconds. A seeker scans it when Ultra Wideband is not available.")
+            Text("This code rotates about every 30 seconds. A seeker scans it when Ultra Wideband is not available.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
         .padding(24)
-    }
-}
-
-private struct SampleCodeMark: View {
-    var body: some View {
-        Canvas { context, size in
-            let cells = 21
-            let cell = size.width / CGFloat(cells)
-            for row in 0..<cells {
-                for column in 0..<cells {
-                    let on = isFinder(row: row, column: column) || ((row * 7 + column * 3) % 5 == 0)
-                    if on {
-                        let rect = CGRect(x: CGFloat(column) * cell, y: CGFloat(row) * cell, width: cell - 0.4, height: cell - 0.4)
-                        context.fill(Path(rect), with: .color(.black))
-                    }
-                }
-            }
-        }
-        .padding(10)
-        .background(.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-
-    private func isFinder(row: Int, column: Int) -> Bool {
-        let corners = [(1, 1), (1, 13), (13, 1)]
-        for (originRow, originColumn) in corners {
-            let dr = row - originRow
-            let dc = column - originColumn
-            if (0...6).contains(dr), (0...6).contains(dc) {
-                let edge = dr == 0 || dr == 6 || dc == 0 || dc == 6
-                let core = (2...4).contains(dr) && (2...4).contains(dc)
-                if edge || core { return true }
-            }
-        }
-        return false
     }
 }

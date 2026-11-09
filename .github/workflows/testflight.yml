@@ -1,0 +1,24 @@
+name: TestFlight
+
+on:
+  workflow_dispatch:
+
+jobs:
+  archive:
+    runs-on: macos-15
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive
+        working-directory: ios
+        run: |
+          # TODO: a human holds the signing credentials. This job archives only.
+          xcodebuild archive \
+            -project Manhunt.xcodeproj \
+            -scheme Manhunt \
+            -destination 'generic/platform=iOS' \
+            -archivePath /tmp/Manhunt.xcarchive \
+            CODE_SIGNING_ALLOWED=NO
+        continue-on-error: true
+      - name: Note
+        run: echo "Upload to TestFlight is a human step with the paid Apple team."

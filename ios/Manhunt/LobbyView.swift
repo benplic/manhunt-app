@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct LobbyView: View {
-    @Environment(VisualStore.self) private var store
+    @Environment(AppStore.self) private var store
 
     var body: some View {
         @Bindable var store = store
@@ -19,7 +19,7 @@ struct LobbyView: View {
                 HStack {
                     Label("\(store.players.count) players", systemImage: "person.2")
                     Spacer()
-                    Text(store.isHost ? "You are hosting" : "Jordan is hosting")
+                    Text(store.isHost ? "You are hosting" : "\(store.hostName) is hosting")
                 }
                 .font(.subheadline)
                 .foregroundStyle(HuntColor.muted)

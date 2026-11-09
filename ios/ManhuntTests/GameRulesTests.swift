@@ -202,6 +202,22 @@ final class GameRulesTests: XCTestCase {
         XCTAssertEqual(PowerUpRules.decide(request), .allowed)
     }
 
+    func testPresetOverridesUseServerModuleIdsAndClampHeadStart() {
+        var modules = SamplePark.classicModules()
+        if let index = modules.firstIndex(where: { $0.id == "head_start" }) {
+            modules[index].enabled = false
+            if let row = modules[index].rows.firstIndex(where: { $0.id == "duration" }) {
+                modules[index].rows[row].number = 5
+            }
+        }
+        let overrides = PresetOverrides.from(modules: modules)
+        XCTAssertEqual(overrides["head_start"]?["enabled"], .bool(false))
+        XCTAssertEqual(overrides["head_start"]?["duration"], .int(15))
+        XCTAssertEqual(overrides["reveal_fuzzy"]?["display"], .int(10))
+        XCTAssertEqual(overrides["win"]?["condition"], .string("either"))
+        XCTAssertNil(overrides["reveal"])
+    }
+
     func testArenaEditorCommitsACircleOnTheSecondTapAndUndoRemovesIt() {
         let editor = ArenaEditorModel()
         editor.tool = .safeCircle

@@ -1,16 +1,16 @@
 import SwiftUI
 
 struct RootView: View {
-    @Environment(VisualStore.self) private var store
+    @Environment(AppStore.self) private var store
 
     var body: some View {
         Group {
             switch store.screen {
-            case .signIn:
+            case .signedOut:
                 SignInView()
             case .home:
                 HomeView()
-            case .create:
+            case .createGame:
                 CreateGameView()
             case .lobby:
                 LobbyView()
@@ -18,7 +18,7 @@ struct RootView: View {
                 LiveGameView()
             case .results:
                 ResultsView()
-            case .arena:
+            case .arenaEditor:
                 ArenaEditorView()
             case .preset:
                 PresetEditorView()

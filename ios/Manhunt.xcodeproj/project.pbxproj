@@ -224,6 +224,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MANHUNT_API_BASE_URL = "http://localhost:8000";
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.manhunt.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -250,6 +251,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				MANHUNT_API_BASE_URL = "http://localhost:8000";
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = app.manhunt.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";

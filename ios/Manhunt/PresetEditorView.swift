@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PresetEditorView: View {
-    @Environment(VisualStore.self) private var store
+    @Environment(AppStore.self) private var store
 
     var body: some View {
         @Bindable var store = store
@@ -10,7 +10,7 @@ struct PresetEditorView: View {
                 ScreenHeader(
                     title: "Classic",
                     subtitle: "Same form the phone will build from each rule's settings.",
-                    onBack: store.goHome
+                    onBack: store.closePreset
                 )
 
                 ForEach($store.modules) { $module in

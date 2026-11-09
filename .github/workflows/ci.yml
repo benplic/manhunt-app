@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: manhunt
+          POSTGRES_PASSWORD: manhunt
+          POSTGRES_DB: manhunt
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U manhunt -d manhunt"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      MANHUNT_ENV: test
+      MANHUNT_DEV_AUTH: "true"
+      MANHUNT_DATABASE_URL: postgresql+psycopg://manhunt:manhunt@localhost:5432/manhunt
+      MANHUNT_SESSION_SIGNING_KEY: ci-session-signing-key-change-me
+      MANHUNT_QR_SIGNING_KEY: ci-qr-signing-key-change-me
+      MANHUNT_TICK_LOOP: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install and test
+        run: |
+          python -m pip install -e ".[dev]"
+          ruff check .
+          pytest -q
+
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test iOS
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          # macos-15's default Xcode is 16.4, which preinstalls the iOS 18.5
+          # simulator rather than 18.4. Naming that missing OS makes xcodebuild
+          # exit 70 before any test runs, and the destination text format is not
+          # stable across Xcode versions. Pick an available iPhone 16 Pro by id
+          # from simctl. Prefer the 18.5 runtime, then any other iOS 18, then
+          # whatever iPhone 16 Pro is installed.
+          UDID="$(
+            python3 - << 'PY'
+          import json
+          import subprocess
+          import sys
+
+          proc = subprocess.run(
+              ["xcrun", "simctl", "list", "devices", "available", "-j"],
+              check=False,
+              capture_output=True,
+              text=True,
+          )
+          if proc.returncode != 0:
+              detail = (proc.stderr or proc.stdout or "simctl failed").replace("\n", " ")
+              print(f"::error::simctl exited {proc.returncode}: {detail[:500]}", file=sys.stderr)
+              sys.exit(proc.returncode or 1)
+          try:
+              data = json.loads(proc.stdout)
+          except json.JSONDecodeError:
+              print(f"::error::simctl did not return JSON: {proc.stdout[:500]}", file=sys.stderr)
+              sys.exit(1)
+
+          def version_of(runtime: str) -> tuple[int, ...]:
+              tail = runtime.split("iOS-")[-1] if "iOS-" in runtime else runtime
+              tail = tail.replace("iOS", "").replace("-", ".").strip()
+              parts: list[int] = []
+              for piece in tail.split("."):
+                  if piece.isdigit():
+                      parts.append(int(piece))
+                  elif parts:
+                      break
+              return tuple(parts)
+
+          candidates: list[tuple[tuple[int, ...], str, str]] = []
+          for runtime, devices in data.get("devices", {}).items():
+              if "iOS" not in runtime:
+                  continue
+              version = version_of(runtime)
+              for device in devices:
+                  # Exact name so "iPhone 16 Pro Max" is not selected.
+                  if device.get("name") == "iPhone 16 Pro" and device.get("isAvailable", True):
+                      candidates.append((version, device["udid"], runtime))
+
+          if not candidates:
+              runtimes = ", ".join(sorted(data.get("devices", {})))
+              print(f"::error::No available iPhone 16 Pro simulator. Runtimes: {runtimes[:700]}", file=sys.stderr)
+              sys.exit(1)
+
+          def rank(item: tuple[tuple[int, ...], str, str]) -> tuple:
+              version = item[0]
+              if version[:2] == (18, 5):
+                  tier = 0
+              elif version and version[0] == 18:
+                  tier = 1
+              else:
+                  tier = 2
+              return (tier, tuple(-part for part in version))
+
+          version, udid, runtime = sorted(candidates, key=rank)[0]
+          print(f"selected runtime {runtime} version {version}", file=sys.stderr)
+          print(udid)
+          PY
+          )"
+          echo "Testing on iPhone 16 Pro simulator ${UDID}"
+          xcodebuild test \
+            -project Manhunt.xcodeproj \
+            -scheme Manhunt \
+            -destination "platform=iOS Simulator,id=${UDID}"
