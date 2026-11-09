@@ -18,6 +18,12 @@ def make_session_factory(engine) -> async_sessionmaker[AsyncSession]:
 
 
 async def create_schema(engine) -> None:
+    """Create tables for an empty local database.
+
+    Versioned deploys use ``alembic upgrade head``. ``create_all`` stays so
+    tests and a first-boot SQLite file match the models, including the partial
+    unique index on live join codes.
+    """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

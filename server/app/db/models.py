@@ -3,12 +3,27 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.dialects.sqlite import JSON as SQLITE_JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON, Uuid
 
 from app.db.base import Base
+
+# A live game owns its join code. Ended and abandoned games release it so the
+# short alphabet can be reused. Both dialects need their own WHERE clause;
+# SQLAlchemy emits only the one for the engine that is creating the table.
+_LIVE_JOIN_CODE = text("status NOT IN ('ended', 'abandoned')")
 
 
 class User(Base):
@@ -38,9 +53,19 @@ class ArenaRow(Base):
 
 class GameRow(Base):
     __tablename__ = "games"
+    __table_args__ = (
+        Index(
+            "uq_games_live_join_code",
+            "join_code",
+            unique=True,
+            sqlite_where=_LIVE_JOIN_CODE,
+            postgresql_where=_LIVE_JOIN_CODE,
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
-    join_code: Mapped[str] = mapped_column(String(6), index=True)
+    # Lookup index is the partial unique index above, not a plain index.
+    join_code: Mapped[str] = mapped_column(String(6))
     host_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("users.id"))
     status: Mapped[str] = mapped_column(String(32), default="lobby")
     arena_snapshot: Mapped[dict] = mapped_column(JSON().with_variant(SQLITE_JSON, "sqlite"))
