@@ -23,6 +23,7 @@ services:
       MANHUNT_DATABASE_URL: postgresql+psycopg://manhunt:manhunt@db:5432/manhunt
       MANHUNT_SESSION_SIGNING_KEY: ${MANHUNT_SESSION_SIGNING_KEY:-dev-session-signing-key-change-me}
       MANHUNT_QR_SIGNING_KEY: ${MANHUNT_QR_SIGNING_KEY:-dev-qr-signing-key-change-me}
+      MANHUNT_TRAIL_KEY: ${MANHUNT_TRAIL_KEY:-abababababababababababababababababababababababababababababababab}
       MANHUNT_TICK_LOOP: "true"
     ports:
       - "8000:8000"

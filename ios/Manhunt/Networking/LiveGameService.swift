@@ -57,6 +57,10 @@ final class LiveGameService: GameService {
         try await client.post("/v1/arenas", body: arena)
     }
 
+    func updateArena(_ arena: Arena) async throws -> Arena {
+        try await client.put("/v1/arenas/\(arena.id.uuidString)", body: arena)
+    }
+
     func createGame(
         arenaID: UUID,
         presetID: String,

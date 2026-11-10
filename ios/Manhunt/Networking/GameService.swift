@@ -9,6 +9,7 @@ protocol GameService: AnyObject {
     func registerDeviceToken(_ token: String) async throws
     func arenas() async throws -> [Arena]
     func createArena(_ arena: Arena) async throws -> Arena
+    func updateArena(_ arena: Arena) async throws -> Arena
     func createGame(arenaID: UUID, presetID: String, overrides: [String: [String: RuleValue]]) async throws -> PlayerViewDTO
     func timeline(gameID: UUID) async throws -> [TimelineEventDTO]
     func join(code: String) async throws -> PlayerViewDTO

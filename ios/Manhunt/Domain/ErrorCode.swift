@@ -30,5 +30,4 @@ enum ErrorCode: String, Codable, Equatable {
     case targetOutside = "TARGET_OUTSIDE"
     case rateLimited = "RATE_LIMITED"
     case `internal` = "INTERNAL"
-    case missingArena = "MISSING_ARENA"
 }

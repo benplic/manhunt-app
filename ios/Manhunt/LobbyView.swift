@@ -70,6 +70,13 @@ struct LobbyView: View {
                     }
                 }
 
+                if let note = store.note {
+                    Text(note)
+                        .font(.footnote)
+                        .foregroundStyle(HuntColor.warning)
+                        .accessibilityIdentifier("lobby-note")
+                }
+
                 if store.isHost {
                     Stepper(value: $store.hiderCount, in: 1...max(1, store.players.count - 1)) {
                         Text("Hiders \(store.hiderCount)")

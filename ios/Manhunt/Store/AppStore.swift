@@ -485,7 +485,8 @@ final class AppStore {
 
     func cycleRole(_ id: String) {
         guard isHost, let uuid = UUID(uuidString: id), var snapshot = match?.snapshot,
-              let index = snapshot.players.firstIndex(where: { $0.playerId == uuid })
+              let index = snapshot.players.firstIndex(where: { $0.playerId == uuid }),
+              let gameID = match?.snapshot.gameId
         else { return }
         let next: PlayerRole
         switch snapshot.players[index].role {
@@ -493,12 +494,25 @@ final class AppStore {
         case .seeker: next = .unassigned
         case .unassigned: next = .hider
         }
+        // Optimistic pill update; the service call is what the server starts from.
         snapshot.players[index].role = next
         match?.snapshot = snapshot
-        if let fake, let gameID = match?.snapshot.gameId,
-           let view = try? fake.setRoleSync(gameID: gameID, playerID: uuid, role: next)
-        {
-            apply(view)
+        lastError = nil
+        note = nil
+        if let fake {
+            if let view = try? fake.setRoleSync(gameID: gameID, playerID: uuid, role: next) {
+                apply(view)
+            }
+            return
+        }
+        Task {
+            do {
+                let view = try await service.setRole(gameID: gameID, playerID: uuid, role: next)
+                apply(view)
+            } catch {
+                note = "Could not update that role. Try again."
+                lastError = .service(.internal)
+            }
         }
     }
 
@@ -516,14 +530,18 @@ final class AppStore {
             return nil
         } catch let error as ServiceError where error.code == .needBothRoles {
             lastError = .needBothRoles
+            note = Self.needBothRolesCopy
             return .needBothRoles
         } catch {
             lastError = .service(.internal)
+            note = "Could not start the hunt."
             return .service(.internal)
         }
     }
 
     func startLive() { _ = startMatch() }
+
+    static let needBothRolesCopy = "Assign at least one hider and one seeker before starting."
 
     func endMatch() {
         if let fake, let id = match?.snapshot.gameId, let view = try? fake.endSync(gameID: id) {
@@ -615,20 +633,37 @@ final class AppStore {
 
     func saveArena() {
         let trimmed = editor.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        var arena = Arena(
-            id: UUID(),
-            name: trimmed.isEmpty ? "New arena" : trimmed,
-            boundary: editor.boundary,
-            zones: editor.zones
-        )
+        let name = trimmed.isEmpty ? "New arena" : trimmed
         if !editor.issues.isEmpty {
             note = editorIssues.joined(separator: " ")
             return
         }
+        // Editing an existing arena must PUT the same id. Creating always POSTs a new one.
+        let existingID = UUID(uuidString: arenaID)
+        let isUpdate = arenaID != "new"
+            && existingID != nil
+            && arenas.contains(where: { $0.id == existingID })
+        let arena = Arena(
+            id: isUpdate ? existingID! : UUID(),
+            name: name,
+            boundary: editor.boundary,
+            zones: editor.zones
+        )
         Task {
             do {
-                arena = try await service.createArena(arena)
-                arenas.append(arena)
+                let saved: Arena
+                if isUpdate {
+                    saved = try await service.updateArena(arena)
+                    if let index = arenas.firstIndex(where: { $0.id == saved.id }) {
+                        arenas[index] = saved
+                    } else {
+                        arenas.append(saved)
+                    }
+                } else {
+                    saved = try await service.createArena(arena)
+                    arenas.append(saved)
+                }
+                arenaID = saved.id.uuidString
                 note = "Arena saved."
                 screen = .home
             } catch {
@@ -886,7 +921,11 @@ final class AppStore {
 
     private func enterLive() {
         screen = .live
-        location.start()
+        // FakeGameService UI tests must not touch CoreLocation; a started
+        // CLBackgroundActivitySession crashes the simulator host on teardown.
+        if live != nil {
+            location.start()
+        }
         if let id = match?.snapshot.gameId {
             live?.connect(gameID: id)
         }
@@ -974,8 +1013,10 @@ final class AppStore {
             enterLive()
         } catch let error as ServiceError where error.code == .needBothRoles {
             lastError = .needBothRoles
+            note = Self.needBothRolesCopy
         } catch {
             lastError = .service(.internal)
+            note = "Could not start the hunt."
         }
     }
 

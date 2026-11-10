@@ -13,7 +13,7 @@ The Mac stays awake for the length of a game. Phones on cellular reach it throug
 ### 1. Start the server
 
 ```bash
-cp server/.env.example server/.env   # then replace the signing keys
+cp server/.env.example .env   # then replace the signing and trail keys
 docker compose up
 # optional: docker compose --profile tunnel up
 ```

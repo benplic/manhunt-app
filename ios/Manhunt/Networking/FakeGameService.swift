@@ -62,6 +62,14 @@ final class FakeGameService: GameService {
         return arena
     }
 
+    func updateArena(_ arena: Arena) async throws -> Arena {
+        guard let index = storedArenas.firstIndex(where: { $0.id == arena.id }) else {
+            throw ServiceError(code: .arenaNotFound, message: "Arena not found.")
+        }
+        storedArenas[index] = arena
+        return arena
+    }
+
     func createGame(
         arenaID: UUID,
         presetID: String,

@@ -90,13 +90,64 @@ final class AppStoreTests: XCTestCase {
 
     @MainActor
     func testSignInShowsWakingCopyOnTheLiveClient() {
+        // Isolate defaults so a failed wake retry cannot poison .standard for later tests.
+        let suite = "manhunt.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
         let store = AppStore(
             service: LiveGameService(baseURL: URL(string: "http://127.0.0.1:1")!),
-            serverURL: "http://127.0.0.1:1"
+            serverURL: "http://127.0.0.1:1",
+            defaults: defaults
         )
         store.displayName = "Casey"
         store.signIn()
         XCTAssertEqual(store.note, WakeCopy.message)
+    }
+
+    @MainActor
+    func testCycleRolePersistsOnTheFakeBeforeStart() {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        let ids = store.players.map(\.id)
+        XCTAssertEqual(ids.count, 2)
+        // Both start unassigned. Cycle first to hider, second to seeker.
+        store.cycleRole(ids[0])
+        store.cycleRole(ids[1])
+        store.cycleRole(ids[1])
+        XCTAssertNil(store.startMatch())
+        XCTAssertEqual(store.screen, .live)
+    }
+
+    @MainActor
+    func testStartBeforeBothRolesSurfacesALobbyNote() {
+        let store = AppStore.makePreview()
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        XCTAssertEqual(store.startMatch(), .needBothRoles)
+        XCTAssertEqual(store.note, AppStore.needBothRolesCopy)
+        XCTAssertEqual(store.screen, .lobby)
+    }
+
+    @MainActor
+    func testEditingArenaUpdatesInsteadOfDuplicating() async throws {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        let original = Arena.sampleSquare()
+        store.editArena(original.id.uuidString)
+        store.editor.name = "Updated Square"
+        store.saveArena()
+        // saveArena hops through an async Task; wait for the home screen.
+        let deadline = Date().addingTimeInterval(1)
+        while store.screen != .home, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(store.screen, .home)
+        XCTAssertEqual(store.arenas.filter { $0.id == original.id }.count, 1)
+        XCTAssertEqual(store.arenas.first { $0.id == original.id }?.name, "Updated Square")
+        XCTAssertEqual(fake.storedArenas.filter { $0.id == original.id }.count, 1)
     }
 
     @MainActor

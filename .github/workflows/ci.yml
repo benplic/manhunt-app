@@ -123,4 +123,6 @@ jobs:
           xcodebuild test \
             -project Manhunt.xcodeproj \
             -scheme Manhunt \
-            -destination "platform=iOS Simulator,id=${UDID}"
+            -destination "platform=iOS Simulator,id=${UDID}" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
