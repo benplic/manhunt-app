@@ -587,8 +587,9 @@ final class AppStore {
             note = "Pan the map, then drop a decoy inside the play area."
             return
         }
-        guard powerChipDecision(for: chip) == .allowed else {
-            note = denialNote(for: powerChipDecision(for: chip))
+        let decision = powerChipDecision(for: chip)
+        guard decision == .allowed else {
+            note = denialNote(for: decision)
             return
         }
         submitPurchase(chip, extra: [:])
@@ -601,37 +602,30 @@ final class AppStore {
 
     func dropDecoy(at point: VisualPoint) {
         guard let chip = SamplePark.powerUps.first(where: { $0.id == "decoy" }) else { return }
-        let geo = GeoPoint(latitude: point.latitude, longitude: point.longitude)
-        let polygon = playAreaPolygon()
-        let inside = ArenaGeometry.contains(geo, in: polygon)
-        if !inside {
-            note = "Decoy has to sit inside the play area."
+        // Server owns the session arena boundary. Local geometry can diverge
+        // from the live arena, so do not gate the POST on a client contains check.
+        let decision = powerChipDecision(for: chip, hasTarget: true, targetInsidePlayArea: true)
+        guard decision == .allowed else {
+            note = denialNote(for: decision)
             return
         }
-        guard powerChipDecision(for: chip, hasTarget: true, targetInsidePlayArea: true) == .allowed else {
-            note = denialNote(for: powerChipDecision(for: chip, hasTarget: true))
-            return
-        }
-        decoyPicking = false
-        submitPurchase(chip, extra: ["lat": point.latitude, "lon": point.longitude])
+        submitPurchase(chip, extra: ["lat": point.latitude, "lon": point.longitude], clearingDecoyPick: true)
     }
 
-    private func playAreaPolygon() -> Polygon {
-        Polygon(
-            vertices: arena.boundary.map {
-                GeoPoint(latitude: $0.latitude, longitude: $0.longitude)
-            }
-        )
-    }
-
-    private func submitPurchase(_ chip: PowerChip, extra: [String: Double]) {
+    private func submitPurchase(
+        _ chip: PowerChip,
+        extra: [String: Double],
+        clearingDecoyPick: Bool = false
+    ) {
         guard let id = match?.snapshot.gameId else { return }
         Task {
             do {
                 let view = try await service.purchase(gameID: id, powerID: chip.id, extra: extra)
                 apply(view)
+                if clearingDecoyPick { decoyPicking = false }
                 note = "\(chip.title) armed. \(chip.detail)."
             } catch let error as ServiceError {
+                // Stay in pick mode on TARGET_OUTSIDE so the player can drop again.
                 note = Self.purchaseCopy(for: error.code)
             } catch {
                 note = "Could not buy \(chip.title)."

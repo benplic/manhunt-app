@@ -125,4 +125,30 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(fake.appleSignIns, 1)
         XCTAssertEqual(store.screen, .home)
     }
+
+    @MainActor
+    func testOutsideDecoyKeepsPickingAndSurfacesTheNote() async {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.randomizeRoles(hiderCount: 1)
+        _ = store.startMatch()
+        // Force the viewer into the hider seat with enough points for decoy.
+        guard var snapshot = store.match?.snapshot else {
+            return XCTFail("Expected a live match")
+        }
+        snapshot.you.role = .hider
+        snapshot.you.points = 200
+        snapshot.phase = .active
+        store.match?.snapshot = snapshot
+
+        store.buyPower(SamplePark.powerUps.first { $0.id == "decoy" }!)
+        XCTAssertTrue(store.decoyPicking)
+
+        store.dropDecoy(at: VisualPoint(latitude: 1.0, longitude: 1.0))
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertTrue(store.decoyPicking)
+        XCTAssertEqual(store.note, "Decoy has to sit inside the play area.")
+    }
 }

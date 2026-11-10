@@ -190,8 +190,16 @@ final class FakeGameService: GameService {
 
     func purchase(gameID: UUID, powerID: String, extra: [String: Double]) async throws -> PlayerViewDTO {
         guard let game = games[gameID] else { throw ServiceError(code: .gameNotFound, message: "") }
-        _ = extra
-        _ = powerID
+        // Mirror the server play-area gate so decoy UI tests can assert TARGET_OUTSIDE.
+        if powerID == "decoy" {
+            guard let lat = extra["lat"], let lon = extra["lon"] else {
+                throw ServiceError(code: .needsTarget, message: "Decoy needs a point.")
+            }
+            let point = GeoPoint(latitude: lat, longitude: lon)
+            if !ArenaGeometry.contains(point, in: Arena.sampleSquare().boundary) {
+                throw ServiceError(code: .targetOutside, message: "Outside play area.")
+            }
+        }
         return game.view()
     }
 

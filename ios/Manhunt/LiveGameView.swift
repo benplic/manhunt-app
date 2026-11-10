@@ -24,7 +24,9 @@ struct LiveGameView: View {
                 zones: zones,
                 people: store.livePeople,
                 showHiders: true,
-                showSeekers: youAreHider ? store.radarShowsSeekers : true,
+                // Trust the filtered view: hiders only get seeker locations for radar
+                // or OOB reveals. Do not re-filter with a local radar toggle.
+                showSeekers: true,
                 fuzzyHiders: false,
                 region: store.arena.region,
                 onDrop: store.decoyPicking ? { store.dropDecoy(at: $0) } : nil,
@@ -71,8 +73,9 @@ struct LiveGameView: View {
                     banner(title: "Paused", detail: "The host stopped the clock.", tint: HuntColor.paper)
                 }
                 if store.decoyPicking {
+                    // Hide the dock while picking so HuntMap's Drop point stays tappable.
                     HStack(spacing: 10) {
-                        Text("Drop a decoy inside the yellow line.")
+                        Text(store.note ?? "Drop a decoy inside the yellow line.")
                             .font(.footnote.weight(.semibold))
                         Spacer()
                         Button("Cancel") { store.cancelDecoyPick() }
@@ -91,7 +94,9 @@ struct LiveGameView: View {
                         .foregroundStyle(HuntColor.paper)
                 }
                 Spacer()
-                dock(youAreHider: youAreHider)
+                if !store.decoyPicking {
+                    dock(youAreHider: youAreHider)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
