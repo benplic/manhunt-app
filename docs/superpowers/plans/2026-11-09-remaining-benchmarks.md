@@ -26,9 +26,7 @@ Each item is open until the acceptance line is true. Human items stay open until
 
 ### Phase 3
 
-- **3.1 Nearby Interaction relay.** Not started. Acceptance: the server relays discovery tokens only when GPS distance is at most 30 m, and only with each player’s closest opponents. Record the concurrent-session limit for the iOS version under test in a code comment.
-- **3.3 Hint dock.** Hot/cold is a distance band on the server and one line of copy on the phone. Acceptance: the dock shows band and bearing at the module’s update rate, and a jammer clears it.
-- **3.4 Spawn lock on the phone.** The server banners a seeker who leaves the spawn zone. Acceptance: the live map shows that lock while `seeker_lock` is `spawn_zone`.
+- **3.1 Device ranging (human).** The relay and the phone ranger are in. Still open until two iPhone 11 or newer, in the same place, confirm a tag and measure `NIError.Code.activeSessionsLimitExceeded`. The code cap stays 5 until that measurement (`UWB_MAX_PEERS`, `NearbyUWBRanger.maxPeers`).
 
 ### Phase 4
 
@@ -63,3 +61,6 @@ Each item is open until the acceptance line is true. Human items stay open until
 - **2.3 Trail retention.** `4c913e5`, `test_purge_deletes_sensitive_events_older_than_retention`, `test_host_trail_read_writes_audit_without_logging_coordinates`. Acceptance: a scheduled purge deletes sensitive events older than 7 days (host-adjustable via `MANHUNT_TRAIL_RETENTION_DAYS`), and every read of a decrypted trail writes an audit-log row. Coordinates still never appear in logs.
 - **2.4 Crash recovery.** `4c913e5`, `test_restart_rebuilds_mid_game_phase_roles_points_and_locations`. Acceptance: kill the process mid-game, start it again, and the rebuilt session matches the pre-crash phase, roles, points, and last precise locations.
 - **2.5 Phone-side safety pings.** `4c913e5`, `testLocationFlagSendsLowBatteryOncePerDipAndFinalWins`, `testLowBatteryThenEndSendsFinalFlag`. Acceptance: the app sends `low_battery` at about 5% and a best-effort final ping when the game is backgrounded or ended.
+- **3.1 Nearby Interaction relay.** `539de80`, `test_ten_meters_opposite_roles_exchange_tokens`, `test_forty_meters_apart_yields_no_peers`, `test_cap_keeps_the_closest_opponents`, `test_relay_tag_ignores_a_forged_range_and_drops_a_non_peer`. Acceptance: the server relays discovery tokens only when GPS distance is at most 30 m, and only with each player’s closest opponents. Record the concurrent-session limit for the iOS version under test in a code comment. The comment records Apple’s unpublished cap and the temporary limit of 5. A two-phone measurement stays open above.
+- **3.3 Hint dock.** `539de80`, `test_hint_bearing_due_north_is_zero`, `test_hint_holds_until_the_interval_elapses`, `test_jammer_clears_the_hint_on_the_next_tick`, `testHintLineShowsBandMetersAndBearing`, `testClearedHintSaysNoneYet`. Acceptance: the dock shows band and bearing at the module’s update rate, and a jammer clears it.
+- **3.4 Spawn lock on the phone.** `539de80`, `test_spawn_zone_lock_banners_a_seeker_who_leaves`, `test_seeker_inside_the_spawn_zone_is_not_locked_out`, `test_locked_map_has_no_spawn_lock`, `testHeadStartChrome`. Acceptance: the live map shows that lock while `seeker_lock` is `spawn_zone`.
