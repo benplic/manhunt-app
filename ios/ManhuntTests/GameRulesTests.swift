@@ -291,7 +291,8 @@ final class GameRulesTests: XCTestCase {
     }
 
     func testPresetOverridesUseServerModuleIdsAndClampHeadStart() {
-        var modules = SamplePark.classicModules()
+        var modules = ModuleForm.offlineModules()
+        XCTAssertFalse(modules.isEmpty, "The offline schema should build the preset form.")
         if let index = modules.firstIndex(where: { $0.id == "head_start" }) {
             modules[index].enabled = false
             if let row = modules[index].rows.firstIndex(where: { $0.id == "duration" }) {
@@ -304,6 +305,128 @@ final class GameRulesTests: XCTestCase {
         XCTAssertEqual(overrides["reveal_fuzzy"]?["display"], .int(10))
         XCTAssertEqual(overrides["win"]?["condition"], .string("either"))
         XCTAssertNil(overrides["reveal"])
+    }
+
+    func testSchemaFormRoundTripsASavedPreset() {
+        var modules = ModuleForm.offlineModules()
+        let duration = modules.first { $0.id == "head_start" }?.rows.first { $0.id == "duration" }
+        guard case let .stepper(min, max, _, _, _) = duration?.control else {
+            return XCTFail("Duration should be a stepper from the schema")
+        }
+        XCTAssertEqual(min, 15)
+        XCTAssertEqual(max, 600)
+        let index = modules.firstIndex { $0.id == "head_start" }!
+        let row = modules[index].rows.firstIndex { $0.id == "duration" }!
+        modules[index].rows[row].number = 45
+        let payload = PresetOverrides.from(modules: modules)
+        let restored = ModuleForm.apply(payload, to: ModuleForm.offlineModules())
+        let again = restored.first { $0.id == "head_start" }?.rows.first { $0.id == "duration" }
+        XCTAssertEqual(again?.number, 45)
+    }
+
+    @MainActor
+    func testSavedPresetRoundTripsThroughTheService() async {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.modules = ModuleForm.offlineModules()
+        store.presetName = "Park night"
+        let index = store.modules.firstIndex { $0.id == "head_start" }!
+        let row = store.modules[index].rows.firstIndex { $0.id == "duration" }!
+        store.modules[index].rows[row].number = 45
+        await store.savePreset()
+        XCTAssertEqual(store.savedPresets.first?.name, "Park night")
+        store.modules = ModuleForm.offlineModules()
+        guard let saved = store.savedPresets.first else {
+            return XCTFail("Expected a saved preset")
+        }
+        store.applySavedPreset(saved)
+        let duration = store.modules.first { $0.id == "head_start" }?.rows.first { $0.id == "duration" }
+        XCTAssertEqual(duration?.number, 45)
+    }
+
+    @MainActor
+    func testReopeningPresetEditorKeepsInMemoryEdits() async {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.modules = ModuleForm.offlineModules()
+        let index = store.modules.firstIndex { $0.id == "head_start" }!
+        let row = store.modules[index].rows.firstIndex { $0.id == "duration" }!
+        store.modules[index].rows[row].number = 45
+        store.modules[index].enabled = false
+        await store.refreshPresetEditor()
+        let headStart = store.modules.first { $0.id == "head_start" }
+        XCTAssertEqual(headStart?.enabled, false)
+        XCTAssertEqual(headStart?.rows.first { $0.id == "duration" }?.number, 45)
+    }
+
+    func testPlayAreaDropSplitsTheSelectedEdge() {
+        let editor = ArenaEditorModel()
+        editor.tool = .playArea
+        editor.addMapPoint(Fixtures.meters(x: 0, y: 0))
+        editor.addMapPoint(Fixtures.meters(x: 100, y: 0))
+        editor.addMapPoint(Fixtures.meters(x: 100, y: 100))
+        XCTAssertEqual(editor.boundary.vertices.count, 3)
+        // A fourth drop must not append. Appending is what draws an hourglass.
+        editor.addMapPoint(Fixtures.meters(x: 50, y: -10))
+        XCTAssertEqual(editor.boundary.vertices.count, 3)
+        XCTAssertNotNil(editor.selectedEdge)
+        editor.selectEdge(0)
+        editor.addMapPoint(Fixtures.meters(x: 50, y: 0))
+        XCTAssertEqual(editor.boundary.vertices.count, 4)
+        XCTAssertEqual(editor.boundary.vertices[1].longitude, Fixtures.meters(x: 50, y: 0).longitude, accuracy: 1e-9)
+        XCTAssertEqual(editor.boundary.vertices[2].longitude, Fixtures.meters(x: 100, y: 0).longitude, accuracy: 1e-9)
+        XCTAssertNil(editor.issues.first { if case .selfIntersection = $0 { return true }; return false })
+    }
+
+    func testDragRenameAndDeleteVertex() {
+        let editor = ArenaEditorModel()
+        editor.tool = .playArea
+        editor.addMapPoint(Fixtures.meters(x: 0, y: 0))
+        editor.addMapPoint(Fixtures.meters(x: 40, y: 0))
+        editor.addMapPoint(Fixtures.meters(x: 20, y: 30))
+        editor.rename("Riverside")
+        XCTAssertEqual(editor.name, "Riverside")
+        let moved = Fixtures.meters(x: 5, y: 5)
+        editor.dragVertex(at: 0, to: moved)
+        XCTAssertEqual(editor.boundary.vertices[0].latitude, moved.latitude, accuracy: 1e-9)
+        editor.deleteVertex(at: 2)
+        XCTAssertEqual(editor.boundary.vertices.count, 2)
+        editor.undo()
+        XCTAssertEqual(editor.boundary.vertices.count, 3)
+
+        editor.tool = .outOfBounds
+        editor.addMapPoint(Fixtures.meters(x: 10, y: 10))
+        let zoneID = editor.zones[0].id
+        editor.renameZone(id: zoneID, to: "Creek")
+        XCTAssertEqual(editor.zones[0].name, "Creek")
+        editor.deleteZone(id: zoneID)
+        XCTAssertTrue(editor.zones.isEmpty)
+    }
+
+    func testTimelineSortsThePlaytestEventsBySeq() {
+        let events = [
+            TimelineEventDTO(seq: 9, type: "signal_lost", payload: TimelinePayloadDTO(text: "Hider went dark.", tone: "safety")),
+            TimelineEventDTO(seq: 2, type: "reveal", payload: TimelinePayloadDTO(text: "Hider pins are up.", tone: "info")),
+            TimelineEventDTO(seq: 7, type: "tag", payload: TimelinePayloadDTO(text: "Seeker tagged Hider.", tone: "success")),
+            TimelineEventDTO(seq: 4, type: "out_of_bounds", payload: TimelinePayloadDTO(text: "Hider was tagged out of bounds.", tone: "warning")),
+        ]
+        let ordered = TimelineOrder.sorted(events)
+        XCTAssertEqual(ordered.map(\.type), ["reveal", "out_of_bounds", "tag", "signal_lost"])
+        XCTAssertEqual(ordered.map(\.seq), [2, 4, 7, 9])
+    }
+
+    @MainActor
+    func testUniversalLinkAndInviteQRBothJoin() {
+        let store = AppStore.makePreview()
+        let url = InviteLink.url(joinCode: "park42")
+        XCTAssertEqual(url.absoluteString, "https://app.manhunt.ios/join/PARK42")
+        XCTAssertNil(store.open(url: url))
+        XCTAssertEqual(store.screen, .lobby)
+        XCTAssertEqual(store.joinCode, "PARK42")
+        store.goHome()
+        store.openInvite(url.absoluteString)
+        XCTAssertEqual(store.screen, .lobby)
+        XCTAssertEqual(store.joinCode, "PARK42")
     }
 
     func testArenaEditorCommitsACircleOnTheSecondTapAndUndoRemovesIt() {

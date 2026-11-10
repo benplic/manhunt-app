@@ -6,11 +6,17 @@ struct ArenaEditorView: View {
 
     var body: some View {
         @Bindable var store = store
+        @Bindable var editor = store.editor
         return VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
-                ScreenHeader(title: store.arenaID == "new" ? "New arena" : store.arena.name, subtitle: "Center the crosshair, then drop a point.", onBack: {
+                ScreenHeader(title: editor.name, subtitle: "Center the crosshair, then drop a point.", onBack: {
                     store.goHome()
                 })
+                TextField("Arena name", text: $editor.name)
+                    .textInputAutocapitalization(.words)
+                    .foregroundStyle(HuntColor.paper)
+                    .padding(12)
+                    .background(HuntColor.inkRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 Picker("Tool", selection: $store.tool) {
                     ForEach(ArenaTool.allCases) { tool in
                         Text(tool.rawValue).tag(tool)
@@ -44,6 +50,7 @@ struct ArenaEditorView: View {
                         .font(.footnote)
                         .foregroundStyle(HuntColor.warning)
                 }
+                vertexTools
                 HStack {
                     legend(HuntColor.signal, "Play")
                     legend(HuntColor.safe, "Safe")
@@ -76,7 +83,58 @@ struct ArenaEditorView: View {
         if store.tool == .playArea && store.draftBoundary.count < 3 {
             return "Add at least 3 points to close the play area."
         }
-        return "Yellow is the play area. A bowtie is rejected. Edge-insert editing comes later."
+        if store.tool == .playArea && store.editor.vertexToMove != nil {
+            return "Drop a point to move the selected vertex."
+        }
+        if store.tool == .playArea && store.editor.selectedEdge != nil {
+            return "Drop a point to split the selected edge."
+        }
+        if store.tool == .playArea {
+            return "Select an edge, then drop a point on it. A new point splits that edge."
+        }
+        return "Yellow is the play area. A bowtie is still rejected on save."
+    }
+
+    @ViewBuilder
+    private var vertexTools: some View {
+        if store.tool == .playArea && store.editor.boundary.vertices.count >= 3 {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(store.editor.boundary.vertices.indices, id: \.self) { index in
+                        Button("Edge \(index + 1)") { store.selectPlayEdge(index) }
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(store.editor.selectedEdge == index ? HuntColor.ink : HuntColor.signal)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                store.editor.selectedEdge == index ? HuntColor.signal : HuntColor.inkRaised,
+                                in: Capsule()
+                            )
+                        Button("Move \(index + 1)") { store.selectPlayVertex(index) }
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(HuntColor.paper)
+                        Button("Delete \(index + 1)") { store.deletePlayVertex(index) }
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(HuntColor.warning)
+                    }
+                }
+            }
+        }
+        ForEach(store.editor.zones) { zone in
+            HStack {
+                TextField(
+                    "Zone name",
+                    text: Binding(
+                        get: { zone.name },
+                        set: { store.renameZone(id: zone.id, to: $0) }
+                    )
+                )
+                .foregroundStyle(HuntColor.paper)
+                Button("Delete zone") { store.deleteZone(id: zone.id) }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(HuntColor.warning)
+            }
+        }
     }
 
     private func legend(_ color: Color, _ title: String) -> some View {

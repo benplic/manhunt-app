@@ -10,7 +10,8 @@ router = APIRouter(prefix="/v1", tags=["schemas"])
 
 @router.get("/modules")
 async def list_modules() -> dict:
-    return {"modules": SCHEMAS}
+    # `order` is the form order. Dict key order is not part of the contract.
+    return {"modules": SCHEMAS, "order": list(SCHEMAS)}
 
 
 def bind_preset_save(get_session, current_user):

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeView: View {
     @Environment(AppStore.self) private var store
+    @State private var scanningInvite = false
 
     var body: some View {
         @Bindable var store = store
@@ -50,6 +51,10 @@ struct HomeView: View {
                         }
                         HuntButton(title: "Join", tint: HuntColor.paper, action: store.join)
                             .accessibilityIdentifier("join-game")
+                        HuntButton(title: "Scan invite QR", systemImage: "qrcode.viewfinder", tint: HuntColor.paper) {
+                            scanningInvite = true
+                        }
+                        .accessibilityIdentifier("scan-invite")
                         Text("Try PARK42 to open the sample lobby.")
                             .font(.footnote)
                             .foregroundStyle(HuntColor.muted)
@@ -114,6 +119,13 @@ struct HomeView: View {
             .padding(20)
         }
         .background(HuntColor.ink)
+        .sheet(isPresented: $scanningInvite) {
+            QRScannerView { payload in
+                scanningInvite = false
+                store.openInvite(payload)
+            }
+            .ignoresSafeArea()
+        }
     }
 
     private func sectionTitle(_ title: String) -> some View {

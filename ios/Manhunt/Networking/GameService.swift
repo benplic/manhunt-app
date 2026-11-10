@@ -22,4 +22,18 @@ protocol GameService: AnyObject {
     func claimQR(gameID: UUID, token: String) async throws
     func claimUWB(gameID: UUID, hiderID: UUID) async throws
     func purchase(gameID: UUID, powerID: String, extra: [String: Double]) async throws -> PlayerViewDTO
+    func fetchModules() async throws -> [VisualModule]
+    func savePreset(name: String, modules: [String: [String: RuleValue]]) async throws -> SavedPresetDTO
+    func savedPresets() async throws -> [SavedPresetDTO]
+}
+
+struct SavedPresetDTO: Codable, Equatable, Identifiable {
+    var id: String
+    var name: String
+    var modules: [String: [String: RuleValue]]
+}
+
+struct SavePresetBody: Encodable {
+    var name: String
+    var modules: [String: [String: RuleValue]]
 }

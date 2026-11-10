@@ -157,6 +157,19 @@ final class LiveGameService: GameService {
         socket.disconnect()
     }
 
+    func fetchModules() async throws -> [VisualModule] {
+        let response: ModulesResponse = try await client.get("/v1/modules")
+        return ModuleForm.modules(from: response)
+    }
+
+    func savePreset(name: String, modules: [String: [String: RuleValue]]) async throws -> SavedPresetDTO {
+        try await client.post("/v1/presets/saved", body: SavePresetBody(name: name, modules: modules))
+    }
+
+    func savedPresets() async throws -> [SavedPresetDTO] {
+        try await client.get("/v1/presets/saved")
+    }
+
     func purchase(gameID: UUID, powerID: String, extra: [String: Double]) async throws -> PlayerViewDTO {
         struct Body: Encodable {
             var id: String
