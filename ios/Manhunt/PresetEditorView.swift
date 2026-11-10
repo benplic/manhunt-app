@@ -8,7 +8,7 @@ struct PresetEditorView: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 ScreenHeader(
-                    title: "Classic",
+                    title: store.editingPresetID == nil ? "New preset" : "Edit preset",
                     subtitle: "Built from the server's module schema.",
                     onBack: store.closePreset
                 )
@@ -20,11 +20,25 @@ struct PresetEditorView: View {
                             .foregroundStyle(HuntColor.paper)
                             .padding(12)
                             .background(HuntColor.ink, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        HuntButton(title: "Save preset", action: { Task { await store.savePreset() } })
+                        HuntButton(
+                            title: store.editingPresetID == nil ? "Save preset" : "Save changes",
+                            action: { Task { await store.savePreset() } }
+                        )
+                        Button("New preset", action: store.beginNewPreset)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(HuntColor.signal)
                         ForEach(store.savedPresets) { preset in
-                            Button(preset.name) { store.applySavedPreset(preset) }
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(HuntColor.signal)
+                            HStack {
+                                Button(preset.name) { store.loadPreset(preset) }
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(HuntColor.signal)
+                                Button("Rename") { store.loadPreset(preset) }
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(HuntColor.muted)
+                                Button("Delete") { store.deletePreset(id: preset.id) }
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(HuntColor.warning)
+                            }
                         }
                     }
                 }

@@ -10,7 +10,12 @@ struct HuntMap: View {
     var showSeekers: Bool
     var fuzzyHiders: Bool
     var region: MKCoordinateRegion
+    var pendingVertices: [VisualPoint] = []
+    var pendingCircleCenter: VisualPoint? = nil
+    var highlightedEdge: (VisualPoint, VisualPoint)? = nil
+    var homeCoordinate: CLLocationCoordinate2D? = nil
     var onDrop: ((VisualPoint) -> Void)?
+    var onCrosshair: ((VisualPoint) -> Void)? = nil
     var emphasizeSpawn: Bool = false
 
     @State private var position: MapCameraPosition = .automatic
@@ -22,6 +27,28 @@ struct HuntMap: View {
                     MapPolygon(coordinates: boundary.map(\.coordinate))
                         .foregroundStyle(HuntColor.signal.opacity(0.18))
                         .stroke(HuntColor.signal, lineWidth: 2)
+                } else if pendingVertices.count >= 2 {
+                    MapPolyline(coordinates: pendingVertices.map(\.coordinate))
+                        .stroke(HuntColor.signal, lineWidth: 2)
+                }
+                if let edge = highlightedEdge {
+                    MapPolyline(coordinates: [edge.0.coordinate, edge.1.coordinate])
+                        .stroke(HuntColor.paper, lineWidth: 4)
+                }
+                ForEach(Array(pendingVertices.enumerated()), id: \.offset) { _, point in
+                    Annotation("Pending", coordinate: point.coordinate) {
+                        Circle()
+                            .fill(HuntColor.paper)
+                            .frame(width: 10, height: 10)
+                            .overlay(Circle().stroke(HuntColor.ink, lineWidth: 2))
+                    }
+                }
+                if let center = pendingCircleCenter {
+                    Annotation("Center", coordinate: center.coordinate) {
+                        Circle()
+                            .stroke(HuntColor.safe, lineWidth: 3)
+                            .frame(width: 14, height: 14)
+                    }
                 }
                 ForEach(zones) { zone in
                     zoneContent(zone)
@@ -51,6 +78,7 @@ struct HuntMap: View {
             .onMapCameraChange(frequency: .continuous) { context in
                 let center = context.region.center
                 crosshair = VisualPoint(latitude: center.latitude, longitude: center.longitude)
+                onCrosshair?(crosshair)
             }
             .overlay(alignment: .center) {
                 if onDrop != nil {
@@ -63,23 +91,48 @@ struct HuntMap: View {
             }
             .overlay(alignment: .bottom) {
                 if let onDrop {
-                    Button {
-                        onDrop(crosshair)
-                    } label: {
-                        Text("Drop point")
-                            .font(.subheadline.weight(.semibold))
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(HuntColor.paper, in: Capsule())
-                            .foregroundStyle(HuntColor.ink)
+                    VStack(spacing: 8) {
+                        if let homeCoordinate {
+                            Button {
+                                let home = VisualPoint(
+                                    latitude: homeCoordinate.latitude,
+                                    longitude: homeCoordinate.longitude
+                                )
+                                position = .region(MKCoordinateRegion(
+                                    center: homeCoordinate,
+                                    span: MKCoordinateSpan(latitudeDelta: 0.004, longitudeDelta: 0.004)
+                                ))
+                                crosshair = home
+                                onCrosshair?(home)
+                            } label: {
+                                Image(systemName: "location.fill")
+                                    .font(.subheadline.weight(.semibold))
+                                    .padding(12)
+                                    .background(HuntColor.inkRaised, in: Circle())
+                                    .foregroundStyle(HuntColor.signal)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("My location")
+                        }
+                        Button {
+                            onDrop(crosshair)
+                        } label: {
+                            Text("Drop point")
+                                .font(.subheadline.weight(.semibold))
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(HuntColor.paper, in: Capsule())
+                                .foregroundStyle(HuntColor.ink)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                     .padding(.bottom, 12)
                 }
             }
         .onAppear {
             position = .region(region)
             crosshair = VisualPoint(latitude: region.center.latitude, longitude: region.center.longitude)
+            onCrosshair?(crosshair)
         }
     }
 
@@ -109,6 +162,9 @@ struct HuntMap: View {
         } else if zone.points.count >= 3 {
             MapPolygon(coordinates: zone.points.map(\.coordinate))
                 .foregroundStyle(tint.opacity(emphasizeSpawn && zone.kind == .spawn ? 0.45 : 0.28))
+                .stroke(tint, lineWidth: width)
+        } else if zone.points.count >= 2 {
+            MapPolyline(coordinates: zone.points.map(\.coordinate))
                 .stroke(tint, lineWidth: width)
         }
     }

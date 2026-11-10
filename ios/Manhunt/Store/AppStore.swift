@@ -54,6 +54,11 @@ final class AppStore {
     var tool: ArenaTool = .playArea
     var draftBoundary: [VisualPoint] = []
     var draftZones: [VisualZone] = []
+    var draftPending: [VisualPoint] = []
+    var draftCircleCenter: VisualPoint?
+    var draftHighlightedEdge: (VisualPoint, VisualPoint)?
+    var editorHomeCoordinate: CLLocationCoordinate2D?
+    var editingPresetID: String?
     var arenaID = SamplePark.riverside.id
     var paused = false
     var modules: [VisualModule] = SamplePark.classicModules()
@@ -106,7 +111,11 @@ final class AppStore {
             arenas = fake.storedArenas
         }
         location.onUpdate = { [weak self] loc in
-            self?.sendFix(from: loc, isFinal: false)
+            guard let self else { return }
+            sendFix(from: loc, isFinal: false)
+            if screen == .arenaEditor, draftBoundary.count < 3 {
+                editorHomeCoordinate = loc.coordinate
+            }
         }
         location.onAccuracy = { [weak self] accuracy in
             self?.locationAccuracy = accuracy
@@ -404,13 +413,21 @@ final class AppStore {
     func savePreset() async {
         let name = presetName.trimmingCharacters(in: .whitespacesAndNewlines)
         let title = name.isEmpty ? "Custom" : name
+        let overrides = PresetOverrides.from(modules: modules)
         do {
-            let saved = try await service.savePreset(
-                name: title,
-                modules: PresetOverrides.from(modules: modules)
-            )
+            let saved: SavedPresetDTO
+            if let editingPresetID {
+                saved = try await service.updatePreset(
+                    id: editingPresetID,
+                    name: title,
+                    modules: overrides
+                )
+            } else {
+                saved = try await service.savePreset(name: title, modules: overrides)
+            }
             savedPresets.removeAll { $0.id == saved.id }
             savedPresets.insert(saved, at: 0)
+            editingPresetID = saved.id
             note = "Saved \(saved.name)."
         } catch {
             note = "Could not save the preset."
@@ -418,9 +435,36 @@ final class AppStore {
     }
 
     func applySavedPreset(_ preset: SavedPresetDTO) {
+        loadPreset(preset)
+    }
+
+    func loadPreset(_ preset: SavedPresetDTO) {
         modules = ModuleForm.apply(preset.modules, to: modules)
         presetName = preset.name
+        editingPresetID = preset.id
         note = "Loaded \(preset.name)."
+    }
+
+    func beginNewPreset() {
+        editingPresetID = nil
+        presetName = ""
+        modules = ModuleForm.offlineModules()
+        note = nil
+    }
+
+    func deletePreset(id: String) {
+        Task {
+            do {
+                try await service.deletePreset(id: id)
+                savedPresets.removeAll { $0.id == id }
+                if editingPresetID == id {
+                    beginNewPreset()
+                }
+                note = "Preset deleted."
+            } catch {
+                note = "Could not delete the preset."
+            }
+        }
     }
 
     @discardableResult
@@ -694,6 +738,10 @@ final class AppStore {
         arenaID = id
         if let uuid = UUID(uuidString: id), let arena = arenas.first(where: { $0.id == uuid }) {
             loadEditor(from: arena)
+            editorHomeCoordinate = CLLocationCoordinate2D(
+                latitude: EditorCamera.snapTarget(user: userGeoPoint).latitude,
+                longitude: EditorCamera.snapTarget(user: userGeoPoint).longitude
+            )
         } else if let sample = SamplePark.arenas.first(where: { $0.id == id }) {
             draftBoundary = sample.boundary
             draftZones = sample.zones
@@ -706,7 +754,25 @@ final class AppStore {
         editor = ArenaEditorModel()
         draftBoundary = []
         draftZones = []
+        refreshDraftsFromEditor()
+        let snap = EditorCamera.snapTarget(user: userGeoPoint)
+        editorHomeCoordinate = CLLocationCoordinate2D(latitude: snap.latitude, longitude: snap.longitude)
+        if live != nil {
+            location.requestFix()
+        }
         screen = .arenaEditor
+    }
+
+    func updateEditorCrosshair(_ point: VisualPoint) {
+        let geo = GeoPoint(latitude: point.latitude, longitude: point.longitude)
+        if let edge = editor.previewEdge(near: geo) {
+            draftHighlightedEdge = (
+                VisualPoint(latitude: edge.0.latitude, longitude: edge.0.longitude),
+                VisualPoint(latitude: edge.1.latitude, longitude: edge.1.longitude)
+            )
+        } else {
+            draftHighlightedEdge = nil
+        }
     }
 
     func drop(at point: VisualPoint) {
@@ -728,6 +794,11 @@ final class AppStore {
         refreshDraftsFromEditor()
     }
 
+    func beginNewZoneShape() {
+        editor.beginNewShape()
+        refreshDraftsFromEditor()
+    }
+
     func renameZone(id: UUID, to name: String) {
         editor.renameZone(id: id, to: name)
         refreshDraftsFromEditor()
@@ -746,8 +817,9 @@ final class AppStore {
     func saveArena() {
         let trimmed = editor.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = trimmed.isEmpty ? "New arena" : trimmed
-        if !editor.issues.isEmpty {
-            note = editorIssues.joined(separator: " ")
+        var prepared = editor.preparedForSave()
+        if !prepared.blocking.isEmpty {
+            note = prepared.blocking.map(issueCopy).joined(separator: " ")
             return
         }
         // Editing an existing arena must PUT the same id. Creating always POSTs a new one.
@@ -755,12 +827,10 @@ final class AppStore {
         let isUpdate = arenaID != "new"
             && existingID != nil
             && arenas.contains(where: { $0.id == existingID })
-        let arena = Arena(
-            id: isUpdate ? existingID! : UUID(),
-            name: name,
-            boundary: editor.boundary,
-            zones: editor.zones
-        )
+        var arena = prepared.arena
+        arena.id = isUpdate ? existingID! : UUID()
+        arena.name = name
+        let warnings = prepared.warnings
         Task {
             do {
                 let saved: Arena
@@ -776,10 +846,43 @@ final class AppStore {
                     arenas.append(saved)
                 }
                 arenaID = saved.id.uuidString
-                note = "Arena saved."
+                if warnings.isEmpty {
+                    note = "Arena saved."
+                } else {
+                    note = warnings.joined(separator: " ") + " Arena saved."
+                }
                 screen = .home
             } catch {
                 note = "Could not save the arena. Is the home server running?"
+            }
+        }
+    }
+
+    func renameArena(id: UUID, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, var arena = arenas.first(where: { $0.id == id }) else { return }
+        arena.name = trimmed
+        Task {
+            do {
+                let saved = try await service.updateArena(arena)
+                if let index = arenas.firstIndex(where: { $0.id == saved.id }) {
+                    arenas[index] = saved
+                }
+                note = "Arena renamed."
+            } catch {
+                note = "Could not rename the arena."
+            }
+        }
+    }
+
+    func deleteArena(id: UUID) {
+        Task {
+            do {
+                try await service.deleteArena(id: id)
+                arenas.removeAll { $0.id == id }
+                note = "Arena deleted."
+            } catch {
+                note = "Could not delete the arena."
             }
         }
     }
@@ -1164,6 +1267,28 @@ final class AppStore {
             VisualPoint(latitude: $0.latitude, longitude: $0.longitude)
         }
         draftZones = editor.zones.map { $0.asVisual() }
+        draftPending = editor.pendingVertices.map {
+            VisualPoint(latitude: $0.latitude, longitude: $0.longitude)
+        }
+        draftCircleCenter = editor.pendingCircleCenterForMap.map {
+            VisualPoint(latitude: $0.latitude, longitude: $0.longitude)
+        }
+        if let notice = editor.notice {
+            note = notice
+        }
+    }
+
+    private var userGeoPoint: GeoPoint? {
+        guard let fix = location.lastFix else { return nil }
+        return GeoPoint(latitude: fix.coordinate.latitude, longitude: fix.coordinate.longitude)
+    }
+
+    private func issueCopy(_ issue: ArenaIssue) -> String {
+        switch issue {
+        case .playAreaTooSmall: return "Play area needs at least three points."
+        case let .selfIntersection(name): return "\(name) crosses itself."
+        case let .outsidePlayArea(name): return "\(name) leaves the play area."
+        }
     }
 
     private func editorTool(from tool: ArenaTool) -> EditorTool {

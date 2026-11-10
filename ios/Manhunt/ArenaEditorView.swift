@@ -9,14 +9,25 @@ struct ArenaEditorView: View {
         @Bindable var editor = store.editor
         return VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
-                ScreenHeader(title: editor.name, subtitle: "Center the crosshair, then drop a point.", onBack: {
-                    store.goHome()
-                })
-                TextField("Arena name", text: $editor.name)
-                    .textInputAutocapitalization(.words)
-                    .foregroundStyle(HuntColor.paper)
-                    .padding(12)
-                    .background(HuntColor.inkRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Button(action: store.goHome) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                            .background(HuntColor.inkRaised, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Back")
+                    VStack(alignment: .leading, spacing: 2) {
+                        TextField("Arena name", text: $editor.name)
+                            .font(HuntFont.title(32))
+                            .foregroundStyle(HuntColor.paper)
+                            .textInputAutocapitalization(.words)
+                        Text("Center the crosshair, then drop a point.")
+                            .font(.footnote)
+                            .foregroundStyle(HuntColor.muted)
+                    }
+                }
                 Picker("Tool", selection: $store.tool) {
                     ForEach(ArenaTool.allCases) { tool in
                         Text(tool.rawValue).tag(tool)
@@ -36,7 +47,12 @@ struct ArenaEditorView: View {
                 showSeekers: false,
                 fuzzyHiders: false,
                 region: editorRegion,
-                onDrop: { store.drop(at: $0) }
+                pendingVertices: store.draftPending,
+                pendingCircleCenter: store.draftCircleCenter,
+                highlightedEdge: store.draftHighlightedEdge,
+                homeCoordinate: store.editorHomeCoordinate,
+                onDrop: { store.drop(at: $0) },
+                onCrosshair: { store.updateEditorCrosshair($0) }
             )
             .clipShape(RoundedRectangle(cornerRadius: 0))
 
@@ -45,6 +61,11 @@ struct ArenaEditorView: View {
                     .font(.subheadline)
                     .foregroundStyle(HuntColor.paper)
                     .fixedSize(horizontal: false, vertical: true)
+                if let notice = store.editor.notice {
+                    Text(notice)
+                        .font(.footnote)
+                        .foregroundStyle(HuntColor.warning)
+                }
                 ForEach(store.editorIssues, id: \.self) { issue in
                     Text(issue)
                         .font(.footnote)
@@ -70,15 +91,34 @@ struct ArenaEditorView: View {
     }
 
     private var editorRegion: MKCoordinateRegion {
-        if store.draftBoundary.count >= 3 {
-            return VisualArena(id: "draft", name: "", place: "", boundary: store.draftBoundary, zones: []).region
-        }
-        return store.arena.region
+        let boundary = store.editor.boundary.vertices
+        let isNew = store.arenaID == "new" && boundary.count < 3
+        return EditorCamera.region(user: storeUserPoint, boundary: boundary, isNew: isNew)
+    }
+
+    private var storeUserPoint: GeoPoint? {
+        guard let coordinate = store.editorHomeCoordinate else { return nil }
+        return GeoPoint(latitude: coordinate.latitude, longitude: coordinate.longitude)
     }
 
     private var statusLine: String {
         if store.editor.hasPendingSafeCenter {
             return "Safe center set. Drop a second point to set the radius."
+        }
+        if store.tool == .safe, store.draftCircleCenter != nil {
+            return "Safe center set. Drop a second point to set the radius."
+        }
+        if pendingZonePointsCount == 1 {
+            return "First point set. Drop the other end of the line."
+        }
+        if pendingZonePointsCount == 2 {
+            return "Line set. The next point closes the shape."
+        }
+        if store.tool == .playArea && store.draftBoundary.count == 1 {
+            return "First point set. Drop the other end of the line."
+        }
+        if store.tool == .playArea && store.draftBoundary.count == 2 {
+            return "Line set. The next point closes the play area."
         }
         if store.tool == .playArea && store.draftBoundary.count < 3 {
             return "Add at least 3 points to close the play area."
@@ -90,9 +130,17 @@ struct ArenaEditorView: View {
             return "Drop a point to split the selected edge."
         }
         if store.tool == .playArea {
-            return "Select an edge, then drop a point on it. A new point splits that edge."
+            return "Drop on a highlighted edge to add a point."
         }
-        return "Yellow is the play area. A bowtie is still rejected on save."
+        if store.tool == .outOfBounds || store.tool == .spawn {
+            return "Drop on a highlighted edge to add a point, or start a new shape."
+        }
+        return "Yellow is the play area."
+    }
+
+    private var pendingZonePointsCount: Int {
+        guard store.tool == .outOfBounds || store.tool == .spawn else { return 0 }
+        return store.draftPending.count
     }
 
     @ViewBuilder
@@ -119,6 +167,11 @@ struct ArenaEditorView: View {
                     }
                 }
             }
+        }
+        if store.tool == .outOfBounds || store.tool == .spawn {
+            Button("New shape", action: store.beginNewZoneShape)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(HuntColor.signal)
         }
         ForEach(store.editor.zones) { zone in
             HStack {

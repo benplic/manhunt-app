@@ -71,6 +71,12 @@ final class LocationReporter: NSObject {
         lastSent = nil
     }
 
+    /// One-shot fix for the arena editor. No background activity session.
+    func requestFix() {
+        requestWhenInUse()
+        manager.requestLocation()
+    }
+
     private func consider(_ location: CLLocation) {
         let moved = lastSent.map { location.distance(from: $0) >= 3 } ?? true
         let aged = Date().timeIntervalSince(lastSentAt) >= 2.5
@@ -87,5 +93,19 @@ extension LocationReporter: CLLocationManagerDelegate {
         Task { @MainActor in
             onAccuracy?(accuracy)
         }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard let location = locations.last else { return }
+        Task { @MainActor in
+            lastFix = location
+            onUpdate?(location)
+            onAccuracy?(accuracy)
+        }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        // TODO: surface denied/unavailable location in the editor banner when product wants copy.
+        _ = error
     }
 }

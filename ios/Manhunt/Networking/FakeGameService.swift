@@ -93,6 +93,13 @@ final class FakeGameService: GameService {
         return arena
     }
 
+    func deleteArena(id: UUID) async throws {
+        guard storedArenas.contains(where: { $0.id == id }) else {
+            throw ServiceError(code: .arenaNotFound, message: "Arena not found.")
+        }
+        storedArenas.removeAll { $0.id == id }
+    }
+
     func createGame(
         arenaID: UUID,
         presetID: String,
@@ -281,6 +288,26 @@ final class FakeGameService: GameService {
         let preset = SavedPresetDTO(id: UUID().uuidString, name: name, modules: modules)
         presetsSaved.insert(preset, at: 0)
         return preset
+    }
+
+    func updatePreset(
+        id: String,
+        name: String,
+        modules: [String: [String: RuleValue]]
+    ) async throws -> SavedPresetDTO {
+        guard let index = presetsSaved.firstIndex(where: { $0.id == id }) else {
+            throw ServiceError(code: .internal, message: "Preset not found.")
+        }
+        let preset = SavedPresetDTO(id: id, name: name, modules: modules)
+        presetsSaved[index] = preset
+        return preset
+    }
+
+    func deletePreset(id: String) async throws {
+        guard presetsSaved.contains(where: { $0.id == id }) else {
+            throw ServiceError(code: .internal, message: "Preset not found.")
+        }
+        presetsSaved.removeAll { $0.id == id }
     }
 
     func savedPresets() async throws -> [SavedPresetDTO] {

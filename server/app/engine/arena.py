@@ -10,6 +10,8 @@ from uuid import UUID, uuid4
 from app.engine.geo import (
     GeoPoint,
     circle_inside_play_area,
+    circle_sample_ring,
+    clip_polygon,
     polygon_inside_play_area,
     self_intersects,
 )
@@ -121,6 +123,49 @@ def arena_to_dict(arena: Arena) -> dict[str, Any]:
     if arena.id:
         payload["id"] = str(arena.id)
     return payload
+
+
+def clip_zone(zone: ArenaZone, play: list[GeoPoint]) -> ArenaZone | None:
+    if isinstance(zone.shape, PolygonShape):
+        if polygon_inside_play_area(zone.shape.vertices, play):
+            return zone
+        clipped = clip_polygon(zone.shape.vertices, play)
+        if clipped is None:
+            return None
+        return ArenaZone(
+            id=zone.id,
+            name=zone.name,
+            kind=zone.kind,
+            shape=PolygonShape(vertices=clipped),
+        )
+    if circle_inside_play_area(zone.shape.center, zone.shape.radius_m, play):
+        return zone
+    ring = circle_sample_ring(zone.shape.center, zone.shape.radius_m)
+    clipped = clip_polygon(ring, play)
+    if clipped is None:
+        return None
+    return ArenaZone(
+        id=zone.id,
+        name=zone.name,
+        kind=zone.kind,
+        shape=PolygonShape(vertices=clipped),
+    )
+
+
+def clip_arena(arena: Arena) -> Arena:
+    if len(arena.boundary) < 3:
+        return arena
+    clipped_zones: list[ArenaZone] = []
+    for zone in arena.zones:
+        clipped = clip_zone(zone, arena.boundary)
+        if clipped is not None:
+            clipped_zones.append(clipped)
+    return Arena(
+        id=arena.id,
+        name=arena.name,
+        boundary=arena.boundary,
+        zones=clipped_zones,
+    )
 
 
 def validate_arena(arena: Arena) -> list[ArenaIssue]:

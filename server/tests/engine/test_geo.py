@@ -93,6 +93,53 @@ def test_out_of_bounds_waits_for_accuracy() -> None:
     assert not is_confidently_outside(clearly_out, 31, boundary, 5)
 
 
+def test_overhanging_triangle_is_clipped_into_the_square() -> None:
+    play = square().boundary
+    subject = [meters(-20, 20), meters(40, 20), meters(10, 80)]
+    from app.engine.geo import clip_polygon, contains
+
+    clipped = clip_polygon(subject, play)
+    assert clipped is not None
+    assert all(contains(p, play) for p in clipped)
+
+
+def test_zone_completely_outside_clips_to_nothing() -> None:
+    from app.engine.geo import clip_polygon
+
+    assert (
+        clip_polygon([meters(400, 400), meters(420, 400), meters(410, 420)], square().boundary)
+        is None
+    )
+
+
+def test_contained_circle_stays_a_circle_and_overhang_becomes_a_polygon() -> None:
+    from uuid import uuid4
+
+    from app.engine.arena import ArenaZone, CircleShape, PolygonShape, ZoneKind, clip_zone
+
+    play = square().boundary
+    inside = ArenaZone(
+        id=uuid4(),
+        name="Bench",
+        kind=ZoneKind.SAFE,
+        shape=CircleShape(center=meters(20, 20), radius_m=3),
+    )
+    clipped_in = clip_zone(inside, play)
+    assert isinstance(clipped_in.shape, CircleShape)
+
+    overhang = ArenaZone(
+        id=uuid4(),
+        name="Fountain",
+        kind=ZoneKind.SAFE,
+        shape=CircleShape(center=meters(100, 100), radius_m=500),
+    )
+    clipped_over = clip_zone(overhang, play)
+    assert isinstance(clipped_over.shape, PolygonShape)
+    from app.engine.geo import contains
+
+    assert all(contains(p, play) for p in clipped_over.shape.vertices)
+
+
 def test_arena_dataclass_roundtrip_name() -> None:
     arena = square()
     assert arena.name == "Square"

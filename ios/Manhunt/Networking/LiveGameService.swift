@@ -91,6 +91,10 @@ final class LiveGameService: GameService {
         try await client.put("/v1/arenas/\(arena.id.uuidString)", body: arena)
     }
 
+    func deleteArena(id: UUID) async throws {
+        try await client.delete("/v1/arenas/\(id.uuidString)")
+    }
+
     func createGame(
         arenaID: UUID,
         presetID: String,
@@ -233,6 +237,18 @@ final class LiveGameService: GameService {
 
     func savePreset(name: String, modules: [String: [String: RuleValue]]) async throws -> SavedPresetDTO {
         try await client.post("/v1/presets/saved", body: SavePresetBody(name: name, modules: modules))
+    }
+
+    func updatePreset(
+        id: String,
+        name: String,
+        modules: [String: [String: RuleValue]]
+    ) async throws -> SavedPresetDTO {
+        try await client.put("/v1/presets/saved/\(id)", body: SavePresetBody(name: name, modules: modules))
+    }
+
+    func deletePreset(id: String) async throws {
+        try await client.delete("/v1/presets/saved/\(id)")
     }
 
     func savedPresets() async throws -> [SavedPresetDTO] {

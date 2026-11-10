@@ -10,6 +10,7 @@ protocol GameService: AnyObject {
     func arenas() async throws -> [Arena]
     func createArena(_ arena: Arena) async throws -> Arena
     func updateArena(_ arena: Arena) async throws -> Arena
+    func deleteArena(id: UUID) async throws
     func createGame(arenaID: UUID, presetID: String, overrides: [String: [String: RuleValue]]) async throws -> PlayerViewDTO
     func timeline(gameID: UUID) async throws -> [TimelineEventDTO]
     func join(code: String) async throws -> PlayerViewDTO
@@ -30,6 +31,8 @@ protocol GameService: AnyObject {
     func purchase(gameID: UUID, powerID: String, extra: [String: Double]) async throws -> PlayerViewDTO
     func fetchModules() async throws -> [VisualModule]
     func savePreset(name: String, modules: [String: [String: RuleValue]]) async throws -> SavedPresetDTO
+    func updatePreset(id: String, name: String, modules: [String: [String: RuleValue]]) async throws -> SavedPresetDTO
+    func deletePreset(id: String) async throws
     func savedPresets() async throws -> [SavedPresetDTO]
     func refresh(refreshToken: String) async throws -> AuthOut
 }

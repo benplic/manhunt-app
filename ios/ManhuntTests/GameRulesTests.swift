@@ -366,10 +366,6 @@ final class GameRulesTests: XCTestCase {
         editor.addMapPoint(Fixtures.meters(x: 100, y: 0))
         editor.addMapPoint(Fixtures.meters(x: 100, y: 100))
         XCTAssertEqual(editor.boundary.vertices.count, 3)
-        // A fourth drop must not append. Appending is what draws an hourglass.
-        editor.addMapPoint(Fixtures.meters(x: 50, y: -10))
-        XCTAssertEqual(editor.boundary.vertices.count, 3)
-        XCTAssertNotNil(editor.selectedEdge)
         editor.selectEdge(0)
         editor.addMapPoint(Fixtures.meters(x: 50, y: 0))
         XCTAssertEqual(editor.boundary.vertices.count, 4)
@@ -396,6 +392,8 @@ final class GameRulesTests: XCTestCase {
 
         editor.tool = .outOfBounds
         editor.addMapPoint(Fixtures.meters(x: 10, y: 10))
+        editor.addMapPoint(Fixtures.meters(x: 12, y: 10))
+        editor.addMapPoint(Fixtures.meters(x: 11, y: 12))
         let zoneID = editor.zones[0].id
         editor.renameZone(id: zoneID, to: "Creek")
         XCTAssertEqual(editor.zones[0].name, "Creek")
@@ -436,6 +434,155 @@ final class GameRulesTests: XCTestCase {
         XCTAssertEqual(TagChrome.scanLabel(tagMethod: "qr"), "Scan tag")
     }
 
+    func testOpenChainShowsBothEndsBeforeTheTriangleCloses() {
+        let editor = ArenaEditorModel()
+        editor.tool = .outOfBounds
+        editor.addMapPoint(Fixtures.meters(x: 10, y: 10))
+        XCTAssertEqual(editor.pendingVertices.count, 1)
+        XCTAssertTrue(editor.zones.isEmpty)
+        editor.addMapPoint(Fixtures.meters(x: 30, y: 10))
+        XCTAssertEqual(editor.pendingVertices.count, 2)
+        editor.addMapPoint(Fixtures.meters(x: 20, y: 30))
+        XCTAssertTrue(editor.pendingVertices.isEmpty)
+        XCTAssertEqual(editor.zones.count, 1)
+        guard case let .polygon(polygon) = editor.zones[0].shape else {
+            return XCTFail("Expected a polygon")
+        }
+        XCTAssertEqual(polygon.vertices.count, 3)
+    }
+
+    func testSafeCenterIsVisibleBeforeTheRadiusTap() {
+        let editor = ArenaEditorModel()
+        editor.tool = .safeCircle
+        let center = Fixtures.meters(x: 10, y: 10)
+        editor.addMapPoint(center)
+        XCTAssertEqual(editor.pendingCircleCenterForMap?.latitude ?? -1, center.latitude, accuracy: 1e-9)
+        XCTAssertTrue(editor.zones.isEmpty)
+    }
+
+    func testFourthZonePointSplitsTheNearestEdgeInsteadOfBowtying() {
+        let editor = ArenaEditorModel()
+        editor.tool = .outOfBounds
+        editor.addMapPoint(Fixtures.meters(x: 0, y: 0))
+        editor.addMapPoint(Fixtures.meters(x: 40, y: 0))
+        editor.addMapPoint(Fixtures.meters(x: 20, y: 30))
+        editor.addMapPoint(Fixtures.meters(x: 20, y: -5))
+        guard case let .polygon(polygon) = editor.zones[0].shape else {
+            return XCTFail("Expected a polygon")
+        }
+        XCTAssertEqual(polygon.vertices.count, 4)
+        XCTAssertEqual(polygon.vertices[1].longitude, Fixtures.meters(x: 20, y: -5).longitude, accuracy: 1e-9)
+        XCTAssertFalse(ArenaGeometry.selfIntersects(polygon))
+    }
+
+    func testInsertThatWouldCrossIsRefused() {
+        let editor = ArenaEditorModel()
+        editor.tool = .playArea
+        editor.addMapPoint(Fixtures.meters(x: 0, y: 0))
+        editor.addMapPoint(Fixtures.meters(x: 100, y: 0))
+        editor.addMapPoint(Fixtures.meters(x: 50, y: 80))
+        editor.selectEdge(0)
+        editor.addMapPoint(Fixtures.meters(x: 50, y: 200))
+        XCTAssertEqual(editor.boundary.vertices.count, 3)
+        XCTAssertNotNil(editor.notice)
+    }
+
+    func testCompletingAnOverhangingZoneWarnsAndStoresTheClip() {
+        let editor = ArenaEditorModel()
+        editor.tool = .playArea
+        for point in [
+            Fixtures.meters(x: 0, y: 0),
+            Fixtures.meters(x: 200, y: 0),
+            Fixtures.meters(x: 200, y: 200),
+            Fixtures.meters(x: 0, y: 200),
+        ] {
+            editor.addMapPoint(point)
+        }
+        editor.tool = .outOfBounds
+        editor.addMapPoint(Fixtures.meters(x: -20, y: 20))
+        editor.addMapPoint(Fixtures.meters(x: 40, y: 20))
+        editor.addMapPoint(Fixtures.meters(x: 10, y: 80))
+        XCTAssertEqual(editor.zones.count, 1)
+        XCTAssertTrue(editor.notice?.contains("clipped") == true)
+        guard case let .polygon(polygon) = editor.zones[0].shape else { return XCTFail() }
+        XCTAssertTrue(polygon.vertices.allSatisfy { ArenaGeometry.contains($0, in: editor.boundary) })
+    }
+
+    func testNewArenaUsesTheUserAndFallsBackToNewYork() {
+        let user = GeoPoint(latitude: 41.0, longitude: -74.0)
+        let opened = EditorCamera.region(user: user, boundary: [], isNew: true)
+        XCTAssertEqual(opened.center.latitude, 41.0, accuracy: 1e-9)
+        let fallback = EditorCamera.region(user: nil, boundary: [], isNew: true)
+        XCTAssertEqual(fallback.center.latitude, EditorCamera.newYork.latitude, accuracy: 1e-9)
+        XCTAssertEqual(EditorCamera.snapTarget(user: nil).longitude, EditorCamera.newYork.longitude, accuracy: 1e-9)
+    }
+
+    func testExistingArenaOpensOnItsBoundary() {
+        let boundary = Arena.sampleSquare().boundary.vertices
+        let opened = EditorCamera.region(user: GeoPoint(latitude: 41, longitude: -74), boundary: boundary, isNew: false)
+        XCTAssertEqual(opened.center.latitude, 100.0 / 111_320.0, accuracy: 1e-6)
+    }
+
+    @MainActor
+    func testRenameAndDeleteArenaRoundTripThroughTheFake() async {
+        let fake = FakeGameService(arenas: [])
+        let store = AppStore(service: fake)
+        store.beginNewArena()
+        store.editor.name = "Riverside"
+        store.editor.addMapPoint(Fixtures.meters(x: 0, y: 0))
+        store.editor.addMapPoint(Fixtures.meters(x: 200, y: 0))
+        store.editor.addMapPoint(Fixtures.meters(x: 100, y: 150))
+        store.saveArena()
+        await waitUntil { !fake.storedArenas.isEmpty }
+        guard let id = fake.storedArenas.first?.id else { return XCTFail("Expected a saved arena") }
+        store.renameArena(id: id, to: "North field")
+        await waitUntil { fake.storedArenas.first?.name == "North field" }
+        XCTAssertEqual(fake.storedArenas.first?.name, "North field")
+        store.deleteArena(id: id)
+        await waitUntil { fake.storedArenas.isEmpty }
+        XCTAssertTrue(fake.storedArenas.isEmpty)
+    }
+
+    @MainActor
+    func testEditorNameIsWhatSavePersists() async {
+        let fake = FakeGameService(arenas: [])
+        let store = AppStore(service: fake)
+        store.beginNewArena()
+        store.editor.name = "  Schoolyard  "
+        store.editor.addMapPoint(Fixtures.meters(x: 0, y: 0))
+        store.editor.addMapPoint(Fixtures.meters(x: 40, y: 0))
+        store.editor.addMapPoint(Fixtures.meters(x: 20, y: 30))
+        store.saveArena()
+        await waitUntil { fake.storedArenas.last?.name == "Schoolyard" }
+        XCTAssertEqual(fake.storedArenas.last?.name, "Schoolyard")
+    }
+
+    @MainActor
+    func testPresetUpdateAndDelete() async {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.modules = ModuleForm.offlineModules()
+        store.presetName = "Park night"
+        await store.savePreset()
+        guard let saved = store.savedPresets.first else { return XCTFail() }
+        store.loadPreset(saved)
+        let index = store.modules.firstIndex { $0.id == "head_start" }!
+        let row = store.modules[index].rows.firstIndex { $0.id == "duration" }!
+        store.modules[index].rows[row].number = 30
+        await store.savePreset()
+        XCTAssertEqual(store.savedPresets.count, 1)
+        if case let .int(duration)? = store.savedPresets[0].modules["head_start"]?["duration"] {
+            XCTAssertEqual(duration, 30)
+        } else if case let .double(duration)? = store.savedPresets[0].modules["head_start"]?["duration"] {
+            XCTAssertEqual(duration, 30)
+        } else {
+            XCTFail("Expected head_start duration 30")
+        }
+        store.deletePreset(id: saved.id)
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertTrue(store.savedPresets.isEmpty)
+    }
+
     func testArenaEditorCommitsACircleOnTheSecondTapAndUndoRemovesIt() {
         let editor = ArenaEditorModel()
         editor.tool = .safeCircle
@@ -456,5 +603,17 @@ final class GameRulesTests: XCTestCase {
         editor.undo()
         XCTAssertEqual(editor.boundary.vertices.count, 2)
         XCTAssertTrue(editor.issues.contains(.playAreaTooSmall))
+    }
+
+    @MainActor
+    private func waitUntil(
+        timeout: TimeInterval = 3,
+        _ predicate: @escaping () -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if predicate() { return }
+            try? await Task.sleep(for: .milliseconds(25))
+        }
     }
 }

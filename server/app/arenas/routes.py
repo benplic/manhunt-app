@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import ArenaRow
-from app.engine.arena import arena_from_dict, validate_arena
+from app.engine.arena import arena_from_dict, arena_to_dict, clip_arena, validate_arena
 from app.errors import ApiError, ErrorCode
 
 
@@ -38,7 +38,7 @@ def bind_arena_routes(get_session, current_user):
         session: AsyncSession = Depends(get_session),
         user=Depends(current_user),
     ) -> dict:
-        data = {"name": body.name, "boundary": body.boundary, "zones": body.zones}
+        data = _clip_payload({"name": body.name, "boundary": body.boundary, "zones": body.zones})
         _validate(data)
         row = ArenaRow(owner_id=user.id, name=body.name, data=data)
         session.add(row)
@@ -63,7 +63,7 @@ def bind_arena_routes(get_session, current_user):
         user=Depends(current_user),
     ) -> dict:
         row = await _owned(session, user.id, arena_id)
-        data = {"name": body.name, "boundary": body.boundary, "zones": body.zones}
+        data = _clip_payload({"name": body.name, "boundary": body.boundary, "zones": body.zones})
         _validate(data)
         row.name = body.name
         row.data = data
@@ -83,6 +83,11 @@ def bind_arena_routes(get_session, current_user):
         return {"ok": True}
 
     return router
+
+
+def _clip_payload(data: dict) -> dict:
+    clipped = clip_arena(arena_from_dict(data))
+    return arena_to_dict(clipped)
 
 
 def _validate(data: dict) -> None:

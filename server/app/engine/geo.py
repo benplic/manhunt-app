@@ -129,3 +129,50 @@ def polygon_inside_play_area(zone: list[GeoPoint], play: list[GeoPoint]) -> bool
     if zone_poly.is_empty:
         return False
     return bool(play_poly.covers(zone_poly))
+
+
+def _from_xy_with_origin(x: float, y: float, lat0: float, origin_lon: float) -> GeoPoint:
+    scale = math.cos(math.radians(lat0))
+    return GeoPoint(
+        lat=lat0 + y / METERS_PER_DEGREE,
+        lon=origin_lon + x / (METERS_PER_DEGREE * scale),
+    )
+
+
+def clip_polygon(subject: list[GeoPoint], play: list[GeoPoint]) -> list[GeoPoint] | None:
+    if len(subject) < 3 or len(play) < 3:
+        return None
+    lat0 = play[0].lat
+    origin_lon = play[0].lon
+
+    def to_local(point: GeoPoint) -> tuple[float, float]:
+        scale = math.cos(math.radians(lat0))
+        east = (point.lon - origin_lon) * METERS_PER_DEGREE * scale
+        north = (point.lat - lat0) * METERS_PER_DEGREE
+        return east, north
+
+    from shapely.geometry import Polygon as ShapePoly
+
+    play_poly = ShapePoly([to_local(point) for point in play])
+    subject_poly = ShapePoly([to_local(point) for point in subject])
+    if not play_poly.is_valid or not subject_poly.is_valid:
+        return None
+    hit = play_poly.intersection(subject_poly)
+    if hit.is_empty:
+        return None
+    if hit.geom_type == "MultiPolygon":
+        hit = max(hit.geoms, key=lambda geometry: geometry.area)
+    if hit.geom_type != "Polygon" or hit.area < 1.0:
+        return None
+    ring = list(hit.exterior.coords)[:-1]
+    return [_from_xy_with_origin(x, y, lat0, origin_lon) for x, y in ring]
+
+
+def circle_sample_ring(center: GeoPoint, radius_m: float, steps: int = 32) -> list[GeoPoint]:
+    ring: list[GeoPoint] = []
+    for index in range(steps):
+        angle = index / steps * 2 * math.pi
+        north = radius_m * math.cos(angle)
+        east = radius_m * math.sin(angle)
+        ring.append(offset_m(center, north, east))
+    return ring

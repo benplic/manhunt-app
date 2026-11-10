@@ -3,6 +3,9 @@ import SwiftUI
 struct HomeView: View {
     @Environment(AppStore.self) private var store
     @State private var scanningInvite = false
+    @State private var renamingArenaID: UUID?
+    @State private var renameArenaDraft = ""
+    @State private var deletingArenaID: UUID?
 
     var body: some View {
         @Bindable var store = store
@@ -69,11 +72,11 @@ struct HomeView: View {
 
                 sectionTitle("Arenas")
                 ForEach(store.arenas) { arena in
-                    Button {
-                        store.editArena(arena.id.uuidString)
-                    } label: {
-                        Card {
-                            HStack {
+                    Card {
+                        HStack {
+                            Button {
+                                store.editArena(arena.id.uuidString)
+                            } label: {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(arena.name)
                                         .font(.headline)
@@ -82,13 +85,22 @@ struct HomeView: View {
                                         .font(.subheadline)
                                         .foregroundStyle(HuntColor.muted)
                                 }
-                                Spacer()
-                                Image(systemName: "map")
-                                    .foregroundStyle(HuntColor.signal)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
+                            .buttonStyle(.plain)
+                            Button("Rename") {
+                                renameArenaDraft = arena.name
+                                renamingArenaID = arena.id
+                            }
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(HuntColor.signal)
+                            Button("Delete") {
+                                deletingArenaID = arena.id
+                            }
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(HuntColor.warning)
                         }
                     }
-                    .buttonStyle(.plain)
                 }
                 Button("New arena", action: store.beginNewArena)
                     .font(.subheadline.weight(.semibold))
@@ -125,6 +137,33 @@ struct HomeView: View {
                 store.openInvite(payload)
             }
             .ignoresSafeArea()
+        }
+        .alert("Rename arena", isPresented: Binding(
+            get: { renamingArenaID != nil },
+            set: { if !$0 { renamingArenaID = nil } }
+        )) {
+            TextField("Name", text: $renameArenaDraft)
+            Button("Save") {
+                if let id = renamingArenaID {
+                    store.renameArena(id: id, to: renameArenaDraft)
+                }
+                renamingArenaID = nil
+            }
+            Button("Cancel", role: .cancel) { renamingArenaID = nil }
+        }
+        .alert("Delete this arena?", isPresented: Binding(
+            get: { deletingArenaID != nil },
+            set: { if !$0 { deletingArenaID = nil } }
+        )) {
+            Button("Delete", role: .destructive) {
+                if let id = deletingArenaID {
+                    store.deleteArena(id: id)
+                }
+                deletingArenaID = nil
+            }
+            Button("Cancel", role: .cancel) { deletingArenaID = nil }
+        } message: {
+            Text("Games already started keep their saved snapshot.")
         }
     }
 
