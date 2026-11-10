@@ -9,6 +9,7 @@ final class LiveGameService: GameService {
     var onQR: ((String) -> Void)?
     var onEvent: ((BannerDTO) -> Void)?
     var onReconnect: ((Bool) -> Void)?
+    var onUWBPeers: (([UWBPeer]) -> Void)?
 
     init(baseURL: URL) {
         client = APIClient(baseURL: baseURL)
@@ -16,6 +17,7 @@ final class LiveGameService: GameService {
         socket.onQR = { [weak self] token in self?.onQR?(token) }
         socket.onEvent = { [weak self] banner in self?.onEvent?(banner) }
         socket.onReconnect = { [weak self] reconnecting in self?.onReconnect?(reconnecting) }
+        socket.onUWBPeers = { [weak self] peers in self?.onUWBPeers?(peers) }
     }
 
     var token: String? {
@@ -114,6 +116,21 @@ final class LiveGameService: GameService {
             "/v1/games/\(gameID.uuidString)/tags/qr",
             body: QRBody(token: token)
         )
+    }
+
+    func claimUWB(gameID: UUID, hiderID: UUID) async throws {
+        let _: [String: String] = try await client.post(
+            "/v1/games/\(gameID.uuidString)/tags/uwb",
+            body: UwbTagBody(hiderId: hiderID)
+        )
+    }
+
+    func sendUWBToken(_ token: String) {
+        socket.sendUWBToken(token)
+    }
+
+    func sendUWBRange(peerID: UUID, distanceM: Double) {
+        socket.sendUWBRange(peerID: peerID, distanceM: distanceM)
     }
 
     func connect(gameID: UUID) {

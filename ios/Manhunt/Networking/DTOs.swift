@@ -43,6 +43,9 @@ struct PlayerViewDTO: Codable {
     var reveals: [RevealDTO]
     var banners: [BannerDTO]
     var result: ResultDTO?
+    var tagMethod: String? = nil
+    var seekerLock: String? = nil
+    var spawnLock: SpawnLockDTO? = nil
 
     enum CodingKeys: String, CodingKey {
         case gameId = "game_id"
@@ -51,6 +54,9 @@ struct PlayerViewDTO: Codable {
         case phaseRemainingS = "phase_remaining_s"
         case gameElapsedS = "game_elapsed_s"
         case timeLimitRemainingS = "time_limit_remaining_s"
+        case tagMethod = "tag_method"
+        case seekerLock = "seeker_lock"
+        case spawnLock = "spawn_lock"
         case you, players, reveals, banners, result
     }
 }
@@ -76,10 +82,21 @@ struct YouDTO: Codable {
     }
 }
 
-struct HintDTO: Codable {
+struct HintDTO: Codable, Equatable {
     var band: String?
     var meters: Int?
     var name: String?
+    var bearingDeg: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case band, meters, name
+        case bearingDeg = "bearing_deg"
+    }
+}
+
+struct SpawnLockDTO: Codable, Equatable {
+    var outside: Bool
+    var zones: [ArenaZone]
 }
 
 struct BoundsDTO: Codable {

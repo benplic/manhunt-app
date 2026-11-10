@@ -17,6 +17,7 @@ from app.engine.arena import arena_from_dict
 from app.engine.clock import Clock
 from app.engine.qr import make_qr_token, token_ttl
 from app.engine.session import GameSession
+from app.engine.uwb import select_uwb_peers
 from app.engine.views import build_view
 from app.realtime.clock import WallClock
 
@@ -99,6 +100,25 @@ class SessionManager:
                 key=session.qr_signing_key,
             )
             session.state.qr_by_hider[player.player_id] = (token, expires)
+
+    async def push_uwb_peers(self, game_id: UUID) -> None:
+        """Send uwb_peers only when the selected set changes. Tokens are not logged."""
+        session = self.sessions.get(game_id)
+        if session is None:
+            return
+        session.prune_uwb_ranges()
+        selected = select_uwb_peers(session.state.players.values())
+        for player_id, ws in list(self.sockets.get(game_id, {}).items()):
+            peers = selected.get(player_id, [])
+            signature = tuple(sorted(peer["player_id"] + peer["token"] for peer in peers))
+            if session.state.uwb_peer_signature.get(player_id) == signature:
+                continue
+            session.state.uwb_peer_signature[player_id] = signature
+            try:
+                await ws.send_json(envelope("uwb_peers", {"peers": peers}))
+            except Exception:
+                log.exception("ws_send_failed game_id=%s player_id=%s", game_id, player_id)
+                self.detach(game_id, player_id)
 
     async def broadcast(self, game_id: UUID) -> None:
         session = self.sessions.get(game_id)

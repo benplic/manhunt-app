@@ -19,10 +19,24 @@ class GeoPoint:
 
 
 def distance_m(a: GeoPoint, b: GeoPoint) -> float:
-    lat0 = math.radians((a.lat + b.lat) / 2)
-    dy = (b.lat - a.lat) * METERS_PER_DEGREE
-    dx = (b.lon - a.lon) * METERS_PER_DEGREE * math.cos(lat0)
-    return math.hypot(dx, dy)
+    east, north = _east_north_m(a, b)
+    return math.hypot(east, north)
+
+
+def bearing_deg(origin: GeoPoint, target: GeoPoint) -> int:
+    """Degrees clockwise from north, 0 through 359. Same flat projection as distance_m."""
+    east, north = _east_north_m(origin, target)
+    if east == 0 and north == 0:
+        return 0
+    degrees = math.degrees(math.atan2(east, north))
+    return int(round(degrees)) % 360
+
+
+def _east_north_m(origin: GeoPoint, target: GeoPoint) -> tuple[float, float]:
+    lat0 = math.radians((origin.lat + target.lat) / 2)
+    north = (target.lat - origin.lat) * METERS_PER_DEGREE
+    east = (target.lon - origin.lon) * METERS_PER_DEGREE * math.cos(lat0)
+    return east, north
 
 
 def offset_m(origin: GeoPoint, north_m: float, east_m: float) -> GeoPoint:

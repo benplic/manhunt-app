@@ -61,6 +61,8 @@ final class AppStore {
     var pasteToken = ""
     var tagMessage: String?
     var timeline: [TimelineEventDTO] = []
+    var uwbPeers: [UWBPeer] = []
+    var uwbDistance: [UUID: Double] = [:]
     private var presetReturn: AppScreen = .home
     private var sentLowBattery = false
     private var lastSentLocation: CLLocation?
@@ -68,9 +70,11 @@ final class AppStore {
     private let service: GameService
     private let fake: FakeGameService?
     private let live: LiveGameService?
+    private let ranger: UWBRanging
     private let keychain = KeychainStore()
     private let location = LocationReporter()
     private let defaults: UserDefaults
+    private var uwbTokenFor: UUID?
 
     static let serverURLKey = "manhunt.serverURL"
 
@@ -81,7 +85,9 @@ final class AppStore {
     ) {
         self.service = service
         self.fake = service as? FakeGameService
-        self.live = service as? LiveGameService
+        let liveService = service as? LiveGameService
+        self.live = liveService
+        self.ranger = UWBRangers.make(enabled: liveService != nil)
         self.defaults = defaults
         if let stored = defaults.string(forKey: Self.serverURLKey), !stored.isEmpty {
             self.serverURL = stored
@@ -108,6 +114,14 @@ final class AppStore {
         }
         live?.onReconnect = { [weak self] reconnecting in
             if reconnecting { self?.situation = .reconnecting }
+        }
+        live?.onUWBPeers = { [weak self] peers in
+            self?.applyUWBPeers(peers)
+        }
+        ranger.onDistance = { [weak self] id, meters in
+            Task { @MainActor in
+                self?.noteUWBDistance(id: id, meters: meters)
+            }
         }
         let seeded = ProcessInfo.processInfo.environment["MANHUNT_SCREEN"]
         if let seeded, let mapped = AppScreen.fromLaunch(seeded) {
@@ -282,6 +296,7 @@ final class AppStore {
     }
 
     func signOut() {
+        stopUWB()
         live?.disconnect()
         location.stop()
         keychain.deleteToken()
@@ -293,7 +308,10 @@ final class AppStore {
         note = nil
     }
 
-    func goHome() { screen = .home }
+    func goHome() {
+        stopUWB()
+        screen = .home
+    }
     func openCreate() { screen = .createGame }
     func openPreset() {
         presetReturn = screen == .preset ? presetReturn : screen
@@ -432,6 +450,7 @@ final class AppStore {
             }
         }
         sendFinalPing()
+        stopUWB()
         location.stop()
         live?.disconnect()
         screen = .results
@@ -535,6 +554,47 @@ final class AppStore {
         if chip.id == "radar" { radarOn = true }
     }
 
+    func claimUWB(hiderID: UUID) {
+        tagMessage = nil
+        guard let id = match?.snapshot.gameId else { return }
+        Task {
+            do {
+                try await service.claimUWB(gameID: id, hiderID: hiderID)
+                tagMessage = "Tag accepted."
+            } catch let error as ServiceError {
+                tagMessage = Self.copy(for: error.code)
+            } catch {
+                tagMessage = "Could not send the tag."
+            }
+        }
+    }
+
+    func applyUWBPeers(_ peers: [UWBPeer]) {
+        let ids = Set(peers.map(\.id))
+        uwbDistance = uwbDistance.filter { ids.contains($0.key) }
+        uwbPeers = peers
+        ranger.setPeers(peers)
+    }
+
+    func noteUWBDistance(id: UUID, meters: Double) {
+        uwbDistance[id] = meters
+        live?.sendUWBRange(peerID: id, distanceM: meters)
+    }
+
+    private func publishUWBTokenIfNeeded() {
+        guard let live, match?.snapshot.tagMethod == "uwb", let gameID = match?.snapshot.gameId else { return }
+        guard uwbTokenFor != gameID, let token = ranger.localToken() else { return }
+        live.sendUWBToken(token)
+        uwbTokenFor = gameID
+    }
+
+    private func stopUWB() {
+        ranger.stop()
+        uwbPeers = []
+        uwbDistance = [:]
+        uwbTokenFor = nil
+    }
+
     func submitQR(_ token: String) {
         tagMessage = nil
         guard let id = match?.snapshot.gameId else { return }
@@ -566,6 +626,7 @@ final class AppStore {
 
     func apply(_ view: PlayerViewDTO) {
         match = MatchHandle(snapshot: view, qrToken: match?.qrToken)
+        publishUWBTokenIfNeeded()
         switch view.phase {
         case .ended:
             location.stop()

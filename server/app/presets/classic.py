@@ -29,7 +29,7 @@ CLASSIC_MODULES: dict[str, dict[str, Any]] = {
     },
     "signal_loss": {"silence": 45, "penalty_after": 180, "penalty": "none"},
     "win": {"condition": "either", "time_limit": 30},
-    "hot_cold": {"enabled": True},
+    "hot_cold": {"enabled": True, "interval": 5},
     "points": {
         "survival_s": 300,
         "survival_points": 10,
@@ -59,6 +59,7 @@ RANGES: dict[tuple[str, str], tuple[float, float]] = {
     ("signal_loss", "silence"): (15, 300),
     ("signal_loss", "penalty_after"): (30, 900),
     ("win", "time_limit"): (5, 180),
+    ("hot_cold", "interval"): (2, 30),
 }
 
 

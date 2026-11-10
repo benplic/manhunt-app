@@ -333,6 +333,20 @@ class GameService:
         row.status = game.state.phase
         await session.commit()
 
+    async def uwb_tag(
+        self, session: AsyncSession, user: User, game_id: UUID, hider_id: UUID
+    ) -> None:
+        """Accept a tag from the two phones' stored ranges. The body has no distances."""
+        row, _ = await self.require_member(session, game_id, user)
+        game = self._live(row)
+        try:
+            game.claim_uwb(user.id, hider_id)
+        except GameRuleError as exc:
+            raise _http_for_rule(exc) from exc
+        await self._persist_events(session, game)
+        row.status = game.state.phase
+        await session.commit()
+
     async def persist_inputs(self, session: AsyncSession, game: GameSession) -> None:
         row = await session.get(GameRow, game.state.game_id)
         if row is not None:

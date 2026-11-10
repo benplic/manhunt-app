@@ -9,20 +9,30 @@ struct LiveGameView: View {
     var body: some View {
         @Bindable var store = store
         let youAreHider = store.viewingRole == .hider
+        let snapshot = store.match?.snapshot
+        let chrome = HeadStartChrome.kind(
+            phase: snapshot?.phase ?? .active,
+            role: snapshot?.you.role ?? .unassigned,
+            seekerLock: snapshot?.seekerLock
+        )
+        let spawnZones = snapshot?.spawnLock?.zones.map { $0.asVisual() } ?? []
+        let known = Set(store.liveZones.map(\.id))
+        let zones = store.liveZones + spawnZones.filter { !known.contains($0.id) }
         return ZStack(alignment: .top) {
             HuntMap(
                 boundary: store.arena.boundary,
-                zones: store.liveZones,
+                zones: zones,
                 people: store.livePeople,
                 showHiders: true,
                 showSeekers: youAreHider ? store.radarOn : true,
                 fuzzyHiders: false,
                 region: store.arena.region,
-                onDrop: nil
+                onDrop: nil,
+                emphasizeSpawn: chrome == .spawnZone
             )
             .ignoresSafeArea()
 
-            if store.situation == .headStart && !youAreHider {
+            if chrome == .fullMap {
                 HuntColor.ink.opacity(0.55).ignoresSafeArea()
                 VStack(spacing: 8) {
                     Text("MAP LOCKED")
@@ -160,33 +170,40 @@ struct LiveGameView: View {
                     Text("\(store.shownPoints) pts")
                         .font(.title2.weight(.semibold))
                         .monospacedDigit()
-                    Text(hintLine(youAreHider: youAreHider))
+                    Text(HintCopy.line(
+                        role: store.match?.snapshot.you.role ?? .unassigned,
+                        hint: store.match?.snapshot.you.hint
+                    ))
                         .font(.footnote)
                         .foregroundStyle(HuntColor.muted)
                 }
                 Spacer()
             }
             if !youAreHider && store.situation != .headStart {
-                Button {
-                    showScanner = true
-                } label: {
-                    Text("Scan tag")
-                        .font(.title3.weight(.bold))
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 52)
-                        .background(HuntColor.seeker, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .foregroundStyle(HuntColor.paper)
+                if store.match?.snapshot.tagMethod == "uwb" {
+                    uwbTags
+                } else {
+                    Button {
+                        showScanner = true
+                    } label: {
+                        Text("Scan tag")
+                            .font(.title3.weight(.bold))
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 52)
+                            .background(HuntColor.seeker, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .foregroundStyle(HuntColor.paper)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("tag")
+                    Text("Scan the hider's rotating code. Both phones have to be within pairing range.")
+                        .font(.caption2)
+                        .foregroundStyle(HuntColor.muted)
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("tag")
                 if let tagMessage = store.tagMessage {
                     Text(tagMessage)
                         .font(.caption)
                         .foregroundStyle(HuntColor.warning)
                 }
-                Text("Scan the hider's rotating code. Both phones have to be within pairing range.")
-                    .font(.caption2)
-                    .foregroundStyle(HuntColor.muted)
             }
             if youAreHider {
                 Button {
@@ -227,6 +244,33 @@ struct LiveGameView: View {
         .padding(14)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .colorScheme(.dark)
+    }
+
+    /// TODO: spec section 5.6 lets a failed UWB range fall back to QR. This slice does not.
+    /// `method: uwb` rejects a QR-only claim.
+    private var uwbTags: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if store.uwbPeers.isEmpty {
+                Text("No hider in Ultra Wideband range.")
+                    .font(.caption)
+                    .foregroundStyle(HuntColor.muted)
+            }
+            ForEach(store.uwbPeers) { peer in
+                Button {
+                    store.claimUWB(hiderID: peer.id)
+                } label: {
+                    let distance = store.uwbDistance[peer.id].map { String(format: "%.1f m", $0) }
+                    Text(distance.map { "Tag \(peer.name) · \($0)" } ?? "Tag \(peer.name)")
+                        .font(.title3.weight(.bold))
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 52)
+                        .background(HuntColor.seeker, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .foregroundStyle(HuntColor.paper)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("tag")
+            }
+        }
     }
 
     private func banner(
@@ -270,15 +314,6 @@ struct LiveGameView: View {
         String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 
-    private func hintLine(youAreHider: Bool) -> String {
-        if youAreHider { return "Warmth is hidden from you." }
-        if let hint = store.match?.snapshot.you.hint, let band = hint.band {
-            let name = hint.name ?? "A hider"
-            let meters = hint.meters.map { "\($0) m" } ?? ""
-            return "\(name) is \(band) \(meters)".trimmingCharacters(in: .whitespaces)
-        }
-        return "No hint yet."
-    }
 }
 
 private struct TagCodeSheet: View {

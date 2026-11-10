@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from app.engine.arena import ZoneKind, arena_to_dict
 from app.engine.session import GameSession
 from app.engine.state import PlayerState
 
@@ -49,10 +50,14 @@ def build_view(session: GameSession, viewer_id: UUID) -> dict:
             "reason": state.result.reason,
             "ended_at": state.result.ended_at.isoformat() if state.result.ended_at else None,
         }
+    seeker_lock, spawn_lock = _spawn_lock(session, viewer_id)
     return {
         "game_id": str(state.game_id),
         "join_code": state.join_code,
         "phase": state.phase,
+        "tag_method": str(session.module_settings("tag_policy").get("method", "qr")),
+        "seeker_lock": seeker_lock,
+        "spawn_lock": spawn_lock,
         "phase_remaining_s": state.phase_remaining_s,
         "game_elapsed_s": state.game_elapsed_s,
         "time_limit_remaining_s": state.time_limit_remaining_s,
@@ -124,3 +129,23 @@ def _visible_location(state, viewer: PlayerState, other: PlayerState) -> dict | 
     if other.role == "hider" and other.taunt_until_s is not None and other.taunt_until_s > now:
         return pack("exact")
     return None
+
+
+def _spawn_lock(session: GameSession, viewer_id: UUID) -> tuple[str | None, dict | None]:
+    """Spawn geometry rides on the view so a joiner does not need a local arena copy."""
+    state = session.state
+    if state.phase != "head_start":
+        return None, None
+    seeker_lock = str(session.module_settings("head_start").get("seeker_lock", "locked_map"))
+    if seeker_lock != "spawn_zone":
+        return seeker_lock, None
+    outside = any(
+        banner.player_id == viewer_id and banner.title == "Stay in spawn"
+        for banner in state.banners
+    )
+    zones = [
+        zone
+        for zone in arena_to_dict(state.arena)["zones"]
+        if zone["kind"] == ZoneKind.SEEKER_SPAWN
+    ]
+    return seeker_lock, {"outside": outside, "zones": zones}
