@@ -480,10 +480,13 @@ final class GameRulesTests: XCTestCase {
         editor.tool = .playArea
         editor.addMapPoint(Fixtures.meters(x: 0, y: 0))
         editor.addMapPoint(Fixtures.meters(x: 100, y: 0))
-        editor.addMapPoint(Fixtures.meters(x: 50, y: 80))
+        editor.addMapPoint(Fixtures.meters(x: 100, y: 100))
+        editor.addMapPoint(Fixtures.meters(x: 0, y: 100))
+        XCTAssertEqual(editor.boundary.vertices.count, 4)
+        let spike = Fixtures.meters(x: 50, y: 200)
         editor.selectEdge(0)
-        editor.addMapPoint(Fixtures.meters(x: 50, y: 200))
-        XCTAssertEqual(editor.boundary.vertices.count, 3)
+        editor.addMapPoint(spike)
+        XCTAssertEqual(editor.boundary.vertices.count, 4)
         XCTAssertNotNil(editor.notice)
     }
 

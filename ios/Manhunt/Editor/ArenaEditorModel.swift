@@ -180,7 +180,12 @@ final class ArenaEditorModel {
                 return
             }
             if boundary.vertices.count >= 3 {
-                _ = insertIntoClosedRing(point, vertices: &boundary.vertices)
+                // Copy first so snapshot() does not read `boundary` during an inout on
+                // `boundary.vertices` (Swift exclusivity crashes tests in CI / simulator).
+                var vertices = boundary.vertices
+                if insertIntoClosedRing(point, vertices: &vertices) {
+                    boundary.vertices = vertices
+                }
                 return
             }
             snapshot()
@@ -252,11 +257,12 @@ final class ArenaEditorModel {
         if let id = activeZoneID,
            let index = zones.firstIndex(where: { $0.id == id }),
            zones[index].kind == kind,
-           case var .polygon(polygon) = zones[index].shape,
+           case let .polygon(polygon) = zones[index].shape,
            polygon.vertices.count >= 3
         {
-            if insertIntoClosedRing(point, vertices: &polygon.vertices) {
-                zones[index].shape = .polygon(polygon)
+            var vertices = polygon.vertices
+            if insertIntoClosedRing(point, vertices: &vertices) {
+                zones[index].shape = .polygon(Polygon(vertices: vertices))
             }
             return
         }
