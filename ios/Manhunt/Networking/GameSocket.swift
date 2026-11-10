@@ -8,6 +8,7 @@ final class GameSocket: @unchecked Sendable {
     var onQR: ((String) -> Void)?
     var onEvent: ((BannerDTO) -> Void)?
     var onReconnect: ((Bool) -> Void)?
+    var onUWBPeers: (([UWBPeer]) -> Void)?
     var lastSeq: Int?
 
     private var task: URLSessionWebSocketTask?
@@ -28,18 +29,35 @@ final class GameSocket: @unchecked Sendable {
         }
     }
 
-    func sendLocation(lat: Double, lon: Double, accuracyM: Double, flag: String = "normal") {
-        let payload: [String: Any] = [
-            "type": "location",
-            "data": [
-                "lat": lat,
-                "lon": lon,
-                "accuracy_m": accuracyM,
-                "recorded_at": ISO8601DateFormatter().string(from: Date()),
-                "flag": flag,
-            ],
+    func sendLocation(
+        lat: Double,
+        lon: Double,
+        accuracyM: Double,
+        flag: String = "normal",
+        battery: Float? = nil
+    ) {
+        var data: [String: Any] = [
+            "lat": lat,
+            "lon": lon,
+            "accuracy_m": accuracyM,
+            "recorded_at": ISO8601DateFormatter().string(from: Date()),
+            "flag": flag,
         ]
-        sendJSON(payload)
+        if let battery {
+            data["battery"] = battery
+        }
+        sendJSON(["type": "location", "data": data])
+    }
+
+    func sendUWBToken(_ token: String) {
+        sendJSON(["type": "uwb_token", "data": ["token": token]])
+    }
+
+    func sendUWBRange(peerID: UUID, distanceM: Double) {
+        sendJSON([
+            "type": "uwb_range",
+            "data": ["peer_id": peerID.uuidString, "distance_m": distanceM],
+        ])
     }
 
     func disconnect() {
@@ -127,6 +145,18 @@ final class GameSocket: @unchecked Sendable {
             if let dict = payload as? [String: Any], let token = dict["token"] as? String {
                 onQR?(token)
             }
+        case "uwb_peers":
+            guard let dict = payload as? [String: Any],
+                  let raw = dict["peers"] as? [[String: Any]]
+            else { return }
+            let peers: [UWBPeer] = raw.compactMap { item in
+                guard let id = (item["player_id"] as? String).flatMap(UUID.init(uuidString:)),
+                      let name = item["display_name"] as? String,
+                      let token = item["token"] as? String
+                else { return nil }
+                return UWBPeer(id: id, name: name, token: token)
+            }
+            onUWBPeers?(peers)
         case "event":
             if let dict = payload as? [String: Any] {
                 let banner = BannerDTO(

@@ -2,7 +2,7 @@
 
 Source of truth for unfinished work: [2026-11-09-manhunt-roadmap.md](2026-11-09-manhunt-roadmap.md). This file is the gap list. A phase in the roadmap is not done until every bullet here that cites it is closed.
 
-Branch at the time this was written: `cursor/manhunt-mvp-2a9d` at `2866303`. Server tests: 51 passed. iOS tests: 18 passed. The local API may be running on `http://localhost:8000` with SQLite because Docker socket access was denied. Do not treat that process as the home-host gate.
+Branch at the time this was written: `cursor/manhunt-mvp-2a9d` at `2866303`. Current branch: `cursor/phase3-uwb-hints-6e57` at `6e6c1ae`. Server tests: 78 passed. iOS tests: 27 passed. The local API may be running on `http://localhost:8000` with SQLite because Docker socket access was denied. Do not treat that process as the home-host gate.
 
 ## Already in the repo
 
@@ -19,23 +19,14 @@ Each item is open until the acceptance line is true. Human items stay open until
 
 ### Phase 2
 
-- **2.0 Azure, for real.** Bicep is a draft and has not been deployed. Acceptance: `deploy.yml` is `workflow_dispatch`, the `prod` environment requires reviewers, the image comes from GHCR, Container Apps `minReplicas` is 0 and `maxReplicas` is 1, Postgres B1ms stays on, Key Vault holds the signing keys, and a deploy waits until `/v1/readyz` reports no active games. The iOS client shows “Waking the hunt server…” and retries the first request for up to 60 seconds. While any game is `lobby`, `head_start`, `active`, or `paused`, the process does not rely on a quiet WebSocket alone to stay up (self-ping or an equivalent that is verified on ACA).
-- **2.1 Sign in with Apple.** The server can verify an Apple identity token. The app still uses display-name dev auth. Acceptance: the app presents Sign in with Apple, `aud` is `app.manhunt.ios`, and dev auth stays off when `MANHUNT_ENV` is `azure` or `prod`. Needs the paid Apple team.
-- **2.3 Trail retention.** Encrypt and decrypt exist. Acceptance: a scheduled purge deletes sensitive events older than 7 days (host-adjustable), and every read of a decrypted trail writes an audit-log row. Coordinates still never appear in logs.
-- **2.4 Crash recovery.** Startup replays `games.inputs`, not the event log named in the roadmap. Acceptance: kill the process mid-game, start it again, and the rebuilt session matches the pre-crash phase, roles, points, and last precise locations. Do not turn on scale-to-zero for a shared environment before this test passes.
-- **2.5 Phone-side safety pings.** The server handles `low_battery` and `final` location flags and host safety ack. Acceptance: the app sends `low_battery` at about 5% and a best-effort final ping when the game is backgrounded or ended.
-- **2.8 APNs.** `server/app/notify.py` records notifications in memory. Acceptance: “game starting” and invites are delivered through APNs. Needs the paid Apple team and a key that is not in the repo.
-- **2.9 App Insights.** Log Analytics has a 1 GB/day cap in Bicep. Acceptance: App Insights is wired with that cap, and `/v1/readyz` is what deploy waits on.
+- **2.0 Azure, for real.** Code: GHCR image, `minReplicas` 0 / `maxReplicas` 1, B1ms Postgres, Key Vault secrets plus system identity, deploy wait on `/v1/readyz`, “Waking the hunt server…”, 15 s self-ping while a game is live. Acceptance still needs a human: `prod` environment reviewers, first `workflow_dispatch`, and verifying the self-ping on real ACA. Do not treat a shared environment as shippable until 2.4’s test is green (it is).
+- **2.1 Sign in with Apple.** The app presents Sign in with Apple and posts `identity_token` to `/v1/auth/apple` (`testSignInWithAppleHitsTheFake`). `aud` is `app.manhunt.ios`. Dev auth stays off in `azure`/`prod`. Still open until the paid Apple team is attached to `app.manhunt.ios`.
+- **2.8 APNs.** Start and invite record notifications (`test_start_and_invite_record_notifications`). HTTP/2 send runs when the Key Vault `.p8` is set. Still open until a phone receives “game starting” and invite pushes. Needs the paid Apple team and a key that is not in the repo.
+- **2.9 App Insights.** Bicep creates an Insights component on the 1 GB/day Log Analytics workspace and injects `APPLICATIONINSIGHTS_CONNECTION_STRING`. Deploy waits on `/v1/readyz`. Still open until a human deploy shows the resource in the portal.
 
 ### Phase 3
 
-- **3.1 Nearby Interaction relay.** Not started. Acceptance: the server relays discovery tokens only when GPS distance is at most 30 m, and only with each player’s closest opponents. Record the concurrent-session limit for the iOS version under test in a code comment.
-- **3.3 Hint dock.** Hot/cold is a distance band on the server and one line of copy on the phone. Acceptance: the dock shows band and bearing at the module’s update rate, and a jammer clears it.
-- **3.4 Spawn lock on the phone.** The server banners a seeker who leaves the spawn zone. Acceptance: the live map shows that lock while `seeker_lock` is `spawn_zone`.
-
-### Phase 4
-
-- **4.6 Power-up dock.** Chips call purchase. Acceptance: chips are enabled or greyed out with `PowerUpRules` before the request is sent, Decoy asks for a point inside the play area, and Radar shows seeker pins only while the effect is active. `is_decoy` stays off the wire.
+- **3.1 Device ranging (human).** The relay and the phone ranger are in. Still open until two iPhone 11 or newer, in the same place, confirm a tag and measure `NIError.Code.activeSessionsLimitExceeded`. The code cap stays 5 until that measurement (`UWB_MAX_PEERS`, `NearbyUWBRanger.maxPeers`).
 
 ### Phase 5
 
@@ -63,3 +54,13 @@ Each item is open until the acceptance line is true. Human items stay open until
 - **1.15 Debug-only arbitrary HTTP.** `ef841db`. Release product `Info.plist` has `NSAllowsLocalNetworking` and no `NSAllowsArbitraryLoads` (`xcodebuild build -configuration Release`). Debug product keeps both, because ATS cannot follow a runtime `http://` LAN URL. Acceptance: Release does not allow arbitrary loads. Debug allows local networking, and allows arbitrary loads only when that is still required for a non-loopback `http://` home server.
 - **1.19 Live lobby.** `83963de`, `test_join_and_roles_push_a_lobby_view`. Acceptance: after create or join, the lobby updates from the WebSocket `view` (a second phone joining changes the list without a manual refresh).
 - **1.20 Settings link.** `ef841db`, `testSettingsLinkOpensTheAppSettingsPage`. iOS suite: 19 tests passed on iPhone 16 Pro, iOS 18.4. Acceptance: the banner button opens the app’s Settings page. The app still never requests Always.
+- **2.3 Trail retention.** `4c913e5`, `test_purge_deletes_sensitive_events_older_than_retention`, `test_host_trail_read_writes_audit_without_logging_coordinates`. Acceptance: a scheduled purge deletes sensitive events older than 7 days (host-adjustable via `MANHUNT_TRAIL_RETENTION_DAYS`), and every read of a decrypted trail writes an audit-log row. Coordinates still never appear in logs.
+- **2.4 Crash recovery.** `4c913e5`, `test_restart_rebuilds_mid_game_phase_roles_points_and_locations`. Acceptance: kill the process mid-game, start it again, and the rebuilt session matches the pre-crash phase, roles, points, and last precise locations.
+- **2.5 Phone-side safety pings.** `4c913e5`, `testLocationFlagSendsLowBatteryOncePerDipAndFinalWins`, `testLowBatteryThenEndSendsFinalFlag`. Acceptance: the app sends `low_battery` at about 5% and a best-effort final ping when the game is backgrounded or ended.
+- **3.1 Nearby Interaction relay.** `539de80`, `6e6c1ae`, `test_ten_meters_opposite_roles_exchange_tokens`, `test_forty_meters_apart_yields_no_peers`, `test_cap_keeps_the_closest_opponents`, `test_relay_tag_ignores_a_forged_range_and_drops_a_non_peer`, `test_relay_tag_rejects_nan_and_infinite_ranges`, `testRepublishesDiscoveryTokenAfterReconnect`. Acceptance: the server relays discovery tokens only when GPS distance is at most 30 m, and only with each player’s closest opponents. Record the concurrent-session limit for the iOS version under test in a code comment. The comment records Apple’s unpublished cap and the temporary limit of 5. A two-phone measurement stays open above.
+- **3.3 Hint dock.** `539de80`, `test_hint_bearing_due_north_is_zero`, `test_hint_holds_until_the_interval_elapses`, `test_jammer_clears_the_hint_on_the_next_tick`, `testHintLineShowsBandMetersAndBearing`, `testClearedHintSaysNoneYet`. Acceptance: the dock shows band and bearing at the module’s update rate, and a jammer clears it.
+- **3.4 Spawn lock on the phone.** `539de80`, `test_spawn_zone_lock_banners_a_seeker_who_leaves`, `test_seeker_inside_the_spawn_zone_is_not_locked_out`, `test_locked_map_has_no_spawn_lock`, `testHeadStartChrome`. Acceptance: the live map shows that lock while `seeker_lock` is `spawn_zone`.
+
+### 2026-11-10
+
+- **4.6 Power-up dock.** Acceptance: chips are enabled or greyed out with `PowerUpRules` before the request is sent, Decoy asks for a point inside the play area, and Radar shows seeker pins only while the effect is active. `is_decoy` stays off the wire. Tests: `test_cooldowns_ride_on_you_only`, `testDecoyChipIsTappableWhenOnlyNeedsTarget`, `testRadarSeekersFollowEffectsNotLocalToggle`.

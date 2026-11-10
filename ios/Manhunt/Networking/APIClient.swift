@@ -141,9 +141,26 @@ struct QRBody: Encodable {
     var token: String
 }
 
+struct UwbTagBody: Encodable {
+    var hiderId: UUID
+
+    enum CodingKeys: String, CodingKey {
+        case hiderId = "hider_id"
+    }
+}
+
 struct DevAuthBody: Encodable {
     var displayName: String
     enum CodingKeys: String, CodingKey { case displayName = "display_name" }
+}
+
+struct AppleAuthBody: Encodable {
+    var identityToken: String
+    var displayName: String?
+    enum CodingKeys: String, CodingKey {
+        case identityToken = "identity_token"
+        case displayName = "display_name"
+    }
 }
 
 struct GameCreatedDTO: Codable {

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
@@ -20,12 +22,15 @@ from app.db.session import create_schema, lifespan_resources
 from app.errors import ApiError, ErrorCode, GameRuleError
 from app.games.routes import bind_game_routes
 from app.games.service import GameService
+from app.jobs.purge import purge_trails
 from app.logging_setup import configure_logging
 from app.presets.routes import router as presets_router
 from app.realtime.manager import SessionManager
 from app.realtime.ws import bind_ws
 from app.schemas.routes import bind_preset_save
 from app.schemas.routes import router as modules_router
+
+log = logging.getLogger("manhunt.main")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -79,12 +84,45 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     row.status = "abandoned"
             await session.commit()
             _ = restored
+        async with factory() as session:
+            try:
+                await purge_trails(session, settings.manhunt_trail_retention_days)
+            except Exception:
+                log.exception("trail_purge_failed")
+
+        async def persist_all() -> None:
+            async with factory() as session:
+                for game in list(manager.sessions.values()):
+                    await service.persist_game(session, game)
+                await session.commit()
+
+        async def keep_alive() -> None:
+            # Loopback HTTP so ACA request concurrency stays above zero.
+            async with httpx.AsyncClient() as client:
+                await client.get(settings.manhunt_self_ping_url, timeout=5.0)
+
         task = None
+        purge_task = None
         if settings.manhunt_tick_loop:
-            task = asyncio.create_task(manager.tick_loop(True))
+            task = asyncio.create_task(
+                manager.tick_loop(True, keep_alive=keep_alive, persist=persist_all)
+            )
+
+            async def daily_purge() -> None:
+                while True:
+                    await asyncio.sleep(24 * 3600)
+                    try:
+                        async with factory() as session:
+                            await purge_trails(session, settings.manhunt_trail_retention_days)
+                    except Exception:
+                        log.exception("trail_purge_failed")
+
+            purge_task = asyncio.create_task(daily_purge())
         yield
         if task:
             task.cancel()
+        if purge_task:
+            purge_task.cancel()
         await engine.dispose()
 
     app = FastAPI(title="Manhunt", version="0.1.0", lifespan=lifespan)
@@ -135,8 +173,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(presets_router)
     app.include_router(modules_router)
     app.include_router(bind_preset_save(get_session, current_user))
+    async def persist_location(game) -> None:
+        async with factory() as session:
+            await service.persist_game(session, game)
+            await session.commit()
+
     app.include_router(bind_game_routes(get_session, current_user, service))
-    app.include_router(bind_ws(manager, settings_dep))
+    app.include_router(bind_ws(manager, settings_dep, persist_location=persist_location))
+    # APPLICATIONINSIGHTS_CONNECTION_STRING is injected by Container Apps when
+    # the Bicep Insights resource exists. Portal metrics use it; we do not
+    # pull the OpenTelemetry SDK into this process.
     _ = Depends, select, ErrorCode
     return app
 

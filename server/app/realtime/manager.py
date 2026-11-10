@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections import defaultdict
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from typing import Any
 from uuid import UUID
@@ -15,8 +17,11 @@ from app.engine.arena import arena_from_dict
 from app.engine.clock import Clock
 from app.engine.qr import make_qr_token, token_ttl
 from app.engine.session import GameSession
+from app.engine.uwb import select_uwb_peers
 from app.engine.views import build_view
 from app.realtime.clock import WallClock
+
+LIVE_PHASES = frozenset({"lobby", "head_start", "active", "paused"})
 
 log = logging.getLogger("manhunt.realtime")
 
@@ -52,6 +57,20 @@ class SessionManager:
     def get(self, game_id: UUID) -> GameSession | None:
         return self.sessions.get(game_id)
 
+    def has_live_games(self) -> bool:
+        return any(s.state.phase in LIVE_PHASES for s in self.sessions.values())
+
+    async def keep_replica_awake(self, ping: Callable[[], Awaitable[None]]) -> bool:
+        """HTTP ping while a hunt is live so ACA does not treat a quiet WS as idle.
+
+        TODO: verify on a real ACA environment that this keeps minReplicas from
+        dropping a replica that still has a lobby or active game.
+        """
+        if not self.has_live_games():
+            return False
+        await ping()
+        return True
+
     def attach(self, game_id: UUID, player_id: UUID, ws: WebSocket) -> None:
         self.sockets[game_id][player_id] = ws
 
@@ -81,6 +100,25 @@ class SessionManager:
                 key=session.qr_signing_key,
             )
             session.state.qr_by_hider[player.player_id] = (token, expires)
+
+    async def push_uwb_peers(self, game_id: UUID) -> None:
+        """Send uwb_peers only when the selected set changes. Tokens are not logged."""
+        session = self.sessions.get(game_id)
+        if session is None:
+            return
+        session.prune_uwb_ranges()
+        selected = select_uwb_peers(session.state.players.values())
+        for player_id, ws in list(self.sockets.get(game_id, {}).items()):
+            peers = selected.get(player_id, [])
+            signature = tuple(sorted(peer["player_id"] + peer["token"] for peer in peers))
+            if session.state.uwb_peer_signature.get(player_id) == signature:
+                continue
+            session.state.uwb_peer_signature[player_id] = signature
+            try:
+                await ws.send_json(envelope("uwb_peers", {"peers": peers}))
+            except Exception:
+                log.exception("ws_send_failed game_id=%s player_id=%s", game_id, player_id)
+                self.detach(game_id, player_id)
 
     async def broadcast(self, game_id: UUID) -> None:
         session = self.sessions.get(game_id)
@@ -120,15 +158,28 @@ class SessionManager:
                 log.exception("ws_send_failed game_id=%s player_id=%s", game_id, player_id)
                 self.detach(game_id, player_id)
 
-    async def tick_loop(self, enabled: bool) -> None:
+    async def tick_loop(
+        self,
+        enabled: bool,
+        *,
+        keep_alive: Callable[[], Awaitable[None]] | None = None,
+        persist: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
         if not enabled:
             return
+        last_ping = 0.0
         while True:
             await asyncio.sleep(1)
             try:
                 self.tick_all()
+                if persist is not None:
+                    await persist()
                 for game_id in list(self.sessions):
                     await self.broadcast(game_id)
+                now = time.monotonic()
+                if keep_alive is not None and now - last_ping >= 15:
+                    last_ping = now
+                    await self.keep_replica_awake(keep_alive)
             except Exception:
                 log.exception("tick_loop_failed")
 

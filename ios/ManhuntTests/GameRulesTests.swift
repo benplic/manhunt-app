@@ -20,6 +20,20 @@ final class GameRulesTests: XCTestCase {
         XCTAssertEqual(generated.count, 6)
     }
 
+    func testLocationFlagSendsLowBatteryOncePerDipAndFinalWins() {
+        let first = LocationFlag.choose(battery: 0.04, isFinal: false, wasLow: false)
+        XCTAssertEqual(first.flag, "low_battery")
+        XCTAssertTrue(first.nowLow)
+        let again = LocationFlag.choose(battery: 0.04, isFinal: false, wasLow: true)
+        XCTAssertEqual(again.flag, "normal")
+        let recovered = LocationFlag.choose(battery: 0.40, isFinal: false, wasLow: true)
+        XCTAssertFalse(recovered.nowLow)
+        let ended = LocationFlag.choose(battery: 0.04, isFinal: true, wasLow: true)
+        XCTAssertEqual(ended.flag, "final")
+        let unknown = LocationFlag.choose(battery: -1, isFinal: false, wasLow: false)
+        XCTAssertEqual(unknown.flag, "normal")
+    }
+
     func testSquareContainsCenterAndBoundaryButNotTheBayOfAConcaveRing() {
         let square = Polygon(vertices: [
             Fixtures.meters(x: 0, y: 0),
@@ -200,6 +214,77 @@ final class GameRulesTests: XCTestCase {
         XCTAssertEqual(PowerUpRules.decide(request), .denied(.needsTarget))
         request.hasTarget = true
         XCTAssertEqual(PowerUpRules.decide(request), .allowed)
+
+        request.targetInsidePlayArea = false
+        XCTAssertEqual(PowerUpRules.decide(request), .denied(.targetOutside))
+    }
+
+    func testDecoyChipIsTappableWhenOnlyNeedsTarget() {
+        let request = PurchaseRequest(
+            balance: 100,
+            cost: 60,
+            cooldownRemaining: 0,
+            phase: .active,
+            role: .hider,
+            requiredRole: .hider,
+            status: .active,
+            requiresTarget: true,
+            hasTarget: false
+        )
+        XCTAssertEqual(PowerUpRules.decide(request), .denied(.needsTarget))
+        XCTAssertTrue(PowerUpRules.chipIsTappable(request))
+    }
+
+    func testDecoyChipStaysGreyWhenPointsAreShort() {
+        let request = PurchaseRequest(
+            balance: 10,
+            cost: 60,
+            cooldownRemaining: 0,
+            phase: .active,
+            role: .hider,
+            requiredRole: .hider,
+            status: .active,
+            requiresTarget: true,
+            hasTarget: false
+        )
+        XCTAssertFalse(PowerUpRules.chipIsTappable(request))
+    }
+
+    @MainActor
+    func testRadarSeekersFollowEffectsNotLocalToggle() {
+        let store = AppStore.makePreview()
+        store.match = MatchHandle(
+            snapshot: PlayerViewDTO(
+                gameId: UUID(),
+                joinCode: "ABC123",
+                phase: .active,
+                phaseRemainingS: nil,
+                gameElapsedS: 10,
+                timeLimitRemainingS: 100,
+                you: YouDTO(
+                    playerId: UUID(),
+                    role: .hider,
+                    status: .active,
+                    isHost: false,
+                    bounds: BoundsDTO(phase: "inside", remainingS: nil),
+                    safeZone: nil,
+                    points: 80,
+                    hint: nil,
+                    effects: ["radar"],
+                    cooldowns: nil
+                ),
+                players: [],
+                reveals: [],
+                banners: [],
+                result: nil
+            ),
+            qrToken: nil
+        )
+        XCTAssertTrue(store.radarShowsSeekers)
+        var cleared = store.match!
+        cleared.snapshot.you.effects = []
+        store.match = cleared
+        XCTAssertFalse(store.radarShowsSeekers)
     }
 
     func testPresetOverridesUseServerModuleIdsAndClampHeadStart() {

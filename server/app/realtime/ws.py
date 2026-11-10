@@ -7,11 +7,11 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.auth.tokens import parse_token
 from app.engine.state import LocationReading
-from app.errors import ApiError
+from app.errors import ApiError, GameRuleError
 from app.realtime.manager import SessionManager, envelope
 
 
-def bind_ws(manager: SessionManager, get_settings):
+def bind_ws(manager: SessionManager, get_settings, persist_location=None):
     router = APIRouter()
 
     @router.websocket("/v1/games/{game_id}/ws")
@@ -71,6 +71,8 @@ def bind_ws(manager: SessionManager, get_settings):
                     )
                 )
         last_loc = 0.0
+        last_token = 0.0
+        last_range = 0.0
         try:
             while True:
                 message = await ws.receive_json()
@@ -92,7 +94,35 @@ def bind_ws(manager: SessionManager, get_settings):
                         flag=str(payload.get("flag", "normal")),
                     )
                     session.record_location(user_id, reading)
+                    if persist_location is not None:
+                        await persist_location(session)
                     await manager.broadcast(game_id)
+                    await manager.push_uwb_peers(game_id)
+                elif kind == "uwb_token":
+                    now = time.monotonic()
+                    if now - last_token < 10:
+                        continue
+                    try:
+                        session.set_uwb_token(user_id, str(payload.get("token", "")))
+                    except GameRuleError as exc:
+                        await ws.send_json(
+                            envelope("error", {"code": exc.code.value, "message": exc.message})
+                        )
+                        continue
+                    last_token = now
+                    await manager.push_uwb_peers(game_id)
+                elif kind == "uwb_range":
+                    now = time.monotonic()
+                    if now - last_range < 0.5:
+                        continue
+                    last_range = now
+                    try:
+                        peer_id = UUID(str(payload["peer_id"]))
+                        distance_m = float(payload["distance_m"])
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    # A range for someone outside the GPS gate is dropped, not logged.
+                    session.report_uwb_range(user_id, peer_id, distance_m)
         except WebSocketDisconnect:
             manager.detach(game_id, user_id)
         except Exception:

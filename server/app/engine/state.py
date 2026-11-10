@@ -84,7 +84,11 @@ class PlayerState:
     close_near_since_s: int | None = None
     last_survival_award_s: int = 0
     hint: dict[str, Any] | None = None
+    # Game second when the current hint was published. None means "recompute".
+    hint_at_s: int | None = None
     uwb_token: str | None = None
+    # This phone's own range to a peer: meters, game_elapsed_s. Not persisted.
+    uwb_ranges: dict[UUID, tuple[float, int]] = field(default_factory=dict)
     battery: float | None = None
 
 
@@ -121,3 +125,6 @@ class GameState:
     lockdown_until_s: int | None = None
     jammer_until_s: int | None = None
     inputs: list[dict[str, Any]] = field(default_factory=list)
+    # Last uwb_peers payload sent to each socket. In memory only, so a restart
+    # makes phones publish discovery tokens again.
+    uwb_peer_signature: dict[UUID, tuple[str, ...]] = field(default_factory=dict)

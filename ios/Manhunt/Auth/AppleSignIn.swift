@@ -1,6 +1,10 @@
+import AuthenticationServices
 import Foundation
 
-/// Sign in with Apple is Phase 2. MVP uses `POST /v1/auth/dev`.
+/// Presents Sign in with Apple and extracts the identity token.
 enum AppleSignIn {
-    // TODO: Present ASAuthorizationAppleIDProvider once the paid team is on app.manhunt.ios.
+    static func identityToken(from credential: ASAuthorizationAppleIDCredential) -> String? {
+        guard let data = credential.identityToken else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
 }

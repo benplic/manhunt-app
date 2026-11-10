@@ -11,6 +11,7 @@ struct HuntMap: View {
     var fuzzyHiders: Bool
     var region: MKCoordinateRegion
     var onDrop: ((VisualPoint) -> Void)?
+    var emphasizeSpawn: Bool = false
 
     @State private var position: MapCameraPosition = .automatic
     @State private var crosshair = VisualPoint(latitude: 40.6616, longitude: -73.9688)
@@ -24,6 +25,19 @@ struct HuntMap: View {
                 }
                 ForEach(zones) { zone in
                     zoneContent(zone)
+                }
+                if emphasizeSpawn {
+                    ForEach(zones.filter { $0.kind == .spawn }) { zone in
+                        if let anchor = zone.points.first {
+                            Annotation("Locked spawn", coordinate: anchor.coordinate) {
+                                Image(systemName: "lock.fill")
+                                    .font(.caption.weight(.bold))
+                                    .padding(6)
+                                    .background(HuntColor.ink, in: Circle())
+                                    .foregroundStyle(HuntColor.paper)
+                            }
+                        }
+                    }
                 }
                 ForEach(people) { person in
                     if shouldShow(person) {
@@ -87,14 +101,15 @@ struct HuntMap: View {
     @MapContentBuilder
     private func zoneContent(_ zone: VisualZone) -> some MapContent {
         let tint = tint(for: zone.kind)
+        let width: CGFloat = (emphasizeSpawn && zone.kind == .spawn) ? 4 : 2
         if zone.kind == .safe, let center = zone.points.first, let radius = zone.radiusMeters {
             MapCircle(center: center.coordinate, radius: radius)
                 .foregroundStyle(tint.opacity(0.28))
-                .stroke(tint, lineWidth: 2)
+                .stroke(tint, lineWidth: width)
         } else if zone.points.count >= 3 {
             MapPolygon(coordinates: zone.points.map(\.coordinate))
-                .foregroundStyle(tint.opacity(0.28))
-                .stroke(tint, lineWidth: 2)
+                .foregroundStyle(tint.opacity(emphasizeSpawn && zone.kind == .spawn ? 0.45 : 0.28))
+                .stroke(tint, lineWidth: width)
         }
     }
 

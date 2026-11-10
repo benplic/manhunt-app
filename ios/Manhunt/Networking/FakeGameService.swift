@@ -3,6 +3,9 @@ import Foundation
 /// In-memory server for UI tests and screenshots. Join code PARK42 is the sample lobby.
 final class FakeGameService: GameService {
     private(set) var joinCalls = 0
+    private(set) var lastLocationFlag: String?
+    private(set) var lastDeviceToken: String?
+    private(set) var appleSignIns = 0
     private var signedIn: UserDTO?
     private(set) var storedArenas: [Arena]
     private var games: [UUID: FakeGame] = [:]
@@ -28,6 +31,20 @@ final class FakeGameService: GameService {
 
     func signIn(displayName: String) async throws -> AuthOut {
         signInSync(displayName)
+    }
+
+    func signInWithApple(identityToken: String, displayName: String?) async throws -> AuthOut {
+        appleSignIns += 1
+        _ = identityToken
+        return signInSync(displayName ?? "Casey Lee")
+    }
+
+    func registerDeviceToken(_ token: String) async throws {
+        lastDeviceToken = token
+    }
+
+    func recordLocationFlag(_ flag: String) {
+        lastLocationFlag = flag
     }
 
     @discardableResult
@@ -164,6 +181,11 @@ final class FakeGameService: GameService {
     func claimQR(gameID: UUID, token: String) async throws {
         guard games[gameID] != nil else { throw ServiceError(code: .gameNotFound, message: "") }
         if token.isEmpty { throw ServiceError(code: .tokenInvalid, message: "Empty token.") }
+    }
+
+    func claimUWB(gameID: UUID, hiderID: UUID) async throws {
+        guard games[gameID] != nil else { throw ServiceError(code: .gameNotFound, message: "") }
+        _ = hiderID
     }
 
     func purchase(gameID: UUID, powerID: String, extra: [String: Double]) async throws -> PlayerViewDTO {

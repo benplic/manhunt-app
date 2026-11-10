@@ -1,4 +1,4 @@
-"""Daily purge of encrypted location trails older than 7 days."""
+"""Daily purge of encrypted location trails older than the host-set retention."""
 
 from __future__ import annotations
 

@@ -27,6 +27,30 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Wait until /v1/readyz reports no active games
+        run: |
+          set -euo pipefail
+          FQDN=$(az containerapp show \
+            -g "rg-manhunt-${{ inputs.environment }}" \
+            -n "ca-manhunt-${{ inputs.environment }}" \
+            --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || true)
+          if [ -z "${FQDN}" ]; then
+            echo "No existing Container App; first deploy."
+            exit 0
+          fi
+          for _ in $(seq 1 60); do
+            if body=$(curl -fsS "https://${FQDN}/v1/readyz"); then
+              echo "${body}"
+              active=$(printf '%s' "${body}" | python3 -c "import json,sys; print(json.load(sys.stdin).get('active_games', 1))")
+              if [ "${active}" = "0" ]; then
+                echo "readyz active_games=0"
+                exit 0
+              fi
+            fi
+            sleep 10
+          done
+          echo "Timed out waiting for active_games=0 on /v1/readyz"
+          exit 1
       - name: Build and push GHCR image
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
@@ -38,4 +62,11 @@ jobs:
             --resource-group rg-manhunt-${{ inputs.environment }} \
             --template-file infra/main.bicep \
             --parameters infra/env/${{ inputs.environment }}.bicepparam \
-            --parameters containerImage=ghcr.io/${{ github.repository }}/manhunt-server:${{ github.sha }}
+            --parameters containerImage=ghcr.io/${{ github.repository }}/manhunt-server:${{ github.sha }} \
+            --parameters sessionSigningKey="${{ secrets.MANHUNT_SESSION_SIGNING_KEY }}" \
+            --parameters qrSigningKey="${{ secrets.MANHUNT_QR_SIGNING_KEY }}" \
+            --parameters trailKey="${{ secrets.MANHUNT_TRAIL_KEY }}" \
+            --parameters postgresAdminPassword="${{ secrets.MANHUNT_POSTGRES_ADMIN_PASSWORD }}" \
+            --parameters apnsKey="${{ secrets.MANHUNT_APNS_KEY }}" \
+            --parameters apnsKeyId="${{ secrets.MANHUNT_APNS_KEY_ID }}" \
+            --parameters apnsTeamId="${{ secrets.MANHUNT_APNS_TEAM_ID }}"

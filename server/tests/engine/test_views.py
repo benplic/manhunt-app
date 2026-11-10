@@ -34,6 +34,18 @@ def test_ended_game_shows_everyone() -> None:
     assert pin["location"] is not None
 
 
+def test_cooldowns_ride_on_you_only() -> None:
+    session, clock, hider, seeker = two_player_hunt()
+    session.record_location(hider, reading(meters(40, 40), clock))
+    run_for(session, clock, 1)
+    session.state.players[hider].points = 200
+    session.purchase(hider, "shield")
+    hider_view = build_view(session, hider)
+    seeker_view = build_view(session, seeker)
+    assert hider_view["you"]["cooldowns"].get("shield", 0) > 0
+    assert seeker_view["you"]["cooldowns"].get("shield", 0) == 0
+
+
 def test_decoy_flag_is_never_on_the_wire() -> None:
     session, clock, hider, seeker = two_player_hunt()
     session.record_location(hider, reading(meters(40, 40), clock))

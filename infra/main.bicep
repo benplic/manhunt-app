@@ -11,6 +11,22 @@ param postgresAdminPassword string
 param containerImage string
 param minReplicas int = 0
 param maxReplicas int = 1
+@secure()
+param sessionSigningKey string
+@secure()
+param qrSigningKey string
+@secure()
+param trailKey string
+@secure()
+param databaseUrl string = ''
+@secure()
+param apnsKey string = ''
+param apnsKeyId string = ''
+param apnsTeamId string = ''
+
+var kvSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
+var composedDbUrl = 'postgresql+psycopg://${postgresAdminLogin}:${postgresAdminPassword}@${postgres.properties.fullyQualifiedDomainName}:5432/postgres?sslmode=require'
+var effectiveDbUrl = empty(databaseUrl) ? composedDbUrl : databaseUrl
 
 resource kv 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: 'kv-manhunt-${envName}'
@@ -41,6 +57,46 @@ resource log 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
   properties: { sku: { name: 'PerGB2018' }, retentionInDays: 30, workspaceCapping: { dailyQuotaGb: 1 } }
 }
 
+resource insights 'Microsoft.Insights/components@2020-02-02' = {
+  name: 'appi-manhunt-${envName}'
+  location: location
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+    WorkspaceResourceId: log.id
+  }
+}
+
+resource dbSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: kv
+  name: 'database-url'
+  properties: { value: effectiveDbUrl }
+}
+
+resource sessionSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: kv
+  name: 'session-signing-key'
+  properties: { value: sessionSigningKey }
+}
+
+resource qrSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: kv
+  name: 'qr-signing-key'
+  properties: { value: qrSigningKey }
+}
+
+resource trailSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: kv
+  name: 'trail-key'
+  properties: { value: trailKey }
+}
+
+resource apnsSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: kv
+  name: 'apns-key'
+  properties: { value: empty(apnsKey) ? 'unset' : apnsKey }
+}
+
 resource env 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: 'cae-manhunt-${envName}'
   location: location
@@ -58,6 +114,7 @@ resource env 'Microsoft.App/managedEnvironments@2024-03-01' = {
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'ca-manhunt-${envName}'
   location: location
+  identity: { type: 'SystemAssigned' }
   properties: {
     managedEnvironmentId: env.id
     configuration: {
@@ -67,6 +124,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         { name: 'session-key', keyVaultUrl: '${kv.properties.vaultUri}secrets/session-signing-key', identity: 'system' }
         { name: 'qr-key', keyVaultUrl: '${kv.properties.vaultUri}secrets/qr-signing-key', identity: 'system' }
         { name: 'trail-key', keyVaultUrl: '${kv.properties.vaultUri}secrets/trail-key', identity: 'system' }
+        { name: 'apns-key', keyVaultUrl: '${kv.properties.vaultUri}secrets/apns-key', identity: 'system' }
       ]
     }
     template: {
@@ -83,6 +141,10 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'MANHUNT_SESSION_SIGNING_KEY', secretRef: 'session-key' }
             { name: 'MANHUNT_QR_SIGNING_KEY', secretRef: 'qr-key' }
             { name: 'MANHUNT_TRAIL_KEY', secretRef: 'trail-key' }
+            { name: 'MANHUNT_APNS_KEY', secretRef: 'apns-key' }
+            { name: 'MANHUNT_APNS_KEY_ID', value: apnsKeyId }
+            { name: 'MANHUNT_APNS_TEAM_ID', value: apnsTeamId }
+            { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: insights.properties.ConnectionString }
           ]
         }
       ]
@@ -99,8 +161,26 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
       }
     }
   }
+  dependsOn: [
+    dbSecret
+    sessionSecret
+    qrSecret
+    trailSecret
+    apnsSecret
+  ]
+}
+
+resource kvAccess 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(kv.id, app.id, kvSecretsUserRoleId)
+  scope: kv
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', kvSecretsUserRoleId)
+    principalId: app.identity.principalId
+    principalType: 'ServicePrincipal'
+  }
 }
 
 output fqdn string = app.properties.configuration.ingress.fqdn
 output keyVaultName string = kv.name
 output postgresName string = postgres.name
+output appInsightsName string = insights.name

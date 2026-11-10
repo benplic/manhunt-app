@@ -1,4 +1,6 @@
+import CoreLocation
 import Foundation
+import UIKit
 
 enum AppScreen: String, Equatable {
     case signedOut
@@ -47,8 +49,8 @@ final class AppStore {
     var hiderCount = 1
     var editor = ArenaEditorModel()
     var situation: LiveSituation = .active
-    var radarOn = false
-    var armedPowerUps: [String] = []
+    /// Decoy purchase step: pan the map and drop a pin before POST.
+    var decoyPicking = false
     var tool: ArenaTool = .playArea
     var draftBoundary: [VisualPoint] = []
     var draftZones: [VisualZone] = []
@@ -59,14 +61,24 @@ final class AppStore {
     var pasteToken = ""
     var tagMessage: String?
     var timeline: [TimelineEventDTO] = []
+    var uwbPeers: [UWBPeer] = []
+    var uwbDistance: [UUID: Double] = [:]
     private var presetReturn: AppScreen = .home
+    private var sentLowBattery = false
+    private var lastSentLocation: CLLocation?
 
     private let service: GameService
     private let fake: FakeGameService?
     private let live: LiveGameService?
+    private let ranger: UWBRanging
     private let keychain = KeychainStore()
     private let location = LocationReporter()
     private let defaults: UserDefaults
+    /// Last discovery token pushed to the server. Cleared on reconnect so a
+    /// rebuilt session gets a fresh publish. Compared by value so a rotated
+    /// local token is resent even mid-match.
+    private var lastUWBToken: String?
+    private var lastUWBRangeAt: [UUID: Date] = [:]
 
     static let serverURLKey = "manhunt.serverURL"
 
@@ -77,7 +89,9 @@ final class AppStore {
     ) {
         self.service = service
         self.fake = service as? FakeGameService
-        self.live = service as? LiveGameService
+        let liveService = service as? LiveGameService
+        self.live = liveService
+        self.ranger = UWBRangers.make(enabled: liveService != nil)
         self.defaults = defaults
         if let stored = defaults.string(forKey: Self.serverURLKey), !stored.isEmpty {
             self.serverURL = stored
@@ -88,11 +102,7 @@ final class AppStore {
             arenas = fake.storedArenas
         }
         location.onUpdate = { [weak self] loc in
-            self?.live?.sendLocation(
-                lat: loc.coordinate.latitude,
-                lon: loc.coordinate.longitude,
-                accuracyM: loc.horizontalAccuracy
-            )
+            self?.sendFix(from: loc, isFinal: false)
         }
         location.onAccuracy = { [weak self] accuracy in
             self?.locationAccuracy = accuracy
@@ -107,7 +117,19 @@ final class AppStore {
             self?.note = banner.detail
         }
         live?.onReconnect = { [weak self] reconnecting in
-            if reconnecting { self?.situation = .reconnecting }
+            if reconnecting {
+                self?.situation = .reconnecting
+                // Server restart drops tokens. Force a republish on the next view.
+                self?.lastUWBToken = nil
+            }
+        }
+        live?.onUWBPeers = { [weak self] peers in
+            self?.applyUWBPeers(peers)
+        }
+        ranger.onDistance = { [weak self] id, meters in
+            Task { @MainActor in
+                self?.noteUWBDistance(id: id, meters: meters)
+            }
         }
         let seeded = ProcessInfo.processInfo.environment["MANHUNT_SCREEN"]
         if let seeded, let mapped = AppScreen.fromLaunch(seeded) {
@@ -176,6 +198,11 @@ final class AppStore {
 
     var shownPoints: Int { match?.snapshot.you.points ?? 120 }
 
+    /// Seeker pins for hiders follow the server radar effect, not a local toggle.
+    var radarShowsSeekers: Bool {
+        match?.snapshot.you.effects?.contains("radar") == true
+    }
+
     var arena: VisualArena {
         if let selected = arenas.first(where: { $0.id.uuidString == arenaID }) {
             return selected.asVisual(place: selected.name)
@@ -235,10 +262,54 @@ final class AppStore {
             screen = .home
             return
         }
+        note = WakeCopy.message
         Task { await signInRemote() }
     }
 
+    func signInWithApple(identityToken: String) {
+        lastError = nil
+        defaults.set(serverURL, forKey: Self.serverURLKey)
+        if let fake {
+            Task {
+                _ = try? await fake.signInWithApple(identityToken: identityToken, displayName: displayName)
+            }
+            session = Session(displayName: displayName, token: "fake")
+            screen = .home
+            return
+        }
+        note = WakeCopy.message
+        Task { await signInRemoteApple(identityToken: identityToken) }
+    }
+
+    /// Best-effort last ping when the hunt is backgrounded or the host ends it.
+    func handleScenePhase(isBackground: Bool) {
+        if isBackground, screen == .live {
+            sendFinalPing()
+        }
+    }
+
+    func sendFix(from location: CLLocation, isFinal: Bool, battery: Float? = nil) {
+        lastSentLocation = location
+        let level = battery ?? UIDevice.current.batteryLevel
+        let choice = LocationFlag.choose(battery: level, isFinal: isFinal, wasLow: sentLowBattery)
+        sentLowBattery = choice.nowLow
+        live?.sendLocation(
+            lat: location.coordinate.latitude,
+            lon: location.coordinate.longitude,
+            accuracyM: location.horizontalAccuracy,
+            flag: choice.flag,
+            battery: level >= 0 ? level : nil
+        )
+        fake?.recordLocationFlag(choice.flag)
+    }
+
+    func sendFinalPing() {
+        guard let fix = lastSentLocation ?? location.lastFix else { return }
+        sendFix(from: fix, isFinal: true)
+    }
+
     func signOut() {
+        stopUWB()
         live?.disconnect()
         location.stop()
         keychain.deleteToken()
@@ -250,7 +321,10 @@ final class AppStore {
         note = nil
     }
 
-    func goHome() { screen = .home }
+    func goHome() {
+        stopUWB()
+        screen = .home
+    }
     func openCreate() { screen = .createGame }
     func openPreset() {
         presetReturn = screen == .preset ? presetReturn : screen
@@ -388,6 +462,8 @@ final class AppStore {
                 if let view = try? await service.end(gameID: id) { apply(view) }
             }
         }
+        sendFinalPing()
+        stopUWB()
         location.stop()
         live?.disconnect()
         screen = .results
@@ -466,29 +542,175 @@ final class AppStore {
         }
     }
 
+    func purchaseRequest(
+        for chip: PowerChip,
+        hasTarget: Bool = false,
+        targetInsidePlayArea: Bool = true
+    ) -> PurchaseRequest? {
+        guard let snapshot = match?.snapshot else { return nil }
+        return PurchaseRequest(
+            balance: snapshot.you.points,
+            cost: chip.cost,
+            cooldownRemaining: snapshot.you.cooldowns?[chip.id] ?? 0,
+            phase: snapshot.phase,
+            role: snapshot.you.role,
+            requiredRole: chip.role == .hider ? .hider : .seeker,
+            status: snapshot.you.status,
+            requiresTarget: chip.id == "decoy",
+            hasTarget: hasTarget,
+            targetInsidePlayArea: targetInsidePlayArea
+        )
+    }
+
+    func powerChipDecision(
+        for chip: PowerChip,
+        hasTarget: Bool = false,
+        targetInsidePlayArea: Bool = true
+    ) -> PurchaseDecision? {
+        guard let request = purchaseRequest(
+            for: chip,
+            hasTarget: hasTarget,
+            targetInsidePlayArea: targetInsidePlayArea
+        ) else { return nil }
+        return PowerUpRules.decide(request)
+    }
+
+    func chipIsTappable(_ chip: PowerChip) -> Bool {
+        guard let request = purchaseRequest(for: chip) else { return false }
+        return PowerUpRules.chipIsTappable(request)
+    }
+
     func buyPower(_ chip: PowerChip) {
-        togglePower(chip)
+        guard chipIsTappable(chip) else { return }
+        if chip.id == "decoy" {
+            decoyPicking = true
+            note = "Pan the map, then drop a decoy inside the play area."
+            return
+        }
+        guard powerChipDecision(for: chip) == .allowed else {
+            note = denialNote(for: powerChipDecision(for: chip))
+            return
+        }
+        submitPurchase(chip, extra: [:])
+    }
+
+    func cancelDecoyPick() {
+        decoyPicking = false
+        note = nil
+    }
+
+    func dropDecoy(at point: VisualPoint) {
+        guard let chip = SamplePark.powerUps.first(where: { $0.id == "decoy" }) else { return }
+        let geo = GeoPoint(latitude: point.latitude, longitude: point.longitude)
+        let polygon = playAreaPolygon()
+        let inside = ArenaGeometry.contains(geo, in: polygon)
+        if !inside {
+            note = "Decoy has to sit inside the play area."
+            return
+        }
+        guard powerChipDecision(for: chip, hasTarget: true, targetInsidePlayArea: true) == .allowed else {
+            note = denialNote(for: powerChipDecision(for: chip, hasTarget: true))
+            return
+        }
+        decoyPicking = false
+        submitPurchase(chip, extra: ["lat": point.latitude, "lon": point.longitude])
+    }
+
+    private func playAreaPolygon() -> Polygon {
+        Polygon(
+            vertices: arena.boundary.map {
+                GeoPoint(latitude: $0.latitude, longitude: $0.longitude)
+            }
+        )
+    }
+
+    private func submitPurchase(_ chip: PowerChip, extra: [String: Double]) {
         guard let id = match?.snapshot.gameId else { return }
         Task {
-            if let view = try? await service.purchase(gameID: id, powerID: chip.id, extra: [:]) {
+            do {
+                let view = try await service.purchase(gameID: id, powerID: chip.id, extra: extra)
                 apply(view)
+                note = "\(chip.title) armed. \(chip.detail)."
+            } catch let error as ServiceError {
+                note = Self.purchaseCopy(for: error.code)
+            } catch {
+                note = "Could not buy \(chip.title)."
             }
         }
     }
 
-    func togglePower(_ chip: PowerChip) {
-        if armedPowerUps.contains(chip.id) {
-            armedPowerUps.removeAll { $0 == chip.id }
-            if chip.id == "radar" { radarOn = false }
+    private func denialNote(for decision: PurchaseDecision?) -> String? {
+        guard case let .denied(reason) = decision else { return nil }
+        switch reason {
+        case .insufficientPoints: return "Not enough points."
+        case .coolingDown: return "That power-up is still cooling down."
+        case .wrongPhase: return "Power-ups are only available during the hunt."
+        case .wrongRole: return "Wrong role for that power-up."
+        case .eliminated: return "You are out of this round."
+        case .needsTarget: return "Pick a spot on the map first."
+        case .targetOutside: return "Decoy has to sit inside the play area."
+        }
+    }
+
+    static func purchaseCopy(for code: ErrorCode) -> String {
+        switch code {
+        case .insufficientPoints: return "Not enough points."
+        case .coolingDown: return "That power-up is still cooling down."
+        case .wrongPhase: return "Power-ups are only available during the hunt."
+        case .wrongRole: return "Wrong role for that power-up."
+        case .eliminated: return "You are out of this round."
+        case .needsTarget: return "Pick a spot on the map first."
+        case .targetOutside: return "Decoy has to sit inside the play area."
+        default: return "Purchase did not go through (\(code.rawValue))."
+        }
+    }
+
+    func claimUWB(hiderID: UUID) {
+        tagMessage = nil
+        guard let id = match?.snapshot.gameId else { return }
+        Task {
+            do {
+                try await service.claimUWB(gameID: id, hiderID: hiderID)
+                tagMessage = "Tag accepted."
+            } catch let error as ServiceError {
+                tagMessage = Self.copy(for: error.code)
+            } catch {
+                tagMessage = "Could not send the tag."
+            }
+        }
+    }
+
+    func applyUWBPeers(_ peers: [UWBPeer]) {
+        let ids = Set(peers.map(\.id))
+        uwbDistance = uwbDistance.filter { ids.contains($0.key) }
+        uwbPeers = peers
+        ranger.setPeers(peers)
+    }
+
+    func noteUWBDistance(id: UUID, meters: Double) {
+        uwbDistance[id] = meters
+        // Match the server drop rate of 2 per second so NI callbacks do not spam.
+        let now = Date()
+        if let last = lastUWBRangeAt[id], now.timeIntervalSince(last) < 0.5 {
             return
         }
-        guard shownPoints >= chip.cost else {
-            note = "Not enough points for \(chip.title)."
-            return
-        }
-        armedPowerUps.append(chip.id)
-        note = "\(chip.title) armed. \(chip.detail)."
-        if chip.id == "radar" { radarOn = true }
+        lastUWBRangeAt[id] = now
+        live?.sendUWBRange(peerID: id, distanceM: meters)
+    }
+
+    private func publishUWBTokenIfNeeded() {
+        guard let live, match?.snapshot.tagMethod == "uwb" else { return }
+        guard let token = ranger.localToken(), token != lastUWBToken else { return }
+        live.sendUWBToken(token)
+        lastUWBToken = token
+    }
+
+    private func stopUWB() {
+        ranger.stop()
+        uwbPeers = []
+        uwbDistance = [:]
+        lastUWBToken = nil
+        lastUWBRangeAt = [:]
     }
 
     func submitQR(_ token: String) {
@@ -522,6 +744,7 @@ final class AppStore {
 
     func apply(_ view: PlayerViewDTO) {
         match = MatchHandle(snapshot: view, qrToken: match?.qrToken)
+        publishUWBTokenIfNeeded()
         switch view.phase {
         case .ended:
             location.stop()
@@ -568,15 +791,36 @@ final class AppStore {
         live?.updateBaseURL(URL(string: serverURL) ?? URL(string: "http://localhost:8000")!)
         do {
             let auth = try await service.signIn(displayName: displayName)
-            try? keychain.saveToken(auth.accessToken)
-            session = Session(displayName: auth.user.displayName, token: auth.accessToken)
-            displayName = auth.user.displayName
-            if let loaded = try? await service.arenas() { arenas = loaded }
-            screen = .home
+            await finishRemoteAuth(auth)
         } catch {
             lastError = .unreachable
             note = "Is the home server running? Could not reach \(serverURL)."
         }
+    }
+
+    private func signInRemoteApple(identityToken: String) async {
+        live?.updateBaseURL(URL(string: serverURL) ?? URL(string: "http://localhost:8000")!)
+        do {
+            let auth = try await service.signInWithApple(
+                identityToken: identityToken,
+                displayName: displayName
+            )
+            await finishRemoteAuth(auth)
+        } catch {
+            lastError = .unreachable
+            note = "Is the home server running? Could not reach \(serverURL)."
+        }
+    }
+
+    private func finishRemoteAuth(_ auth: AuthOut) async {
+        try? keychain.saveToken(auth.accessToken)
+        session = Session(displayName: auth.user.displayName, token: auth.accessToken)
+        displayName = auth.user.displayName
+        note = nil
+        if let loaded = try? await service.arenas() { arenas = loaded }
+        screen = .home
+        // TODO: register the APNs device token with PUT /v1/me/device-token
+        // once the paid team adds the Push Notifications entitlement.
     }
 
     func loadTimeline() async {

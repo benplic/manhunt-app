@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.apple import verify_apple_token
 from app.auth.refresh import mint_refresh, rotate_refresh, store_refresh
 from app.auth.tokens import issue_token
-from app.db.models import User
+from app.db.models import DeviceToken, User
 from app.errors import ApiError, ErrorCode
 
 
@@ -107,11 +107,29 @@ def bind_auth_routes(get_session, get_settings, current_user):
     return router
 
 
+class DeviceTokenIn(BaseModel):
+    token: str = Field(min_length=8, max_length=256)
+
+
 def bind_me_routes(get_session, current_user):
     me_router = APIRouter(prefix="/v1", tags=["auth"])
 
     @me_router.get("/me")
     async def me(user=Depends(current_user)) -> dict:
         return {"id": str(user.id), "display_name": user.display_name}
+
+    @me_router.put("/me/device-token")
+    async def save_device_token(
+        body: DeviceTokenIn,
+        session: AsyncSession = Depends(get_session),
+        user=Depends(current_user),
+    ) -> dict:
+        row = await session.get(DeviceToken, user.id)
+        if row is None:
+            session.add(DeviceToken(user_id=user.id, token=body.token))
+        else:
+            row.token = body.token
+        await session.commit()
+        return {"ok": True}
 
     return me_router

@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar
 
-from app.engine.geo import ACCURACY_CUTOFF_M, distance_m
+from app.engine.geo import ACCURACY_CUTOFF_M, bearing_deg, distance_m
 
 if TYPE_CHECKING:
     from app.engine.session import GameSession
+    from app.engine.state import PlayerState
 
 from app.engine.modules.base import BaseModule
 
@@ -25,33 +26,30 @@ class HotColdModule(BaseModule):
 
     def on_tick(self, s: GameSession) -> None:
         enabled = bool(self.settings.get("enabled", True))
+        interval = int(self.settings.get("interval", 5))
         jammed = s.state.jammer_until_s is not None
         for player in s.state.players.values():
-            player.hint = None
-            if not enabled or jammed:
+            # A jammer clears the dock on this tick, without waiting for the interval.
+            if not enabled or jammed or s.state.phase != "active" or player.role != "seeker":
+                player.hint = None
+                player.hint_at_s = None
                 continue
-            if s.state.phase != "active":
-                continue
-            if player.role != "seeker" and not (
-                player.role == "hider"
-                and player.radar_until_s
-                and s.state.game_elapsed_s < player.radar_until_s
+            if (
+                player.hint is not None
+                and player.hint_at_s is not None
+                and s.state.game_elapsed_s - player.hint_at_s < interval
             ):
-                # Seekers always get a hint; hiders only with Radar (handled in views).
-                if player.role != "seeker":
-                    continue
-            if player.tracker_until_s is None and player.role == "seeker":
-                # Default hot/cold is on for seekers unless the host disabled the module.
-                pass
-            hint = _hint_for(s, player)
-            player.hint = hint
+                continue
+            player.hint = _hint_for(s, player)
+            player.hint_at_s = s.state.game_elapsed_s
 
 
-def _hint_for(s: GameSession, seeker) -> dict | None:
+def _hint_for(s: GameSession, seeker: PlayerState) -> dict | None:
     if seeker.location is None or seeker.location.accuracy_m > ACCURACY_CUTOFF_M:
         return None
     best = None
     target_name = None
+    target_point = None
     for other in s.state.players.values():
         if other.player_id == seeker.player_id:
             continue
@@ -64,11 +62,17 @@ def _hint_for(s: GameSession, seeker) -> dict | None:
         if best is None or dist < best:
             best = dist
             target_name = other.display_name
-    if best is None:
+            target_point = loc.point
+    if best is None or target_point is None:
         return None
     band = "cold"
     for limit, name in BANDS:
         if best <= limit:
             band = name
             break
-    return {"band": band, "meters": int(best), "name": target_name}
+    return {
+        "band": band,
+        "meters": int(best),
+        "name": target_name,
+        "bearing_deg": bearing_deg(seeker.location.point, target_point),
+    }

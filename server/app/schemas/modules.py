@@ -48,7 +48,13 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "fields": {"silence": {"type": "int", "min": 15, "max": 300}},
     },
     "win": {"version": 1, "fields": {"time_limit": {"type": "int", "min": 5, "max": 180}}},
-    "hot_cold": {"version": 1, "fields": {"enabled": {"type": "bool", "default": True}}},
+    "hot_cold": {
+        "version": 1,
+        "fields": {
+            "enabled": {"type": "bool", "default": True},
+            "interval": {"type": "int", "min": 2, "max": 30, "default": 5},
+        },
+    },
     "points": {"version": 1, "fields": {}},
     "power_ups": {"version": 1, "fields": {}},
     "effects": {"version": 1, "fields": {}},

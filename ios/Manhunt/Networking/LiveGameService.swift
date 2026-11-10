@@ -9,6 +9,7 @@ final class LiveGameService: GameService {
     var onQR: ((String) -> Void)?
     var onEvent: ((BannerDTO) -> Void)?
     var onReconnect: ((Bool) -> Void)?
+    var onUWBPeers: (([UWBPeer]) -> Void)?
 
     init(baseURL: URL) {
         client = APIClient(baseURL: baseURL)
@@ -16,6 +17,7 @@ final class LiveGameService: GameService {
         socket.onQR = { [weak self] token in self?.onQR?(token) }
         socket.onEvent = { [weak self] banner in self?.onEvent?(banner) }
         socket.onReconnect = { [weak self] reconnecting in self?.onReconnect?(reconnecting) }
+        socket.onUWBPeers = { [weak self] peers in self?.onUWBPeers?(peers) }
     }
 
     var token: String? {
@@ -31,6 +33,20 @@ final class LiveGameService: GameService {
         let auth: AuthOut = try await client.post("/v1/auth/dev", body: DevAuthBody(displayName: displayName))
         client.token = auth.accessToken
         return auth
+    }
+
+    func signInWithApple(identityToken: String, displayName: String?) async throws -> AuthOut {
+        let auth: AuthOut = try await client.post(
+            "/v1/auth/apple",
+            body: AppleAuthBody(identityToken: identityToken, displayName: displayName)
+        )
+        client.token = auth.accessToken
+        return auth
+    }
+
+    func registerDeviceToken(_ token: String) async throws {
+        struct Body: Encodable { var token: String }
+        let _: EmptyBody = try await client.put("/v1/me/device-token", body: Body(token: token))
     }
 
     func arenas() async throws -> [Arena] {
@@ -102,6 +118,21 @@ final class LiveGameService: GameService {
         )
     }
 
+    func claimUWB(gameID: UUID, hiderID: UUID) async throws {
+        let _: [String: String] = try await client.post(
+            "/v1/games/\(gameID.uuidString)/tags/uwb",
+            body: UwbTagBody(hiderId: hiderID)
+        )
+    }
+
+    func sendUWBToken(_ token: String) {
+        socket.sendUWBToken(token)
+    }
+
+    func sendUWBRange(peerID: UUID, distanceM: Double) {
+        socket.sendUWBRange(peerID: peerID, distanceM: distanceM)
+    }
+
     func connect(gameID: UUID) {
         guard let token = client.token else { return }
         var components = URLComponents(url: client.baseURL, resolvingAgainstBaseURL: false)
@@ -112,8 +143,14 @@ final class LiveGameService: GameService {
         socket.connect(url: url, token: token)
     }
 
-    func sendLocation(lat: Double, lon: Double, accuracyM: Double, flag: String = "normal") {
-        socket.sendLocation(lat: lat, lon: lon, accuracyM: accuracyM, flag: flag)
+    func sendLocation(
+        lat: Double,
+        lon: Double,
+        accuracyM: Double,
+        flag: String = "normal",
+        battery: Float? = nil
+    ) {
+        socket.sendLocation(lat: lat, lon: lon, accuracyM: accuracyM, flag: flag, battery: battery)
     }
 
     func disconnect() {

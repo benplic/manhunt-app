@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     manhunt_tick_loop: bool = True
     manhunt_trail_key: str = "ab" * 32
     manhunt_trail_key_id: str = "v1"
+    manhunt_trail_retention_days: int = 7
+    manhunt_self_ping_url: str = "http://127.0.0.1:8000/v1/healthz"
+    manhunt_apns_key: str = ""
+    manhunt_apns_key_id: str = ""
+    manhunt_apns_team_id: str = ""
+    manhunt_apns_bundle_id: str = "app.manhunt.ios"
+    manhunt_apns_production: bool = False
 
     def validate_startup(self) -> None:
         """Refuse to boot if fake sign-in is enabled in a cloud environment."""

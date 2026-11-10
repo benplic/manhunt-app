@@ -39,7 +39,7 @@ From a phone on **cellular** (not Wi-Fi): `curl https://<host>/v1/healthz` must 
 1. Open `ios/Manhunt.xcodeproj` on the Mac.
 2. Plug in each friend's iPhone, trust the computer, select the phone as the run destination, and Run.
 3. On the phone: Settings → General → VPN & Device Management → trust the developer certificate.
-4. On the sign-in screen, set **Server URL** to the `https://….trycloudflare.com` (or named-tunnel) URL. Display name is enough; Sign in with Apple is Phase 2.
+4. On the sign-in screen, set **Server URL** to the `https://….trycloudflare.com` (or named-tunnel) URL. Display name plus **Play** is enough for a home game. Sign in with Apple is for Azure once the paid team is attached.
 5. A free Apple ID install expires after 7 days. Reinstall from Xcode. A paid Apple Developer Program membership stretches that to a year.
 
 Debug builds allow local HTTP (`NSAllowsLocalNetworking`) and, for a tunnel-less LAN test, arbitrary HTTP loads.
@@ -49,6 +49,21 @@ Debug builds allow local HTTP (`NSAllowsLocalNetworking`) and, for a tunnel-less
 Xcode → Debug → Simulate Location → Add GPX File to Project → `ios/Support/GPX/riverside.gpx`.
 
 Playtest checklist: [docs/superpowers/plans/2026-11-09-mvp-playtest.md](docs/superpowers/plans/2026-11-09-mvp-playtest.md)
+
+## Azure (Phase 2)
+
+Do not turn scale-to-zero on for a shared environment until crash recovery has been tested (`test_restart_rebuilds_mid_game_phase_roles_points_and_locations`). Bicep still ships `minReplicas: 0`.
+
+Human setup (not in git):
+
+1. Azure subscription, resource group `rg-manhunt-prod` (and `rg-manhunt-dev` if you want a sandbox).
+2. GitHub OIDC (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`) and a GitHub Environment named `prod` that **requires reviewers**.
+3. GitHub secrets for `MANHUNT_SESSION_SIGNING_KEY`, `MANHUNT_QR_SIGNING_KEY`, `MANHUNT_TRAIL_KEY` (64 hex chars), `MANHUNT_POSTGRES_ADMIN_PASSWORD`. APNs `.p8` plus `MANHUNT_APNS_KEY`, `MANHUNT_APNS_KEY_ID`, `MANHUNT_APNS_TEAM_ID` once the paid Apple team exists. Never commit those values.
+4. Grant the deploying identity Key Vault Administrator on the vault so Bicep can write secrets. The Container App system identity gets Key Vault Secrets User.
+5. `workflow_dispatch` `.github/workflows/deploy.yml`. The job waits until `GET /v1/readyz` reports `active_games: 0` before applying Bicep.
+6. After the first deploy, confirm a quiet lobby still keeps a replica up (self-ping every 15 s). TODO: verify that on real ACA.
+
+The iOS client shows **Waking the hunt server…** and retries the first request for up to 60 seconds.
 
 ## Layout
 

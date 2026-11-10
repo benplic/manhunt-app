@@ -2,7 +2,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.games.service import GameService
@@ -20,6 +20,13 @@ class JoinIn(BaseModel):
 
 class QrIn(BaseModel):
     token: str
+
+
+class UwbIn(BaseModel):
+    """Distances in the body are ignored. Each phone reports its own range on the socket."""
+
+    model_config = ConfigDict(extra="ignore")
+    hider_id: UUID
 
 
 def bind_game_routes(get_session, current_user, service: GameService):
@@ -125,6 +132,16 @@ def bind_game_routes(get_session, current_user, service: GameService):
         await service.qr_tag(session, user, game_id, body.token)
         return {"result": "accepted"}
 
+    @router.post("/games/{game_id}/tags/uwb")
+    async def uwb_tag(
+        game_id: UUID,
+        body: UwbIn,
+        session: AsyncSession = Depends(get_session),
+        user=Depends(current_user),
+    ) -> dict:
+        await service.uwb_tag(session, user, game_id, body.hider_id)
+        return {"result": "accepted"}
+
     @router.post("/games/{game_id}/players/{player_id}/remove")
     async def remove_player(
         game_id: UUID,
@@ -187,10 +204,19 @@ def bind_game_routes(get_session, current_user, service: GameService):
         user=Depends(current_user),
     ) -> dict:
         row, _ = await service.require_member(session, game_id, user)
+        await service.notify_invite(session, user, game_id)
         return {
             "join_code": row.join_code,
             "url": f"https://app.manhunt.ios/join/{row.join_code}",
         }
+
+    @router.get("/games/{game_id}/trail")
+    async def trail(
+        game_id: UUID,
+        session: AsyncSession = Depends(get_session),
+        user=Depends(current_user),
+    ) -> dict:
+        return await service.read_trail(session, user, game_id)
 
     @router.get("/games/{game_id}/events")
     async def timeline(
@@ -201,9 +227,8 @@ def bind_game_routes(get_session, current_user, service: GameService):
         await service.require_member(session, game_id, user)
         from sqlalchemy import select as sel
 
-        from app.db.models import AuditLog, GameEventRow
+        from app.db.models import GameEventRow
 
-        _ = AuditLog
         rows = (
             await session.execute(
                 sel(GameEventRow)
