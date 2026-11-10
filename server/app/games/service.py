@@ -16,6 +16,7 @@ from app.engine.session import GameSession
 from app.engine.views import build_view
 from app.errors import ApiError, ErrorCode, GameRuleError
 from app.games.join_code import generate, is_valid, normalize
+from app.games.join_limit import JoinRateLimiter
 from app.presets.classic import CLASSIC_ID, classic_preset
 from app.realtime.manager import SessionManager
 
@@ -28,8 +29,14 @@ def _http_for_rule(exc: GameRuleError) -> ApiError:
 
 
 class GameService:
-    def __init__(self, manager: SessionManager) -> None:
+    def __init__(
+        self,
+        manager: SessionManager,
+        join_limiter: JoinRateLimiter | None = None,
+    ) -> None:
         self.manager = manager
+        # Fresh limiter per process. Tests build a new app, so counters do not leak.
+        self.join_limiter = join_limiter or JoinRateLimiter()
 
     async def create(
         self,
@@ -76,6 +83,8 @@ class GameService:
         return row
 
     async def join(self, session: AsyncSession, user: User, code: str) -> GameRow:
+        # Count the attempt before we look the code up, including misses.
+        self.join_limiter.hit(user.id)
         if not is_valid(code):
             raise ApiError(ErrorCode.INVALID_JOIN_CODE, "Codes are 6 characters.", status_code=422)
         row = await session.scalar(
@@ -101,6 +110,9 @@ class GameService:
             await session.commit()
             game = self._live(row)
             game.add_player(user.id, user.display_name, is_host=False)
+            # The host is already on the socket. Push the new roster instead of
+            # waiting for the next tick, which tests leave disabled.
+            await self.manager.broadcast(row.id)
         return row
 
     def _live(self, row: GameRow) -> GameSession:
@@ -152,6 +164,7 @@ class GameService:
             if member:
                 member.role = player.role
         await session.commit()
+        await self.manager.broadcast(game_id)
         return game
 
     async def start(self, session: AsyncSession, user: User, game_id: UUID) -> GameSession:

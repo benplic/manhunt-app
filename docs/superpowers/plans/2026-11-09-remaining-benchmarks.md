@@ -14,11 +14,6 @@ Each item is open until the acceptance line is true. Human items stay open until
 
 ### Phase 1
 
-- **1.9 Alembic and join-code uniqueness.** There is no Alembic migration. `games.join_code` is a plain index. Acceptance: an initial migration creates the tables, and a partial unique index allows reuse of a join code only after the game is `ended` or `abandoned`. A test inserts two live games with the same code and fails.
-- **1.12 Join rate limit.** Acceptance: the eleventh `POST /v1/games/join` from one user inside a minute returns 429 `RATE_LIMITED`.
-- **1.15 Debug-only arbitrary HTTP.** `NSAllowsArbitraryLoads` is on for every build. Acceptance: Release does not allow arbitrary loads. Debug allows local networking, and allows arbitrary loads only when that is still required for a non-loopback `http://` home server.
-- **1.19 Live lobby.** Overrides are sent. Acceptance: after create or join, the lobby updates from the WebSocket `view` (a second phone joining changes the list without a manual refresh).
-- **1.20 Settings link.** The location banner tells the player to open Settings. Acceptance: the banner button opens the app’s Settings page. The app still never requests Always.
 - **1.24 Home-host gate (human).** Acceptance: `curl https://<tunnel>/v1/healthz` returns 200 from a phone on cellular, and a sideloaded Debug build signs in against that URL.
 - **MVP playtest gate (human).** GPX file exists at `ios/Support/GPX/riverside.gpx`. Acceptance: a simulator run using that GPX, then three sideloaded phones in a park, covering join, head start, a reveal, a hider out-of-bounds elimination, a seeker out-of-bounds pin visible to hiders, a QR tag, and a going-dark alert. Checklist: [2026-11-09-mvp-playtest.md](2026-11-09-mvp-playtest.md).
 
@@ -61,4 +56,10 @@ Each item is open until the acceptance line is true. Human items stay open until
 
 ## Closed
 
-None yet.
+### 2026-11-09
+
+- **1.9 Alembic and join-code uniqueness.** `a483703`, `test_live_join_code_is_unique_and_reusable_after_end`. Acceptance: an initial migration creates the tables, and a partial unique index allows reuse of a join code only after the game is `ended` or `abandoned`. A test inserts two live games with the same code and fails.
+- **1.12 Join rate limit.** `244de91`, `test_eleventh_join_in_a_minute_is_rate_limited` (window edge: `test_join_window_forgets_attempts_older_than_a_minute`). Acceptance: the eleventh `POST /v1/games/join` from one user inside a minute returns 429 `RATE_LIMITED`.
+- **1.15 Debug-only arbitrary HTTP.** `ef841db`. Release product `Info.plist` has `NSAllowsLocalNetworking` and no `NSAllowsArbitraryLoads` (`xcodebuild build -configuration Release`). Debug product keeps both, because ATS cannot follow a runtime `http://` LAN URL. Acceptance: Release does not allow arbitrary loads. Debug allows local networking, and allows arbitrary loads only when that is still required for a non-loopback `http://` home server.
+- **1.19 Live lobby.** `83963de`, `test_join_and_roles_push_a_lobby_view`. Acceptance: after create or join, the lobby updates from the WebSocket `view` (a second phone joining changes the list without a manual refresh).
+- **1.20 Settings link.** `ef841db`, `testSettingsLinkOpensTheAppSettingsPage`. iOS suite: 19 tests passed on iPhone 16 Pro, iOS 18.4. Acceptance: the banner button opens the app’s Settings page. The app still never requests Always.

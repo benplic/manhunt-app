@@ -146,8 +146,10 @@ struct LiveGameView: View {
     private var locationBlock: some View {
         banner(
             title: store.locationAccuracy == .denied ? "Location is off" : "Precise location is off",
-            detail: "Open Settings and allow precise location while you play. Manhunt never asks for Always.",
-            tint: HuntColor.danger
+            detail: "Allow precise location while you play. Manhunt never asks for Always.",
+            tint: HuntColor.danger,
+            actionTitle: "Open Settings",
+            action: { AppSettings.open() }
         )
     }
 
@@ -227,12 +229,26 @@ struct LiveGameView: View {
         .colorScheme(.dark)
     }
 
-    private func banner(title: String, detail: String, tint: Color) -> some View {
+    private func banner(
+        title: String,
+        detail: String,
+        tint: Color,
+        actionTitle: String? = nil,
+        action: (() -> Void)? = nil
+    ) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Circle().fill(tint).frame(width: 8, height: 8).padding(.top, 6)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.subheadline.weight(.bold))
-                Text(detail).font(.caption).foregroundStyle(HuntColor.paper.opacity(0.85))
+            VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.subheadline.weight(.bold))
+                    Text(detail).font(.caption).foregroundStyle(HuntColor.paper.opacity(0.85))
+                }
+                if let actionTitle, let action {
+                    Button(actionTitle, action: action)
+                        .font(.subheadline.weight(.semibold))
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("open-settings")
+                }
             }
         }
         .padding(12)
