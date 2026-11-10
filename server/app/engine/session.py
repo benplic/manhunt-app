@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import random
 from typing import Any
 from uuid import UUID
@@ -177,7 +178,12 @@ class GameSession:
         The range is not logged. A seeker cannot report the hider's measurement.
         """
         player = self.state.players.get(player_id)
-        if player is None or distance_m < 0 or distance_m > UWB_RANGE_MAX_M:
+        if (
+            player is None
+            or not math.isfinite(distance_m)
+            or distance_m < 0
+            or distance_m > UWB_RANGE_MAX_M
+        ):
             return False
         self.prune_uwb_ranges()
         allowed = _peer_ids(select_uwb_peers(self.state.players.values()).get(player_id, []))

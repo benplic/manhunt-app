@@ -17,6 +17,7 @@ protocol UWBRanging: AnyObject {
 
 enum UWBRangers {
     /// Precise distance is the U1/U2 capability. The simulator reports false.
+    /// Uses NISession.deviceCapabilities (iOS 16+) instead of the deprecated isSupported.
     static var rangingAvailable: Bool {
         NISession.deviceCapabilities.supportsPreciseDistanceMeasurement
     }
@@ -41,27 +42,32 @@ final class IdleUWBRanger: UWBRanging {
     func stop() {}
 }
 
-/// One NISession per peer. Apple does not publish the concurrent-session cap.
-/// WWDC20 shows one session per peer and several at once. Exceeding the cap
-/// raises NIError.Code.activeSessionsLimitExceeded and can invalidate every session.
+/// One NISession per peer, plus a dedicated discovery session that is never used
+/// for peer config. Invalidating a peer session must not rotate the published token.
+///
+/// Apple does not publish the concurrent-session cap. WWDC20 shows one session per
+/// peer and several at once. Exceeding the cap raises
+/// NIError.Code.activeSessionsLimitExceeded and can invalidate every session.
 /// TODO: measure the cap on two iPhone 11 or newer running the iOS version under test.
 final class NearbyUWBRanger: NSObject, UWBRanging, NISessionDelegate {
+    /// Peer sessions only. The discovery session is separate and not counted here.
     static let maxPeers = 5
 
     var onDistance: ((UUID, Double) -> Void)?
 
     private var sessions: [UUID: NISession] = [:]
-    private var anchor: NISession?
+    /// Publishes our discovery token. Never run a peer configuration on this session.
+    private var discovery: NISession?
     private var hitLimit = false
 
     func localToken() -> String? {
         guard UWBRangers.rangingAvailable else { return nil }
-        if anchor == nil {
+        if discovery == nil {
             let session = NISession()
             session.delegate = self
-            anchor = session
+            discovery = session
         }
-        guard let token = anchor?.discoveryToken else { return nil }
+        guard let token = discovery?.discoveryToken else { return nil }
         return Self.encode(token)
     }
 
@@ -70,13 +76,12 @@ final class NearbyUWBRanger: NSObject, UWBRanging, NISessionDelegate {
         let keep = Set(wanted.map(\.id))
         for (id, session) in sessions where !keep.contains(id) {
             session.invalidate()
-            if session === anchor { anchor = nil }
             sessions.removeValue(forKey: id)
         }
         guard UWBRangers.rangingAvailable, !hitLimit else { return }
         for peer in wanted where sessions[peer.id] == nil {
             guard let token = Self.decode(peer.token) else { continue }
-            let session = session(for: peer.id)
+            let session = NISession()
             session.delegate = self
             sessions[peer.id] = session
             session.run(NINearbyPeerConfiguration(peerToken: token))
@@ -84,8 +89,8 @@ final class NearbyUWBRanger: NSObject, UWBRanging, NISessionDelegate {
     }
 
     func stop() {
-        anchor?.invalidate()
-        anchor = nil
+        discovery?.invalidate()
+        discovery = nil
         for session in sessions.values {
             session.invalidate()
         }
@@ -101,6 +106,10 @@ final class NearbyUWBRanger: NSObject, UWBRanging, NISessionDelegate {
     }
 
     func session(_ session: NISession, didInvalidateWith error: Error) {
+        if session === discovery {
+            discovery = nil
+            return
+        }
         if let ni = error as? NIError, ni.code == .activeSessionsLimitExceeded {
             // Opening another session would knock the rest down. Stop here.
             hitLimit = true
@@ -111,14 +120,6 @@ final class NearbyUWBRanger: NSObject, UWBRanging, NISessionDelegate {
             return
         }
         sessions = sessions.filter { $0.value !== session }
-    }
-
-    /// The published token belongs to `anchor`, so the first peer has to run on that session.
-    private func session(for peerID: UUID) -> NISession {
-        if sessions.isEmpty, let anchor, sessions[peerID] == nil {
-            return anchor
-        }
-        return NISession()
     }
 
     private static func encode(_ token: NIDiscoveryToken) -> String? {

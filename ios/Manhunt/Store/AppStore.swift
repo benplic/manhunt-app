@@ -74,7 +74,11 @@ final class AppStore {
     private let keychain = KeychainStore()
     private let location = LocationReporter()
     private let defaults: UserDefaults
-    private var uwbTokenFor: UUID?
+    /// Last discovery token pushed to the server. Cleared on reconnect so a
+    /// rebuilt session gets a fresh publish. Compared by value so a rotated
+    /// local token is resent even mid-match.
+    private var lastUWBToken: String?
+    private var lastUWBRangeAt: [UUID: Date] = [:]
 
     static let serverURLKey = "manhunt.serverURL"
 
@@ -113,7 +117,11 @@ final class AppStore {
             self?.note = banner.detail
         }
         live?.onReconnect = { [weak self] reconnecting in
-            if reconnecting { self?.situation = .reconnecting }
+            if reconnecting {
+                self?.situation = .reconnecting
+                // Server restart drops tokens. Force a republish on the next view.
+                self?.lastUWBToken = nil
+            }
         }
         live?.onUWBPeers = { [weak self] peers in
             self?.applyUWBPeers(peers)
@@ -578,21 +586,28 @@ final class AppStore {
 
     func noteUWBDistance(id: UUID, meters: Double) {
         uwbDistance[id] = meters
+        // Match the server drop rate of 2 per second so NI callbacks do not spam.
+        let now = Date()
+        if let last = lastUWBRangeAt[id], now.timeIntervalSince(last) < 0.5 {
+            return
+        }
+        lastUWBRangeAt[id] = now
         live?.sendUWBRange(peerID: id, distanceM: meters)
     }
 
     private func publishUWBTokenIfNeeded() {
-        guard let live, match?.snapshot.tagMethod == "uwb", let gameID = match?.snapshot.gameId else { return }
-        guard uwbTokenFor != gameID, let token = ranger.localToken() else { return }
+        guard let live, match?.snapshot.tagMethod == "uwb" else { return }
+        guard let token = ranger.localToken(), token != lastUWBToken else { return }
         live.sendUWBToken(token)
-        uwbTokenFor = gameID
+        lastUWBToken = token
     }
 
     private func stopUWB() {
         ranger.stop()
         uwbPeers = []
         uwbDistance = [:]
-        uwbTokenFor = nil
+        lastUWBToken = nil
+        lastUWBRangeAt = [:]
     }
 
     func submitQR(_ token: String) {

@@ -36,6 +36,19 @@ def test_uwb_tag_requires_both_ranges() -> None:
     assert session.state.players[hider].status == "eliminated"
 
 
+def test_non_finite_uwb_range_is_dropped() -> None:
+    session, clock, hider, seeker = two_player_hunt(
+        overrides={"tag_policy": {"method": "uwb", "radius_m": 2}}
+    )
+    session.record_location(hider, reading(meters(100, 100), clock))
+    session.record_location(seeker, reading(meters(100, 101), clock))
+    session.set_uwb_token(seeker, "s" * 16)
+    session.set_uwb_token(hider, "h" * 16)
+    assert session.report_uwb_range(seeker, hider, float("nan")) is False
+    assert session.report_uwb_range(seeker, hider, float("inf")) is False
+    assert hider not in session.state.players[seeker].uwb_ranges
+
+
 def test_uwb_range_for_a_non_peer_is_dropped() -> None:
     session, clock, hider, seeker = two_player_hunt(
         overrides={"tag_policy": {"method": "uwb", "radius_m": 2}}

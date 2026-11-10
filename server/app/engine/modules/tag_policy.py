@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, ClassVar
 
 from app.engine.geo import ACCURACY_CUTOFF_M, distance_m
@@ -52,10 +53,14 @@ class TagPolicyModule(BaseModule):
         if method == "uwb":
             if claim.seeker_range is None or claim.hider_range is None:
                 return ErrorCode.NOT_IN_RANGE
-            if claim.seeker_range > radius or claim.hider_range > radius:
+            if not _finite_within(claim.seeker_range, radius) or not _finite_within(
+                claim.hider_range, radius
+            ):
                 return ErrorCode.NOT_IN_RANGE
         elif claim.seeker_range is not None and claim.hider_range is not None:
-            if claim.seeker_range > radius or claim.hider_range > radius:
+            if not _finite_within(claim.seeker_range, radius) or not _finite_within(
+                claim.hider_range, radius
+            ):
                 return ErrorCode.NOT_IN_RANGE
         return None
 
@@ -82,3 +87,7 @@ def require_tag_ok(s: GameSession, claim: TagClaim) -> None:
         code = module.check_tag(s, claim)
         if code is not None:
             raise GameRuleError(code)
+
+
+def _finite_within(distance_m: float, radius: float) -> bool:
+    return math.isfinite(distance_m) and 0 <= distance_m <= radius
