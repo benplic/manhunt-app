@@ -2,7 +2,7 @@
 
 Source of truth for unfinished work: [2026-11-09-manhunt-roadmap.md](2026-11-09-manhunt-roadmap.md). This file is the gap list. A phase in the roadmap is not done until every bullet here that cites it is closed.
 
-Branch at the time this was written: `cursor/manhunt-mvp-2a9d` at `2866303`. Current branch: `main` at `a18de25`. Server tests: 81 passed. iOS tests: 47 passed on iPhone 16 Pro, iOS 18.4. The local API may be running on `http://localhost:8000` with SQLite because Docker socket access was denied. Do not treat that process as the home-host gate.
+Branch at the time this was written: `cursor/manhunt-mvp-2a9d` at `2866303`. Current branch: `main` at `04b0c15`. Server tests: 81 passed. iOS tests: 47 passed on iPhone 16 Pro, iOS 18.4. The local API may be running on `http://localhost:8000` with SQLite because Docker socket access was denied. Do not treat that process as the home-host gate.
 
 ## Already in the repo
 
