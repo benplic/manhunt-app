@@ -127,7 +127,7 @@ final class AppStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testOutsideDecoyKeepsPickingAndSurfacesTheNote() async {
+    func testOutsideDecoyKeepsPickingAndSurfacesTheNote() {
         let fake = FakeGameService()
         let store = AppStore(service: fake)
         store.signInPreview()
@@ -146,8 +146,8 @@ final class AppStoreTests: XCTestCase {
         store.buyPower(SamplePark.powerUps.first { $0.id == "decoy" }!)
         XCTAssertTrue(store.decoyPicking)
 
+        // Client PowerUpRules.targetOutside fires before purchase is sent.
         store.dropDecoy(at: VisualPoint(latitude: 1.0, longitude: 1.0))
-        try? await Task.sleep(nanoseconds: 100_000_000)
         XCTAssertTrue(store.decoyPicking)
         XCTAssertEqual(store.note, "Decoy has to sit inside the play area.")
     }

@@ -198,9 +198,16 @@ final class AppStore {
 
     var shownPoints: Int { match?.snapshot.you.points ?? 120 }
 
-    /// Seeker pins for hiders follow the server radar effect, not a local toggle.
+    /// True while the server radar effect is live on `you.effects`.
     var radarShowsSeekers: Bool {
         match?.snapshot.you.effects?.contains("radar") == true
+    }
+
+    /// Hider map: radar effect, or any seeker location the filtered view already sent
+    /// (out-of-bounds reveal). Never invents pins from a rejected purchase.
+    var shouldShowSeekerPins: Bool {
+        if radarShowsSeekers { return true }
+        return livePeople.contains { $0.role == .seeker && !$0.isYou }
     }
 
     var arena: VisualArena {
@@ -350,6 +357,8 @@ final class AppStore {
             lastError = .missingArena
             return
         }
+        // Keep the live map boundary in sync with the arena used for create.
+        self.arenaID = arenaID.uuidString
         guard let fake else {
             let overrides = PresetOverrides.from(modules: modules)
             Task { await createMatchRemote(arenaID: arenaID, presetID: presetID, overrides: overrides) }
@@ -602,14 +611,30 @@ final class AppStore {
 
     func dropDecoy(at point: VisualPoint) {
         guard let chip = SamplePark.powerUps.first(where: { $0.id == "decoy" }) else { return }
-        // Server owns the session arena boundary. Local geometry can diverge
-        // from the live arena, so do not gate the POST on a client contains check.
-        let decision = powerChipDecision(for: chip, hasTarget: true, targetInsidePlayArea: true)
+        // Deny outside the yellow play area before POST. Server still re-checks
+        // the session arena boundary; this keeps lat/lon off the wire when the
+        // map the player sees already says the point is outside.
+        let geo = GeoPoint(latitude: point.latitude, longitude: point.longitude)
+        let inside = ArenaGeometry.contains(geo, in: playAreaPolygon())
+        let decision = powerChipDecision(
+            for: chip,
+            hasTarget: true,
+            targetInsidePlayArea: inside
+        )
         guard decision == .allowed else {
             note = denialNote(for: decision)
             return
         }
         submitPurchase(chip, extra: ["lat": point.latitude, "lon": point.longitude], clearingDecoyPick: true)
+    }
+
+    /// Play area drawn on the live map (`HuntMap` boundary).
+    private func playAreaPolygon() -> Polygon {
+        Polygon(
+            vertices: arena.boundary.map {
+                GeoPoint(latitude: $0.latitude, longitude: $0.longitude)
+            }
+        )
     }
 
     private func submitPurchase(

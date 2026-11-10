@@ -24,9 +24,9 @@ struct LiveGameView: View {
                 zones: zones,
                 people: store.livePeople,
                 showHiders: true,
-                // Trust the filtered view: hiders only get seeker locations for radar
-                // or OOB reveals. Do not re-filter with a local radar toggle.
-                showSeekers: true,
+                // Hiders: radar effect shows seekers; server-sent OOB seeker pins
+                // still draw without inventing pins from a local toggle.
+                showSeekers: youAreHider ? store.shouldShowSeekerPins : true,
                 fuzzyHiders: false,
                 region: store.arena.region,
                 onDrop: store.decoyPicking ? { store.dropDecoy(at: $0) } : nil,

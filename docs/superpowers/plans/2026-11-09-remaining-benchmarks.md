@@ -63,4 +63,4 @@ Each item is open until the acceptance line is true. Human items stay open until
 
 ### 2026-11-10
 
-- **4.6 Power-up dock.** Acceptance: chips are enabled or greyed out with `PowerUpRules` before the request is sent, Decoy asks for a point inside the play area, and Radar shows seeker pins only while the effect is active. `is_decoy` stays off the wire. Tests: `test_cooldowns_ride_on_you_only`, `testDecoyChipIsTappableWhenOnlyNeedsTarget`, `testRadarSeekersFollowEffectsNotLocalToggle`.
+- **4.6 Power-up dock.** Acceptance: chips are enabled or greyed out with `PowerUpRules` before the request is sent, Decoy asks for a point inside the play area, and Radar shows seeker pins only while the effect is active. `is_decoy` stays off the wire. Tests: `test_cooldowns_ride_on_you_only`, `testDecoyChipIsTappableWhenOnlyNeedsTarget`, `testRadarSeekersFollowEffectsNotLocalToggle`, `testOutsideDecoyKeepsPickingAndSurfacesTheNote`.

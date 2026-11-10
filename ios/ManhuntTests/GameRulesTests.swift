@@ -281,10 +281,13 @@ final class GameRulesTests: XCTestCase {
             qrToken: nil
         )
         XCTAssertTrue(store.radarShowsSeekers)
+        XCTAssertTrue(store.shouldShowSeekerPins)
         var cleared = store.match!
         cleared.snapshot.you.effects = []
         store.match = cleared
         XCTAssertFalse(store.radarShowsSeekers)
+        // No server-sent seeker locations either — pins stay off.
+        XCTAssertFalse(store.shouldShowSeekerPins)
     }
 
     func testPresetOverridesUseServerModuleIdsAndClampHeadStart() {
