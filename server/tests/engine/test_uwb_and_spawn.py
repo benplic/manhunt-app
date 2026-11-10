@@ -15,15 +15,6 @@ def test_uwb_tag_requires_both_ranges() -> None:
     )
     session.record_location(hider, reading(meters(100, 100), clock))
     session.record_location(seeker, reading(meters(100, 101), clock))
-    token = make_qr_token(
-        game_id=session.state.game_id,
-        hider_id=hider,
-        expires_at=clock.now() + timedelta(seconds=30),
-        key=session.qr_signing_key,
-    )
-    with pytest.raises(GameRuleError) as exc:
-        session.claim_tag(TagClaim(seeker, hider, qr_token=token))
-    assert exc.value.code == ErrorCode.NOT_IN_RANGE
     session.set_uwb_token(seeker, "s" * 16)
     session.set_uwb_token(hider, "h" * 16)
     assert session.report_uwb_range(seeker, hider, 1) is True
@@ -33,6 +24,23 @@ def test_uwb_tag_requires_both_ranges() -> None:
     assert exc.value.code == ErrorCode.NOT_IN_RANGE
     assert session.report_uwb_range(hider, seeker, 1) is True
     session.claim_uwb(seeker, hider)
+    assert session.state.players[hider].status == "eliminated"
+
+
+def test_uwb_preset_still_accepts_qr_with_pairing() -> None:
+    """QR stays the fallback when method is uwb (spec §5.6)."""
+    session, clock, hider, seeker = two_player_hunt(
+        overrides={"tag_policy": {"method": "uwb", "radius_m": 2}}
+    )
+    session.record_location(hider, reading(meters(100, 100), clock))
+    session.record_location(seeker, reading(meters(100, 101), clock))
+    token = make_qr_token(
+        game_id=session.state.game_id,
+        hider_id=hider,
+        expires_at=clock.now() + timedelta(seconds=30),
+        key=session.qr_signing_key,
+    )
+    session.claim_tag(TagClaim(seeker, hider, qr_token=token))
     assert session.state.players[hider].status == "eliminated"
 
 

@@ -24,7 +24,9 @@ struct LiveGameView: View {
                 zones: zones,
                 people: store.livePeople,
                 showHiders: true,
-                showSeekers: youAreHider ? store.radarShowsSeekers : true,
+                // Hiders: radar effect shows seekers; server-sent OOB seeker pins
+                // still draw without inventing pins from a local toggle.
+                showSeekers: youAreHider ? store.shouldShowSeekerPins : true,
                 fuzzyHiders: false,
                 region: store.arena.region,
                 onDrop: store.decoyPicking ? { store.dropDecoy(at: $0) } : nil,
@@ -71,8 +73,9 @@ struct LiveGameView: View {
                     banner(title: "Paused", detail: "The host stopped the clock.", tint: HuntColor.paper)
                 }
                 if store.decoyPicking {
+                    // Hide the dock while picking so HuntMap's Drop point stays tappable.
                     HStack(spacing: 10) {
-                        Text("Drop a decoy inside the yellow line.")
+                        Text(store.note ?? "Drop a decoy inside the yellow line.")
                             .font(.footnote.weight(.semibold))
                         Spacer()
                         Button("Cancel") { store.cancelDecoyPick() }
@@ -91,7 +94,9 @@ struct LiveGameView: View {
                         .foregroundStyle(HuntColor.paper)
                 }
                 Spacer()
-                dock(youAreHider: youAreHider)
+                if !store.decoyPicking {
+                    dock(youAreHider: youAreHider)
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
@@ -123,6 +128,8 @@ struct LiveGameView: View {
         }
         .confirmationDialog("Host", isPresented: $showHost, titleVisibility: .visible) {
             Button(store.paused ? "Resume" : "Pause", action: store.pauseOrResume)
+            Button("Undo last tag", action: store.undoLastTag)
+            Button("Acknowledge safety", action: store.acknowledgeSafety)
             Button("End game", role: .destructive, action: store.endLive)
             Button("Cancel", role: .cancel) {}
         }
@@ -194,23 +201,9 @@ struct LiveGameView: View {
             if !youAreHider && store.situation != .headStart {
                 if store.match?.snapshot.tagMethod == "uwb" {
                     uwbTags
-                } else {
-                    Button {
-                        showScanner = true
-                    } label: {
-                        Text("Scan tag")
-                            .font(.title3.weight(.bold))
-                            .frame(maxWidth: .infinity)
-                            .frame(minHeight: 52)
-                            .background(HuntColor.seeker, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .foregroundStyle(HuntColor.paper)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("tag")
-                    Text("Scan the hider's rotating code. Both phones have to be within pairing range.")
-                        .font(.caption2)
-                        .foregroundStyle(HuntColor.muted)
                 }
+                // Spec §5.6: QR stays available as the UWB fallback (and the default when method is qr).
+                scanTagButton
                 if let tagMessage = store.tagMessage {
                     Text(tagMessage)
                         .font(.caption)
@@ -218,6 +211,18 @@ struct LiveGameView: View {
                 }
             }
             if youAreHider {
+                if store.match?.snapshot.phase == .active {
+                    Button(action: store.taunt) {
+                        Label("Taunt", systemImage: "megaphone.fill")
+                            .font(.body.weight(.semibold))
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 48)
+                            .background(HuntColor.warning, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .foregroundStyle(HuntColor.ink)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("taunt")
+                }
                 Button {
                     showCode = true
                 } label: {
@@ -263,8 +268,26 @@ struct LiveGameView: View {
         .colorScheme(.dark)
     }
 
-    /// TODO: spec section 5.6 lets a failed UWB range fall back to QR. This slice does not.
-    /// `method: uwb` rejects a QR-only claim.
+    private var scanTagButton: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                showScanner = true
+            } label: {
+                Text(TagChrome.scanLabel(tagMethod: store.match?.snapshot.tagMethod))
+                    .font(.title3.weight(.bold))
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 52)
+                    .background(HuntColor.seeker, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .foregroundStyle(HuntColor.paper)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("tag")
+            Text("Scan the hider's rotating code. Both phones have to be within pairing range.")
+                .font(.caption2)
+                .foregroundStyle(HuntColor.muted)
+        }
+    }
+
     private var uwbTags: some View {
         VStack(alignment: .leading, spacing: 8) {
             if store.uwbPeers.isEmpty {
@@ -285,7 +308,7 @@ struct LiveGameView: View {
                         .foregroundStyle(HuntColor.paper)
                 }
                 .buttonStyle(.plain)
-                .accessibilityIdentifier("tag")
+                .accessibilityIdentifier("uwb-tag")
             }
         }
     }

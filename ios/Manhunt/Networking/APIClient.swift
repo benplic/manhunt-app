@@ -5,6 +5,8 @@ import Foundation
 final class APIClient: @unchecked Sendable {
     var baseURL: URL
     var token: String?
+    /// Called once per request on 401. Return after rotating access_token.
+    var refreshAccessToken: (() async throws -> Void)?
     private let session: URLSession
     private var hasCompletedFirstRequest = false
 
@@ -39,6 +41,7 @@ final class APIClient: @unchecked Sendable {
             : Date().addingTimeInterval(60)
         var lastError: Error = ServiceError(code: .internal, message: "No request was sent.")
         var delay: TimeInterval = 1
+        var didRefresh = false
         while Date() < deadline {
             do {
                 let value: T = try await once(method: method, path: path, body: body)
@@ -46,13 +49,22 @@ final class APIClient: @unchecked Sendable {
                 return value
             } catch let error as ServiceError {
                 lastError = error
-                // Auth and rule errors will not recover by waiting.
-                if ![ErrorCode.internal, .rateLimited].contains(error.code),
-                   error.code != .unauthorized
-                {
+                if error.code == .unauthorized {
+                    // Rotate once, then retry. Never refresh the refresh call itself.
+                    if !didRefresh,
+                       !path.contains("/auth/"),
+                       let refreshAccessToken
+                    {
+                        didRefresh = true
+                        try await refreshAccessToken()
+                        continue
+                    }
                     throw error
                 }
-                if error.code == .unauthorized { throw error }
+                // Auth and rule errors will not recover by waiting.
+                if ![ErrorCode.internal, .rateLimited].contains(error.code) {
+                    throw error
+                }
             } catch {
                 lastError = error
             }

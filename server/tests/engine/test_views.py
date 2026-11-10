@@ -44,6 +44,8 @@ def test_cooldowns_ride_on_you_only() -> None:
     seeker_view = build_view(session, seeker)
     assert hider_view["you"]["cooldowns"].get("shield", 0) > 0
     assert seeker_view["you"]["cooldowns"].get("shield", 0) == 0
+    for row in hider_view["players"] + seeker_view["players"]:
+        assert "cooldowns" not in row
 
 
 def test_decoy_flag_is_never_on_the_wire() -> None:

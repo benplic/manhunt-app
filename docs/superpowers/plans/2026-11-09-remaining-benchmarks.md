@@ -2,7 +2,7 @@
 
 Source of truth for unfinished work: [2026-11-09-manhunt-roadmap.md](2026-11-09-manhunt-roadmap.md). This file is the gap list. A phase in the roadmap is not done until every bullet here that cites it is closed.
 
-Branch at the time this was written: `cursor/manhunt-mvp-2a9d` at `2866303`. Current branch: `cursor/phase3-uwb-hints-6e57` at `6e6c1ae`. Server tests: 78 passed. iOS tests: 27 passed. The local API may be running on `http://localhost:8000` with SQLite because Docker socket access was denied. Do not treat that process as the home-host gate.
+Branch at the time this was written: `cursor/manhunt-mvp-2a9d` at `2866303`. Current branch: `cursor/remaining-client-features-fcad` at `c1f7464`. Server tests: 81 passed. iOS tests: 47 passed on iPhone 16 Pro, iOS 18.4. The local API may be running on `http://localhost:8000` with SQLite because Docker socket access was denied. Do not treat that process as the home-host gate.
 
 ## Already in the repo
 
@@ -30,11 +30,7 @@ Each item is open until the acceptance line is true. Human items stay open until
 
 ### Phase 5
 
-- **5.2 Schema-driven preset editor.** `GET /v1/modules` exists. The form is still hand-built. Acceptance: the editor is generated from that schema, and saved presets round-trip through `rule_presets`.
-- **5.3 Arena editor.** Drawing appends vertices and can bowtie. Self-intersection is rejected on save. Acceptance: the player selects an edge and drops a point that splits that edge, so a new vertex cannot create an hourglass. Also support drag, rename, and delete. This replaces the older “drag vertices only” note in the roadmap.
-- **5.4 Results timeline depth.** The results screen lists event text. Acceptance: the timeline is the ordered non-sensitive event log for that game, including the events the playtest cares about (reveal, out of bounds, tag, signal loss).
-- **5.5 Invite link and QR join.** The API returns a URL string. Acceptance: a universal link and a QR code both join the game.
-- **5.6 TestFlight.** `.github/workflows/testflight.yml` archives with signing off and does not upload. Acceptance: a human with the signing credentials can archive and upload to TestFlight from that workflow.
+- **5.6 TestFlight (human).** `.github/workflows/testflight.yml` archives with manual signing and uploads with `xcrun altool` when the `prod` environment has `BUILD_CERTIFICATE_BASE64`, `BUILD_PROVISION_PROFILE_BASE64`, `P12_PASSWORD`, `APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`, and `APP_STORE_CONNECT_API_KEY`. Acceptance: a human with the signing credentials runs that workflow and the build appears in TestFlight. Stays open until that person does it.
 
 ## How to close an item
 
@@ -63,4 +59,13 @@ Each item is open until the acceptance line is true. Human items stay open until
 
 ### 2026-11-10
 
-- **4.6 Power-up dock.** Acceptance: chips are enabled or greyed out with `PowerUpRules` before the request is sent, Decoy asks for a point inside the play area, and Radar shows seeker pins only while the effect is active. `is_decoy` stays off the wire. Tests: `test_cooldowns_ride_on_you_only`, `testDecoyChipIsTappableWhenOnlyNeedsTarget`, `testRadarSeekersFollowEffectsNotLocalToggle`.
+- **4.6 Power-up dock.** `88a1312`, `c40c459`, `a07f7ff`. Acceptance: chips are enabled or greyed out with `PowerUpRules` before the request is sent, Decoy asks for a point inside the play area, and Radar shows seeker pins only while the effect is active. `is_decoy` stays off the wire. Tests: `test_cooldowns_ride_on_you_only`, `testDecoyChipIsTappableWhenOnlyNeedsTarget`, `testRadarSeekersFollowEffectsNotLocalToggle`, `testOutsideDecoyKeepsPickingAndSurfacesTheNote`.
+- **5.2 Schema-driven preset editor.** `8673e6e`, `testSchemaFormRoundTripsASavedPreset`, `testSavedPresetRoundTripsThroughTheService`. Acceptance: the editor is generated from `GET /v1/modules`, and saved presets round-trip through `rule_presets`.
+- **5.3 Arena editor.** `8673e6e`, `testPlayAreaDropSplitsTheSelectedEdge`, `testDragRenameAndDeleteVertex`. Acceptance: the player selects an edge and drops a point that splits that edge, so a new vertex cannot create an hourglass. Drag, rename, and delete are supported. Self-intersection is still rejected on save.
+- **5.4 Results timeline depth.** `8673e6e`, `test_results_timeline_includes_playtest_events_in_order`, `testTimelineSortsThePlaytestEventsBySeq`. Acceptance: the timeline is the ordered non-sensitive event log for that game, including reveal, out of bounds, tag, and signal loss.
+- **5.5 Invite link and QR join.** `8673e6e`, `testUniversalLinkAndInviteQRBothJoin`. Acceptance: a universal link and a QR code both join the game. The association file is `GET /.well-known/apple-app-site-association`.
+- **Leave game (client).** `30bdcdb`, `testLeaveClearsTheMatchAndHitsTheService`. Acceptance: lobby/live X calls `POST /v1/games/{id}/leave`, disconnects the socket, clears the match, and returns home so quiet lobbies stop the 15 s self-ping.
+- **Host controls (client).** `30bdcdb`, `testRemoveLobbyPlayerHitsTheService`, `test_undo_tag_restores_the_hider`. Acceptance: host can undo the last tag, acknowledge safety, end (plus pause/resume), and remove a non-host lobby player via existing routes.
+- **Taunt (client).** `30bdcdb`, `testTauntDuringActiveRaisesPoints`. Acceptance: hiders in the active phase can taunt from the live dock; wrong role/phase surfaces a denial note; points bump on success.
+- **UWB → QR fallback.** `30bdcdb`, `test_uwb_preset_still_accepts_qr_with_pairing`, `testUwbMethodStillOffersQrScanFallback`. Acceptance: a valid `qr_token` claim is accepted under `method == "uwb"` after GPS pairing; dual-range stays required for UWB-only claims. Live seeker chrome keeps Scan / Show tag code as the fallback.
+- **Refresh token + soft errors + APNs client hook.** `30bdcdb`, `testRefreshRotatesTheFakeToken`, `testPendingDeviceTokenRegistersAfterAuth`. Acceptance: refresh tokens persist in Keychain; a 401 triggers one `POST /v1/auth/refresh` then retry (auth paths excluded); failed refresh signs out. WS send failures and location stream drops surface on the reconnecting/note banner. A pending APNs device token is `PUT /v1/me/device-token` after auth (Push entitlement remains a human gate).

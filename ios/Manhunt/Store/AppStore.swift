@@ -57,6 +57,8 @@ final class AppStore {
     var arenaID = SamplePark.riverside.id
     var paused = false
     var modules: [VisualModule] = SamplePark.classicModules()
+    var presetName = "Park night"
+    var savedPresets: [SavedPresetDTO] = []
     var locationAccuracy: LocationReporter.Accuracy = .notDetermined
     var pasteToken = ""
     var tagMessage: String?
@@ -79,6 +81,8 @@ final class AppStore {
     /// local token is resent even mid-match.
     private var lastUWBToken: String?
     private var lastUWBRangeAt: [UUID: Date] = [:]
+    /// APNs device token waiting for auth, then PUT /v1/me/device-token.
+    private var pendingDeviceToken: String?
 
     static let serverURLKey = "manhunt.serverURL"
 
@@ -125,6 +129,34 @@ final class AppStore {
         }
         live?.onUWBPeers = { [weak self] peers in
             self?.applyUWBPeers(peers)
+        }
+        live?.onSendFailure = { [weak self] _ in
+            self?.situation = .reconnecting
+            self?.note = "Connection hiccup. Retrying…"
+        }
+        live?.onRefreshFailed = { [weak self] in
+            self?.signOut()
+            self?.note = "Session expired. Sign in again."
+        }
+        live?.onTokensRotated = { [weak self] auth in
+            try? self?.keychain.saveToken(auth.accessToken)
+            if let refresh = auth.refreshToken {
+                try? self?.keychain.saveRefreshToken(refresh)
+            }
+            if let session = self?.session {
+                self?.session = Session(displayName: session.displayName, token: auth.accessToken)
+            }
+        }
+        // Cold start: restore refresh so a 401 can rotate without forcing sign-in.
+        if let live, let storedRefresh = keychain.readRefreshToken() {
+            live.refreshToken = storedRefresh
+        }
+        if let live, let storedAccess = keychain.readToken() {
+            live.token = storedAccess
+        }
+        location.onStreamFailure = { [weak self] in
+            self?.situation = .reconnecting
+            self?.note = "Location stream dropped. Reconnecting…"
         }
         ranger.onDistance = { [weak self] id, meters in
             Task { @MainActor in
@@ -198,9 +230,16 @@ final class AppStore {
 
     var shownPoints: Int { match?.snapshot.you.points ?? 120 }
 
-    /// Seeker pins for hiders follow the server radar effect, not a local toggle.
+    /// True while the server radar effect is live on `you.effects`.
     var radarShowsSeekers: Bool {
         match?.snapshot.you.effects?.contains("radar") == true
+    }
+
+    /// Hider map: radar effect, or any seeker location the filtered view already sent
+    /// (out-of-bounds reveal). Never invents pins from a rejected purchase.
+    var shouldShowSeekerPins: Bool {
+        if radarShowsSeekers { return true }
+        return livePeople.contains { $0.role == .seeker && !$0.isYou }
     }
 
     var arena: VisualArena {
@@ -250,6 +289,7 @@ final class AppStore {
         session = Session(displayName: "Casey Lee", token: "preview")
         displayName = "Casey Lee"
         screen = .home
+        Task { await registerPendingDeviceTokenIfNeeded() }
     }
 
     func signIn() {
@@ -260,6 +300,7 @@ final class AppStore {
             fake.signInSync(displayName)
             session = Session(displayName: displayName, token: "fake")
             screen = .home
+            Task { await registerPendingDeviceTokenIfNeeded() }
             return
         }
         note = WakeCopy.message
@@ -272,6 +313,7 @@ final class AppStore {
         if let fake {
             Task {
                 _ = try? await fake.signInWithApple(identityToken: identityToken, displayName: displayName)
+                await registerPendingDeviceTokenIfNeeded()
             }
             session = Session(displayName: displayName, token: "fake")
             screen = .home
@@ -311,6 +353,7 @@ final class AppStore {
     func signOut() {
         stopUWB()
         live?.disconnect()
+        live?.refreshToken = nil
         location.stop()
         keychain.deleteToken()
         session = nil
@@ -321,14 +364,88 @@ final class AppStore {
         note = nil
     }
 
+    /// Leave the current lobby/hunt (POST /leave) then return home.
     func goHome() {
+        leaveMatchThenHome()
+    }
+
+    func leaveMatchThenHome() {
+        let gameID = match?.snapshot.gameId
         stopUWB()
+        location.stop()
+        live?.disconnect()
+        match = nil
         screen = .home
+        note = nil
+        guard let gameID else { return }
+        Task {
+            try? await service.leave(gameID: gameID)
+        }
     }
     func openCreate() { screen = .createGame }
     func openPreset() {
         presetReturn = screen == .preset ? presetReturn : screen
         screen = .preset
+        Task { await refreshPresetEditor() }
+    }
+
+    func refreshPresetEditor() async {
+        // Keep the host's in-memory edits. Replacing wholesale wiped them every
+        // time the editor reopened.
+        if let remote = try? await service.fetchModules(), !remote.isEmpty {
+            let current = PresetOverrides.from(modules: modules)
+            modules = ModuleForm.apply(current, to: remote)
+        }
+        if let saved = try? await service.savedPresets() {
+            savedPresets = saved
+        }
+    }
+
+    func savePreset() async {
+        let name = presetName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = name.isEmpty ? "Custom" : name
+        do {
+            let saved = try await service.savePreset(
+                name: title,
+                modules: PresetOverrides.from(modules: modules)
+            )
+            savedPresets.removeAll { $0.id == saved.id }
+            savedPresets.insert(saved, at: 0)
+            note = "Saved \(saved.name)."
+        } catch {
+            note = "Could not save the preset."
+        }
+    }
+
+    func applySavedPreset(_ preset: SavedPresetDTO) {
+        modules = ModuleForm.apply(preset.modules, to: modules)
+        presetName = preset.name
+        note = "Loaded \(preset.name)."
+    }
+
+    @discardableResult
+    func open(url: URL) -> AppError? {
+        guard let code = InviteLink.joinCode(from: url) else {
+            lastError = .invalidFormat
+            joinMessage = "That link is not a hunt invite."
+            return .invalidFormat
+        }
+        return join(code: code)
+    }
+
+    func openInvite(_ payload: String) {
+        guard let code = InviteLink.joinCode(fromQR: payload) else {
+            lastError = .invalidFormat
+            joinMessage = "That code is not a hunt invite."
+            return
+        }
+        _ = join(code: code)
+    }
+
+    var inviteURL: URL? {
+        let code = joinCode
+        guard JoinCode.isValid(code) else { return nil }
+        return InviteLink.url(joinCode: code)
     }
 
     func closePreset() {
@@ -350,6 +467,8 @@ final class AppStore {
             lastError = .missingArena
             return
         }
+        // Keep the live map boundary in sync with the arena used for create.
+        self.arenaID = arenaID.uuidString
         guard let fake else {
             let overrides = PresetOverrides.from(modules: modules)
             Task { await createMatchRemote(arenaID: arenaID, presetID: presetID, overrides: overrides) }
@@ -414,7 +533,8 @@ final class AppStore {
 
     func cycleRole(_ id: String) {
         guard isHost, let uuid = UUID(uuidString: id), var snapshot = match?.snapshot,
-              let index = snapshot.players.firstIndex(where: { $0.playerId == uuid })
+              let index = snapshot.players.firstIndex(where: { $0.playerId == uuid }),
+              let gameID = match?.snapshot.gameId
         else { return }
         let next: PlayerRole
         switch snapshot.players[index].role {
@@ -422,12 +542,25 @@ final class AppStore {
         case .seeker: next = .unassigned
         case .unassigned: next = .hider
         }
+        // Optimistic pill update; the service call is what the server starts from.
         snapshot.players[index].role = next
         match?.snapshot = snapshot
-        if let fake, let gameID = match?.snapshot.gameId,
-           let view = try? fake.setRoleSync(gameID: gameID, playerID: uuid, role: next)
-        {
-            apply(view)
+        lastError = nil
+        note = nil
+        if let fake {
+            if let view = try? fake.setRoleSync(gameID: gameID, playerID: uuid, role: next) {
+                apply(view)
+            }
+            return
+        }
+        Task {
+            do {
+                let view = try await service.setRole(gameID: gameID, playerID: uuid, role: next)
+                apply(view)
+            } catch {
+                note = "Could not update that role. Try again."
+                lastError = .service(.internal)
+            }
         }
     }
 
@@ -445,14 +578,18 @@ final class AppStore {
             return nil
         } catch let error as ServiceError where error.code == .needBothRoles {
             lastError = .needBothRoles
+            note = Self.needBothRolesCopy
             return .needBothRoles
         } catch {
             lastError = .service(.internal)
+            note = "Could not start the hunt."
             return .service(.internal)
         }
     }
 
     func startLive() { _ = startMatch() }
+
+    static let needBothRolesCopy = "Assign at least one hider and one seeker before starting."
 
     func endMatch() {
         if let fake, let id = match?.snapshot.gameId, let view = try? fake.endSync(gameID: id) {
@@ -482,6 +619,70 @@ final class AppStore {
                 if let view = try? await service.resume(gameID: id) { apply(view) }
             }
         }
+    }
+
+    func undoLastTag() {
+        guard isHost, let id = match?.snapshot.gameId else { return }
+        Task {
+            do {
+                let view = try await service.undoTag(gameID: id)
+                apply(view)
+                note = "Last tag undone."
+            } catch {
+                note = "Could not undo the tag."
+            }
+        }
+    }
+
+    func acknowledgeSafety() {
+        guard isHost, let id = match?.snapshot.gameId else { return }
+        Task {
+            do {
+                let view = try await service.ackSafety(gameID: id)
+                apply(view)
+                note = "Safety alert acknowledged."
+            } catch {
+                note = "Could not acknowledge the safety alert."
+            }
+        }
+    }
+
+    func removeLobbyPlayer(_ id: String) {
+        guard isHost, let gameID = match?.snapshot.gameId, let playerID = UUID(uuidString: id) else { return }
+        Task {
+            do {
+                let view = try await service.removePlayer(gameID: gameID, playerID: playerID)
+                apply(view)
+                note = "Player removed."
+            } catch {
+                note = "Could not remove that player."
+            }
+        }
+    }
+
+    func taunt() {
+        guard let id = match?.snapshot.gameId else { return }
+        guard match?.snapshot.you.role == .hider, match?.snapshot.phase == .active else {
+            note = "Taunt is only for hiders during the hunt."
+            return
+        }
+        Task {
+            do {
+                let view = try await service.taunt(gameID: id)
+                apply(view)
+                note = "Taunt sent. Seekers can see you for a few seconds."
+            } catch let error as ServiceError {
+                note = Self.copy(for: error.code)
+            } catch {
+                note = "Could not taunt."
+            }
+        }
+    }
+
+    /// Stash an APNs device token until after sign-in, then register it.
+    func setPendingDeviceToken(_ token: String) {
+        pendingDeviceToken = token
+        Task { await registerPendingDeviceTokenIfNeeded() }
     }
 
     func leaveResults() {
@@ -514,26 +715,67 @@ final class AppStore {
         refreshDraftsFromEditor()
     }
 
+    func selectPlayEdge(_ index: Int) {
+        editor.selectEdge(index)
+    }
+
+    func selectPlayVertex(_ index: Int) {
+        editor.selectVertex(index)
+    }
+
+    func deletePlayVertex(_ index: Int) {
+        editor.deleteVertex(at: index)
+        refreshDraftsFromEditor()
+    }
+
+    func renameZone(id: UUID, to name: String) {
+        editor.renameZone(id: id, to: name)
+        refreshDraftsFromEditor()
+    }
+
+    func deleteZone(id: UUID) {
+        editor.deleteZone(id: id)
+        refreshDraftsFromEditor()
+    }
+
     func undoDrop() {
         editor.undo()
         refreshDraftsFromEditor()
     }
 
     func saveArena() {
-        var arena = Arena(
-            id: UUID(),
-            name: arenaID == "new" ? "New arena" : arena.name,
-            boundary: editor.boundary,
-            zones: editor.zones
-        )
+        let trimmed = editor.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = trimmed.isEmpty ? "New arena" : trimmed
         if !editor.issues.isEmpty {
             note = editorIssues.joined(separator: " ")
             return
         }
+        // Editing an existing arena must PUT the same id. Creating always POSTs a new one.
+        let existingID = UUID(uuidString: arenaID)
+        let isUpdate = arenaID != "new"
+            && existingID != nil
+            && arenas.contains(where: { $0.id == existingID })
+        let arena = Arena(
+            id: isUpdate ? existingID! : UUID(),
+            name: name,
+            boundary: editor.boundary,
+            zones: editor.zones
+        )
         Task {
             do {
-                arena = try await service.createArena(arena)
-                arenas.append(arena)
+                let saved: Arena
+                if isUpdate {
+                    saved = try await service.updateArena(arena)
+                    if let index = arenas.firstIndex(where: { $0.id == saved.id }) {
+                        arenas[index] = saved
+                    } else {
+                        arenas.append(saved)
+                    }
+                } else {
+                    saved = try await service.createArena(arena)
+                    arenas.append(saved)
+                }
+                arenaID = saved.id.uuidString
                 note = "Arena saved."
                 screen = .home
             } catch {
@@ -587,8 +829,9 @@ final class AppStore {
             note = "Pan the map, then drop a decoy inside the play area."
             return
         }
-        guard powerChipDecision(for: chip) == .allowed else {
-            note = denialNote(for: powerChipDecision(for: chip))
+        let decision = powerChipDecision(for: chip)
+        guard decision == .allowed else {
+            note = denialNote(for: decision)
             return
         }
         submitPurchase(chip, extra: [:])
@@ -601,21 +844,24 @@ final class AppStore {
 
     func dropDecoy(at point: VisualPoint) {
         guard let chip = SamplePark.powerUps.first(where: { $0.id == "decoy" }) else { return }
+        // Deny outside the yellow play area before POST. Server still re-checks
+        // the session arena boundary; this keeps lat/lon off the wire when the
+        // map the player sees already says the point is outside.
         let geo = GeoPoint(latitude: point.latitude, longitude: point.longitude)
-        let polygon = playAreaPolygon()
-        let inside = ArenaGeometry.contains(geo, in: polygon)
-        if !inside {
-            note = "Decoy has to sit inside the play area."
+        let inside = ArenaGeometry.contains(geo, in: playAreaPolygon())
+        let decision = powerChipDecision(
+            for: chip,
+            hasTarget: true,
+            targetInsidePlayArea: inside
+        )
+        guard decision == .allowed else {
+            note = denialNote(for: decision)
             return
         }
-        guard powerChipDecision(for: chip, hasTarget: true, targetInsidePlayArea: true) == .allowed else {
-            note = denialNote(for: powerChipDecision(for: chip, hasTarget: true))
-            return
-        }
-        decoyPicking = false
-        submitPurchase(chip, extra: ["lat": point.latitude, "lon": point.longitude])
+        submitPurchase(chip, extra: ["lat": point.latitude, "lon": point.longitude], clearingDecoyPick: true)
     }
 
+    /// Play area drawn on the live map (`HuntMap` boundary).
     private func playAreaPolygon() -> Polygon {
         Polygon(
             vertices: arena.boundary.map {
@@ -624,14 +870,20 @@ final class AppStore {
         )
     }
 
-    private func submitPurchase(_ chip: PowerChip, extra: [String: Double]) {
+    private func submitPurchase(
+        _ chip: PowerChip,
+        extra: [String: Double],
+        clearingDecoyPick: Bool = false
+    ) {
         guard let id = match?.snapshot.gameId else { return }
         Task {
             do {
                 let view = try await service.purchase(gameID: id, powerID: chip.id, extra: extra)
                 apply(view)
+                if clearingDecoyPick { decoyPicking = false }
                 note = "\(chip.title) armed. \(chip.detail)."
             } catch let error as ServiceError {
+                // Stay in pick mode on TARGET_OUTSIDE so the player can drop again.
                 note = Self.purchaseCopy(for: error.code)
             } catch {
                 note = "Could not buy \(chip.title)."
@@ -781,7 +1033,11 @@ final class AppStore {
 
     private func enterLive() {
         screen = .live
-        location.start()
+        // FakeGameService UI tests must not touch CoreLocation; a started
+        // CLBackgroundActivitySession crashes the simulator host on teardown.
+        if live != nil {
+            location.start()
+        }
         if let id = match?.snapshot.gameId {
             live?.connect(gameID: id)
         }
@@ -814,19 +1070,33 @@ final class AppStore {
 
     private func finishRemoteAuth(_ auth: AuthOut) async {
         try? keychain.saveToken(auth.accessToken)
+        if let refresh = auth.refreshToken {
+            try? keychain.saveRefreshToken(refresh)
+            live?.refreshToken = refresh
+        }
         session = Session(displayName: auth.user.displayName, token: auth.accessToken)
         displayName = auth.user.displayName
         note = nil
         if let loaded = try? await service.arenas() { arenas = loaded }
         screen = .home
-        // TODO: register the APNs device token with PUT /v1/me/device-token
-        // once the paid team adds the Push Notifications entitlement.
+        await registerPendingDeviceTokenIfNeeded()
+    }
+
+    private func registerPendingDeviceTokenIfNeeded() async {
+        guard session != nil, let token = pendingDeviceToken else { return }
+        do {
+            try await service.registerDeviceToken(token)
+            pendingDeviceToken = nil
+        } catch {
+            // Keep the pending token; a later auth or retry can send it.
+            note = "Could not register for push yet."
+        }
     }
 
     func loadTimeline() async {
         guard let id = match?.snapshot.gameId else { return }
         if let events = try? await service.timeline(gameID: id) {
-            timeline = events
+            timeline = TimelineOrder.sorted(events)
         }
     }
 
@@ -869,8 +1139,10 @@ final class AppStore {
             enterLive()
         } catch let error as ServiceError where error.code == .needBothRoles {
             lastError = .needBothRoles
+            note = Self.needBothRolesCopy
         } catch {
             lastError = .service(.internal)
+            note = "Could not start the hunt."
         }
     }
 
@@ -883,11 +1155,7 @@ final class AppStore {
 
     private func loadEditor(from arena: Arena) {
         editor = ArenaEditorModel()
-        editor.tool = .playArea
-        for point in arena.boundary.vertices {
-            editor.addMapPoint(point)
-        }
-        editor.zones = arena.zones
+        editor.load(name: arena.name, boundary: arena.boundary, zones: arena.zones)
         refreshDraftsFromEditor()
     }
 

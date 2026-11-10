@@ -24,10 +24,15 @@ struct ResultsView: View {
                         .tracking(1.2)
                         .foregroundStyle(HuntColor.muted)
                     VStack(alignment: .leading, spacing: 8) {
-                        ForEach(store.timeline) { event in
+                        ForEach(TimelineOrder.sorted(store.timeline)) { event in
                             HStack(alignment: .top, spacing: 8) {
                                 Circle().fill(HuntColor.signal).frame(width: 6, height: 6).padding(.top, 6)
-                                Text(event.payload.text ?? event.type)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(event.type.replacingOccurrences(of: "_", with: " "))
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(HuntColor.muted)
+                                    Text(event.payload.text ?? event.type)
+                                }
                             }
                             .font(.subheadline)
                             .foregroundStyle(HuntColor.paper)

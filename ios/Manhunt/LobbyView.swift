@@ -16,6 +16,21 @@ struct LobbyView: View {
                 CodeReadout(code: store.joinCode)
                     .frame(maxWidth: .infinity)
 
+                if let inviteURL = store.inviteURL {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Invite")
+                            .font(.caption.weight(.bold))
+                            .tracking(1.2)
+                            .foregroundStyle(HuntColor.muted)
+                        QRCodeView(token: inviteURL.absoluteString)
+                            .frame(width: 180, height: 180)
+                        Text(inviteURL.absoluteString)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(HuntColor.paper)
+                            .textSelection(.enabled)
+                    }
+                }
+
                 HStack {
                     Label("\(store.players.count) players", systemImage: "person.2")
                     Spacer()
@@ -26,33 +41,55 @@ struct LobbyView: View {
 
                 VStack(spacing: 10) {
                     ForEach(store.players) { player in
-                        Button {
-                            guard store.isHost else { return }
-                            store.cycleRole(player.id)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Circle()
-                                    .fill(player.role.tint)
-                                    .frame(width: 12, height: 12)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(player.isYou ? "\(player.name) (you)" : player.name)
-                                        .font(.body.weight(.semibold))
-                                        .foregroundStyle(HuntColor.paper)
-                                    if player.isHost {
-                                        Text("Host")
-                                            .font(.caption)
-                                            .foregroundStyle(HuntColor.muted)
+                        HStack(spacing: 8) {
+                            Button {
+                                guard store.isHost else { return }
+                                store.cycleRole(player.id)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Circle()
+                                        .fill(player.role.tint)
+                                        .frame(width: 12, height: 12)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(player.isYou ? "\(player.name) (you)" : player.name)
+                                            .font(.body.weight(.semibold))
+                                            .foregroundStyle(HuntColor.paper)
+                                        if player.isHost {
+                                            Text("Host")
+                                                .font(.caption)
+                                                .foregroundStyle(HuntColor.muted)
+                                        }
                                     }
+                                    Spacer()
+                                    RolePill(role: player.role)
                                 }
-                                Spacer()
-                                RolePill(role: player.role)
+                                .padding(14)
+                                .background(HuntColor.inkRaised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                             }
-                            .padding(14)
-                            .background(HuntColor.inkRaised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("\(player.name), \(player.role.rawValue)")
+
+                            if store.isHost, !player.isYou, !player.isHost {
+                                Button {
+                                    store.removeLobbyPlayer(player.id)
+                                } label: {
+                                    Image(systemName: "person.badge.minus")
+                                        .foregroundStyle(HuntColor.warning)
+                                        .frame(width: 44, height: 44)
+                                        .background(HuntColor.inkRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Remove \(player.name)")
+                            }
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("\(player.name), \(player.role.rawValue)")
                     }
+                }
+
+                if let note = store.note {
+                    Text(note)
+                        .font(.footnote)
+                        .foregroundStyle(HuntColor.warning)
+                        .accessibilityIdentifier("lobby-note")
                 }
 
                 if store.isHost {

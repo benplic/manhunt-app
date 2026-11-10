@@ -1,0 +1,386 @@
+{
+  "modules": {
+    "roles": {
+      "version": 1,
+      "title": "Roles",
+      "blurb": "How hiders and seekers are chosen in the lobby.",
+      "field_order": [
+        "mode",
+        "hider_count"
+      ],
+      "fields": {
+        "mode": {
+          "type": "enum",
+          "title": "Assignment",
+          "values": [
+            "random",
+            "manual"
+          ],
+          "default": "random",
+          "labels": [
+            "Random",
+            "Manual"
+          ]
+        },
+        "hider_count": {
+          "type": "int",
+          "title": "Hiders",
+          "min": 1,
+          "max": 20,
+          "step": 1,
+          "default": 2,
+          "suffix": ""
+        }
+      }
+    },
+    "head_start": {
+      "version": 1,
+      "title": "Head start",
+      "blurb": "Hiders hide before seekers are released.",
+      "field_order": [
+        "enabled",
+        "duration",
+        "seeker_lock"
+      ],
+      "fields": {
+        "enabled": {
+          "type": "bool",
+          "title": "Enabled",
+          "default": true
+        },
+        "duration": {
+          "type": "int",
+          "title": "Duration",
+          "min": 15,
+          "max": 600,
+          "step": 15,
+          "default": 60,
+          "suffix": "s"
+        },
+        "seeker_lock": {
+          "type": "enum",
+          "title": "Seekers wait",
+          "values": [
+            "locked_map",
+            "spawn_zone"
+          ],
+          "default": "locked_map",
+          "labels": [
+            "Locked map",
+            "Spawn zone"
+          ]
+        }
+      }
+    },
+    "reveal_fuzzy": {
+      "version": 1,
+      "title": "Fuzzy reveal",
+      "blurb": "Seekers see approximate hider pins on a timer.",
+      "field_order": [
+        "enabled",
+        "interval",
+        "display",
+        "fuzz"
+      ],
+      "fields": {
+        "enabled": {
+          "type": "bool",
+          "title": "Enabled",
+          "default": true
+        },
+        "interval": {
+          "type": "int",
+          "title": "Every",
+          "min": 20,
+          "max": 600,
+          "step": 10,
+          "default": 60,
+          "suffix": "s"
+        },
+        "display": {
+          "type": "int",
+          "title": "Pin stays",
+          "min": 5,
+          "max": 60,
+          "step": 5,
+          "default": 10,
+          "suffix": "s"
+        },
+        "fuzz": {
+          "type": "int",
+          "title": "Fuzz",
+          "min": 0,
+          "max": 100,
+          "step": 5,
+          "default": 30,
+          "suffix": "m"
+        }
+      }
+    },
+    "tag_policy": {
+      "version": 1,
+      "title": "Tag",
+      "blurb": "Ultra Wideband confirms the tag. A rotating code is the fallback.",
+      "field_order": [
+        "method",
+        "radius_m",
+        "result",
+        "pairing_m"
+      ],
+      "fields": {
+        "method": {
+          "type": "enum",
+          "title": "Method",
+          "values": [
+            "qr",
+            "uwb"
+          ],
+          "default": "qr",
+          "labels": [
+            "QR code",
+            "Ultra Wideband"
+          ]
+        },
+        "radius_m": {
+          "type": "number",
+          "title": "Radius",
+          "min": 1,
+          "max": 5,
+          "step": 0.5,
+          "default": 2,
+          "suffix": "m"
+        },
+        "result": {
+          "type": "enum",
+          "title": "Result",
+          "values": [
+            "eliminate",
+            "convert"
+          ],
+          "default": "eliminate",
+          "labels": [
+            "Eliminate",
+            "Join seekers"
+          ]
+        },
+        "pairing_m": {
+          "type": "int",
+          "title": "Pairing",
+          "min": 5,
+          "max": 80,
+          "step": 5,
+          "default": 30,
+          "suffix": "m"
+        }
+      }
+    },
+    "zone_policy": {
+      "version": 1,
+      "title": "Zones",
+      "blurb": "Out of bounds counts down. Safe zones block tags until time runs out.",
+      "field_order": [
+        "oob_countdown",
+        "hider_oob_penalty",
+        "safe_visit",
+        "safe_cooldown",
+        "margin_m"
+      ],
+      "fields": {
+        "oob_countdown": {
+          "type": "int",
+          "title": "Out of bounds",
+          "min": 5,
+          "max": 120,
+          "step": 5,
+          "default": 15,
+          "suffix": "s"
+        },
+        "hider_oob_penalty": {
+          "type": "enum",
+          "title": "Hider penalty",
+          "values": [
+            "auto_tag",
+            "forced_reveal"
+          ],
+          "default": "auto_tag",
+          "labels": [
+            "Auto-tag",
+            "Forced reveal"
+          ]
+        },
+        "safe_visit": {
+          "type": "int",
+          "title": "Safe visit",
+          "min": 5,
+          "max": 300,
+          "step": 15,
+          "default": 60,
+          "suffix": "s"
+        },
+        "safe_cooldown": {
+          "type": "int",
+          "title": "Safe cooldown",
+          "min": 0,
+          "max": 300,
+          "step": 15,
+          "default": 60,
+          "suffix": "s"
+        },
+        "margin_m": {
+          "type": "int",
+          "title": "Edge margin",
+          "min": 0,
+          "max": 30,
+          "step": 1,
+          "default": 5,
+          "suffix": "m"
+        }
+      }
+    },
+    "signal_loss": {
+      "version": 1,
+      "title": "Going dark",
+      "blurb": "Silence shares the last precise location. Safety overrides the game.",
+      "field_order": [
+        "silence",
+        "penalty_after",
+        "penalty"
+      ],
+      "fields": {
+        "silence": {
+          "type": "int",
+          "title": "Call it dark after",
+          "min": 15,
+          "max": 300,
+          "step": 15,
+          "default": 45,
+          "suffix": "s"
+        },
+        "penalty_after": {
+          "type": "int",
+          "title": "Penalty after",
+          "min": 30,
+          "max": 900,
+          "step": 30,
+          "default": 180,
+          "suffix": "s"
+        },
+        "penalty": {
+          "type": "enum",
+          "title": "Penalty",
+          "values": [
+            "none",
+            "eliminate"
+          ],
+          "default": "none",
+          "labels": [
+            "None",
+            "Eliminate"
+          ]
+        }
+      }
+    },
+    "win": {
+      "version": 1,
+      "title": "Win",
+      "blurb": "How the hunt ends.",
+      "field_order": [
+        "condition",
+        "time_limit"
+      ],
+      "fields": {
+        "condition": {
+          "type": "enum",
+          "title": "Ends when",
+          "values": [
+            "all_caught",
+            "time_limit",
+            "either"
+          ],
+          "default": "either",
+          "labels": [
+            "All hiders caught",
+            "Time limit",
+            "Either"
+          ]
+        },
+        "time_limit": {
+          "type": "int",
+          "title": "Time limit",
+          "min": 5,
+          "max": 180,
+          "step": 5,
+          "default": 30,
+          "suffix": "min"
+        }
+      }
+    },
+    "hot_cold": {
+      "version": 1,
+      "title": "Hot / cold",
+      "blurb": "Distance and direction toward hiders. Not a precise pin.",
+      "field_order": [
+        "enabled",
+        "interval"
+      ],
+      "fields": {
+        "enabled": {
+          "type": "bool",
+          "title": "Hints",
+          "default": true
+        },
+        "interval": {
+          "type": "int",
+          "title": "Update every",
+          "min": 2,
+          "max": 30,
+          "step": 1,
+          "default": 5,
+          "suffix": "s"
+        }
+      }
+    },
+    "points": {
+      "version": 1,
+      "title": "Points",
+      "blurb": "Scored by the engine.",
+      "field_order": [],
+      "fields": {}
+    },
+    "power_ups": {
+      "version": 1,
+      "title": "Power-ups",
+      "blurb": "Purchases the dock already knows.",
+      "field_order": [
+        "enabled"
+      ],
+      "fields": {
+        "enabled": {
+          "type": "bool",
+          "title": "Enabled",
+          "default": true
+        }
+      }
+    },
+    "effects": {
+      "version": 1,
+      "title": "Effects",
+      "blurb": "Timed effects. No host settings.",
+      "field_order": [],
+      "fields": {}
+    }
+  },
+  "order": [
+    "roles",
+    "head_start",
+    "reveal_fuzzy",
+    "tag_policy",
+    "zone_policy",
+    "signal_loss",
+    "win",
+    "hot_cold",
+    "points",
+    "power_ups",
+    "effects"
+  ]
+}

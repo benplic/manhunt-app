@@ -152,6 +152,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             },
         )
 
+    @app.get("/.well-known/apple-app-site-association")
+    @app.get("/apple-app-site-association")
+    async def apple_app_site_association() -> JSONResponse:
+        """Universal-link association for https://app.manhunt.ios/join/{code}.
+
+        The invite host must serve this file with no redirect. The app id is the
+        Xcode team's id plus the bundle id the project signs.
+        """
+        return JSONResponse(
+            {
+                "applinks": {
+                    "details": [
+                        {
+                            "appIDs": ["H366S3X2VW.app.manhunt.ios"],
+                            "components": [
+                                {"/": "/join/*", "comment": "Invite link and invite QR"}
+                            ],
+                        }
+                    ]
+                }
+            }
+        )
+
     @app.get("/healthz")
     @app.get("/v1/healthz")
     async def healthz() -> dict[str, str]:

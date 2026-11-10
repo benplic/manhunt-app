@@ -104,6 +104,8 @@ struct VisualModule: Identifiable {
     var title: String
     var blurb: String
     var enabled: Bool
+    /// True when the schema has an `enabled` bool. The card toggle writes that field.
+    var tracksEnabled: Bool = false
     var rows: [VisualRow]
 }
 
@@ -117,8 +119,43 @@ struct VisualRow: Identifiable {
 
     enum Control {
         case toggle
-        case stepper(min: Double, max: Double, step: Double, suffix: String)
-        case options([String])
+        case stepper(min: Double, max: Double, step: Double, suffix: String, integer: Bool)
+        case options(display: [String], values: [String])
+    }
+
+    /// Clamp to the schema bounds so a stepper cannot send a value the server rejects.
+    func wireValue() -> RuleValue {
+        switch control {
+        case .toggle:
+            return .bool(flag)
+        case let .stepper(min, max, _, _, integer):
+            let clamped = Swift.min(max, Swift.max(min, number))
+            if integer {
+                return .int(Int(clamped.rounded()))
+            }
+            return .double(clamped)
+        case let .options(_, values):
+            guard !values.isEmpty else { return .string("") }
+            let index = Swift.min(values.count - 1, Swift.max(0, choice))
+            return .string(values[index])
+        }
+    }
+
+    mutating func apply(_ value: RuleValue) {
+        switch (control, value) {
+        case (.toggle, let .bool(flag)):
+            self.flag = flag
+        case let (.stepper(min, max, _, _, _), .int(number)):
+            self.number = Swift.min(max, Swift.max(min, Double(number)))
+        case let (.stepper(min, max, _, _, _), .double(number)):
+            self.number = Swift.min(max, Swift.max(min, number))
+        case let (.options(_, values), .string(raw)):
+            if let index = values.firstIndex(of: raw) {
+                choice = index
+            }
+        default:
+            break
+        }
     }
 }
 
@@ -220,88 +257,7 @@ enum SamplePark {
     ]
 
     static func classicModules() -> [VisualModule] {
-        [
-            VisualModule(
-                id: "roles",
-                title: "Roles",
-                blurb: "How hiders and seekers are chosen in the lobby.",
-                enabled: true,
-                rows: [
-                    VisualRow(id: "mode", title: "Assignment", control: .options(["Random", "Manual", "Volunteer"]), number: 0, choice: 0, flag: true),
-                    VisualRow(id: "hiders", title: "Hiders", control: .stepper(min: 1, max: 10, step: 1, suffix: ""), number: 3, choice: 0, flag: true),
-                ]
-            ),
-            VisualModule(
-                id: "head_start",
-                title: "Head start",
-                blurb: "Hiders hide before seekers are released.",
-                enabled: true,
-                rows: [
-                    VisualRow(id: "duration", title: "Duration", control: .stepper(min: 15, max: 300, step: 15, suffix: "s"), number: 45, choice: 0, flag: true),
-                    VisualRow(id: "lock", title: "Seekers wait", control: .options(["Locked map", "Spawn zone"]), number: 0, choice: 0, flag: true),
-                ]
-            ),
-            VisualModule(
-                id: "reveal",
-                title: "Fuzzy reveal",
-                blurb: "Seekers see approximate hider pins on a timer.",
-                enabled: true,
-                rows: [
-                    VisualRow(id: "interval", title: "Every", control: .stepper(min: 20, max: 180, step: 10, suffix: "s"), number: 60, choice: 0, flag: true),
-                    VisualRow(id: "show", title: "Pin stays", control: .stepper(min: 5, max: 30, step: 5, suffix: "s"), number: 10, choice: 0, flag: true),
-                    VisualRow(id: "fuzz", title: "Fuzz", control: .stepper(min: 10, max: 80, step: 5, suffix: "m"), number: 30, choice: 0, flag: true),
-                ]
-            ),
-            VisualModule(
-                id: "hot_cold",
-                title: "Hot / cold",
-                blurb: "Distance and direction toward hiders. Not a precise pin.",
-                enabled: true,
-                rows: [
-                    VisualRow(id: "on", title: "Hints", control: .toggle, number: 0, choice: 0, flag: true),
-                ]
-            ),
-            VisualModule(
-                id: "tag",
-                title: "Tag",
-                blurb: "Ultra Wideband confirms the tag. A rotating code is the fallback.",
-                enabled: true,
-                rows: [
-                    VisualRow(id: "radius", title: "Radius", control: .stepper(min: 1, max: 5, step: 0.5, suffix: "m"), number: 2, choice: 0, flag: true),
-                    VisualRow(id: "result", title: "Result", control: .options(["Eliminate", "Join seekers"]), number: 0, choice: 0, flag: true),
-                ]
-            ),
-            VisualModule(
-                id: "zones",
-                title: "Zones",
-                blurb: "Out of bounds counts down. Safe zones block tags until time runs out.",
-                enabled: true,
-                rows: [
-                    VisualRow(id: "countdown", title: "Out of bounds", control: .stepper(min: 5, max: 60, step: 5, suffix: "s"), number: 15, choice: 0, flag: true),
-                    VisualRow(id: "penalty", title: "Penalty", control: .options(["Auto-tag", "Forced reveal"]), number: 0, choice: 0, flag: true),
-                    VisualRow(id: "safe_time", title: "Safe visit", control: .stepper(min: 15, max: 180, step: 15, suffix: "s"), number: 45, choice: 0, flag: true),
-                ]
-            ),
-            VisualModule(
-                id: "signal",
-                title: "Going dark",
-                blurb: "Silence shares the last precise location with everyone. Safety overrides the game.",
-                enabled: true,
-                rows: [
-                    VisualRow(id: "silence", title: "Call it dark after", control: .stepper(min: 15, max: 120, step: 15, suffix: "s"), number: 30, choice: 0, flag: true),
-                ]
-            ),
-            VisualModule(
-                id: "win",
-                title: "Win",
-                blurb: "How the hunt ends.",
-                enabled: true,
-                rows: [
-                    VisualRow(id: "condition", title: "Ends when", control: .options(["All hiders caught", "Time limit", "Either"]), number: 0, choice: 2, flag: true),
-                    VisualRow(id: "limit", title: "Time limit", control: .stepper(min: 10, max: 90, step: 5, suffix: "min"), number: 30, choice: 0, flag: true),
-                ]
-            ),
-        ]
+        ModuleForm.offlineModules()
     }
 }
 

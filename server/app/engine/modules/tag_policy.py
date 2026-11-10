@@ -46,9 +46,11 @@ class TagPolicyModule(BaseModule):
         gps = distance_m(sloc.point, hloc.point)
         if gps > pairing + sloc.accuracy_m + hloc.accuracy_m:
             return ErrorCode.NOT_IN_PAIRING_RANGE
-        # UWB dual-range is Phase 3. MVP QR still rejects a claimed range that is
-        # present and larger than the tag radius so far-GPS cannot be "saved"
-        # by a fake close reading when both ranges are supplied.
+        # Spec §5.6: a signed QR claim is the fallback when UWB is unavailable
+        # or ranging fails. GPS pairing above still applies; dual-range is only
+        # required for UWB claims (no qr_token).
+        if claim.qr_token:
+            return None
         method = str(self.settings.get("method", "qr"))
         if method == "uwb":
             if claim.seeker_range is None or claim.hider_range is None:
@@ -58,6 +60,8 @@ class TagPolicyModule(BaseModule):
             ):
                 return ErrorCode.NOT_IN_RANGE
         elif claim.seeker_range is not None and claim.hider_range is not None:
+            # Reject a far GPS pair "saved" by a forged close reading when both
+            # ranges are supplied on a QR-method game.
             if not _finite_within(claim.seeker_range, radius) or not _finite_within(
                 claim.hider_range, radius
             ):

@@ -1,12 +1,34 @@
 import Foundation
 import Security
 
-/// Session JWT lives in the keychain, never UserDefaults.
+/// Session JWTs live in the keychain, never UserDefaults.
 struct KeychainStore {
     var service: String = "app.manhunt.ios"
-    var account: String = "session"
+    var accessAccount: String = "session"
+    var refreshAccount: String = "refresh"
 
     func saveToken(_ token: String) throws {
+        try save(token, account: accessAccount)
+    }
+
+    func saveRefreshToken(_ token: String) throws {
+        try save(token, account: refreshAccount)
+    }
+
+    func readToken() -> String? {
+        read(account: accessAccount)
+    }
+
+    func readRefreshToken() -> String? {
+        read(account: refreshAccount)
+    }
+
+    func deleteToken() {
+        delete(account: accessAccount)
+        delete(account: refreshAccount)
+    }
+
+    private func save(_ token: String, account: String) throws {
         let data = Data(token.utf8)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -22,7 +44,7 @@ struct KeychainStore {
         }
     }
 
-    func readToken() -> String? {
+    private func read(account: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -36,7 +58,7 @@ struct KeychainStore {
         return String(data: data, encoding: .utf8)
     }
 
-    func deleteToken() {
+    private func delete(account: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

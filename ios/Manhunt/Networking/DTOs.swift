@@ -14,11 +14,13 @@ struct AuthOut: Codable {
     var accessToken: String
     var expiresAt: String
     var user: UserDTO
+    var refreshToken: String?
 
     enum CodingKeys: String, CodingKey {
         case accessToken = "access_token"
         case expiresAt = "expires_at"
         case user
+        case refreshToken = "refresh_token"
     }
 }
 
