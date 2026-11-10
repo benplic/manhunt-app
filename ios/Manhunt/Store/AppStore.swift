@@ -335,8 +335,11 @@ final class AppStore {
     }
 
     func refreshPresetEditor() async {
+        // Keep the host's in-memory edits. Replacing wholesale wiped them every
+        // time the editor reopened.
         if let remote = try? await service.fetchModules(), !remote.isEmpty {
-            modules = remote
+            let current = PresetOverrides.from(modules: modules)
+            modules = ModuleForm.apply(current, to: remote)
         }
         if let saved = try? await service.savedPresets() {
             savedPresets = saved

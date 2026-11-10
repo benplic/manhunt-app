@@ -341,6 +341,21 @@ final class GameRulesTests: XCTestCase {
         XCTAssertEqual(duration?.number, 45)
     }
 
+    @MainActor
+    func testReopeningPresetEditorKeepsInMemoryEdits() async {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.modules = ModuleForm.offlineModules()
+        let index = store.modules.firstIndex { $0.id == "head_start" }!
+        let row = store.modules[index].rows.firstIndex { $0.id == "duration" }!
+        store.modules[index].rows[row].number = 45
+        store.modules[index].enabled = false
+        await store.refreshPresetEditor()
+        let headStart = store.modules.first { $0.id == "head_start" }
+        XCTAssertEqual(headStart?.enabled, false)
+        XCTAssertEqual(headStart?.rows.first { $0.id == "duration" }?.number, 45)
+    }
+
     func testPlayAreaDropSplitsTheSelectedEdge() {
         let editor = ArenaEditorModel()
         editor.tool = .playArea
