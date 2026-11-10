@@ -39,6 +39,8 @@ struct PurchaseRequest {
     var status: PlayerStatus
     var requiresTarget: Bool
     var hasTarget: Bool
+    /// Set false when a decoy point was picked but sits outside the play area.
+    var targetInsidePlayArea: Bool = true
 }
 
 enum PowerUpRules {
@@ -49,6 +51,23 @@ enum PowerUpRules {
         if request.role != request.requiredRole { return .denied(.wrongRole) }
         if request.status == .eliminated { return .denied(.eliminated) }
         if request.requiresTarget && !request.hasTarget { return .denied(.needsTarget) }
+        if request.requiresTarget && request.hasTarget && !request.targetInsidePlayArea {
+            return .denied(.targetOutside)
+        }
         return .allowed
+    }
+
+    /// Decoy is tappable when every rule passes except picking a map target.
+    static func chipIsTappable(_ request: PurchaseRequest) -> Bool {
+        switch decide(request) {
+        case .allowed:
+            return true
+        case .denied(.needsTarget):
+            var probe = request
+            probe.hasTarget = true
+            return decide(probe) == .allowed
+        default:
+            return false
+        }
     }
 }

@@ -2,7 +2,7 @@
 
 Source of truth for unfinished work: [2026-11-09-manhunt-roadmap.md](2026-11-09-manhunt-roadmap.md). This file is the gap list. A phase in the roadmap is not done until every bullet here that cites it is closed.
 
-Branch at the time this was written: `cursor/manhunt-mvp-2a9d` at `2866303`. Server tests: 51 passed. iOS tests: 18 passed. The local API may be running on `http://localhost:8000` with SQLite because Docker socket access was denied. Do not treat that process as the home-host gate.
+Branch at the time this was written: `cursor/manhunt-mvp-2a9d` at `2866303`. Current branch: `cursor/phase3-uwb-hints-6e57` at `6e6c1ae`. Server tests: 78 passed. iOS tests: 27 passed. The local API may be running on `http://localhost:8000` with SQLite because Docker socket access was denied. Do not treat that process as the home-host gate.
 
 ## Already in the repo
 
@@ -27,10 +27,6 @@ Each item is open until the acceptance line is true. Human items stay open until
 ### Phase 3
 
 - **3.1 Device ranging (human).** The relay and the phone ranger are in. Still open until two iPhone 11 or newer, in the same place, confirm a tag and measure `NIError.Code.activeSessionsLimitExceeded`. The code cap stays 5 until that measurement (`UWB_MAX_PEERS`, `NearbyUWBRanger.maxPeers`).
-
-### Phase 4
-
-- **4.6 Power-up dock.** Chips call purchase. Acceptance: chips are enabled or greyed out with `PowerUpRules` before the request is sent, Decoy asks for a point inside the play area, and Radar shows seeker pins only while the effect is active. `is_decoy` stays off the wire.
 
 ### Phase 5
 
@@ -61,6 +57,10 @@ Each item is open until the acceptance line is true. Human items stay open until
 - **2.3 Trail retention.** `4c913e5`, `test_purge_deletes_sensitive_events_older_than_retention`, `test_host_trail_read_writes_audit_without_logging_coordinates`. Acceptance: a scheduled purge deletes sensitive events older than 7 days (host-adjustable via `MANHUNT_TRAIL_RETENTION_DAYS`), and every read of a decrypted trail writes an audit-log row. Coordinates still never appear in logs.
 - **2.4 Crash recovery.** `4c913e5`, `test_restart_rebuilds_mid_game_phase_roles_points_and_locations`. Acceptance: kill the process mid-game, start it again, and the rebuilt session matches the pre-crash phase, roles, points, and last precise locations.
 - **2.5 Phone-side safety pings.** `4c913e5`, `testLocationFlagSendsLowBatteryOncePerDipAndFinalWins`, `testLowBatteryThenEndSendsFinalFlag`. Acceptance: the app sends `low_battery` at about 5% and a best-effort final ping when the game is backgrounded or ended.
-- **3.1 Nearby Interaction relay.** `539de80`, `test_ten_meters_opposite_roles_exchange_tokens`, `test_forty_meters_apart_yields_no_peers`, `test_cap_keeps_the_closest_opponents`, `test_relay_tag_ignores_a_forged_range_and_drops_a_non_peer`. Acceptance: the server relays discovery tokens only when GPS distance is at most 30 m, and only with each player’s closest opponents. Record the concurrent-session limit for the iOS version under test in a code comment. The comment records Apple’s unpublished cap and the temporary limit of 5. A two-phone measurement stays open above.
+- **3.1 Nearby Interaction relay.** `539de80`, `6e6c1ae`, `test_ten_meters_opposite_roles_exchange_tokens`, `test_forty_meters_apart_yields_no_peers`, `test_cap_keeps_the_closest_opponents`, `test_relay_tag_ignores_a_forged_range_and_drops_a_non_peer`, `test_relay_tag_rejects_nan_and_infinite_ranges`, `testRepublishesDiscoveryTokenAfterReconnect`. Acceptance: the server relays discovery tokens only when GPS distance is at most 30 m, and only with each player’s closest opponents. Record the concurrent-session limit for the iOS version under test in a code comment. The comment records Apple’s unpublished cap and the temporary limit of 5. A two-phone measurement stays open above.
 - **3.3 Hint dock.** `539de80`, `test_hint_bearing_due_north_is_zero`, `test_hint_holds_until_the_interval_elapses`, `test_jammer_clears_the_hint_on_the_next_tick`, `testHintLineShowsBandMetersAndBearing`, `testClearedHintSaysNoneYet`. Acceptance: the dock shows band and bearing at the module’s update rate, and a jammer clears it.
 - **3.4 Spawn lock on the phone.** `539de80`, `test_spawn_zone_lock_banners_a_seeker_who_leaves`, `test_seeker_inside_the_spawn_zone_is_not_locked_out`, `test_locked_map_has_no_spawn_lock`, `testHeadStartChrome`. Acceptance: the live map shows that lock while `seeker_lock` is `spawn_zone`.
+
+### 2026-11-10
+
+- **4.6 Power-up dock.** Acceptance: chips are enabled or greyed out with `PowerUpRules` before the request is sent, Decoy asks for a point inside the play area, and Radar shows seeker pins only while the effect is active. `is_decoy` stays off the wire. Tests: `test_cooldowns_ride_on_you_only`, `testDecoyChipIsTappableWhenOnlyNeedsTarget`, `testRadarSeekersFollowEffectsNotLocalToggle`.

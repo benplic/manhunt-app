@@ -24,10 +24,10 @@ struct LiveGameView: View {
                 zones: zones,
                 people: store.livePeople,
                 showHiders: true,
-                showSeekers: youAreHider ? store.radarOn : true,
+                showSeekers: youAreHider ? store.radarShowsSeekers : true,
                 fuzzyHiders: false,
                 region: store.arena.region,
-                onDrop: nil,
+                onDrop: store.decoyPicking ? { store.dropDecoy(at: $0) } : nil,
                 emphasizeSpawn: chrome == .spawnZone
             )
             .ignoresSafeArea()
@@ -70,7 +70,19 @@ struct LiveGameView: View {
                 if store.paused {
                     banner(title: "Paused", detail: "The host stopped the clock.", tint: HuntColor.paper)
                 }
-                if let note = store.note {
+                if store.decoyPicking {
+                    HStack(spacing: 10) {
+                        Text("Drop a decoy inside the yellow line.")
+                            .font(.footnote.weight(.semibold))
+                        Spacer()
+                        Button("Cancel") { store.cancelDecoyPick() }
+                            .font(.footnote.weight(.semibold))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.black.opacity(0.72), in: Capsule())
+                    .foregroundStyle(HuntColor.paper)
+                } else if let note = store.note {
                     Text(note)
                         .font(.footnote.weight(.semibold))
                         .padding(.horizontal, 12)
@@ -221,22 +233,27 @@ struct LiveGameView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(SamplePark.powerUps.filter { $0.role == store.viewingRole }) { chip in
-                        let armed = store.armedPowerUps.contains(chip.id)
+                        let enabled = store.chipIsTappable(chip)
+                        let cooling = store.match?.snapshot.you.cooldowns?[chip.id] ?? 0
                         Button {
                             store.buyPower(chip)
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(chip.title)
                                     .font(.subheadline.weight(.semibold))
-                                Text(armed ? "Armed" : "\(chip.cost) pts")
+                                Text(cooling > 0 ? "\(cooling)s" : "\(chip.cost) pts")
                                     .font(.caption2)
                             }
                             .padding(.horizontal, 12)
                             .padding(.vertical, 10)
-                            .background(armed ? HuntColor.signal : HuntColor.ink, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .foregroundStyle(armed ? HuntColor.ink : HuntColor.paper)
+                            .background(
+                                enabled ? HuntColor.ink : HuntColor.ink.opacity(0.35),
+                                in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            )
+                            .foregroundStyle(enabled ? HuntColor.paper : HuntColor.paper.opacity(0.45))
                         }
                         .buttonStyle(.plain)
+                        .disabled(!enabled)
                     }
                 }
             }

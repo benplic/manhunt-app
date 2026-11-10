@@ -51,6 +51,12 @@ def build_view(session: GameSession, viewer_id: UUID) -> dict:
             "ended_at": state.result.ended_at.isoformat() if state.result.ended_at else None,
         }
     seeker_lock, spawn_lock = _spawn_lock(session, viewer_id)
+    now = state.game_elapsed_s
+    cooldowns = {
+        power_id: max(0, ready_at - now)
+        for power_id, ready_at in viewer.cooldowns.items()
+        if ready_at > now
+    }
     return {
         "game_id": str(state.game_id),
         "join_code": state.join_code,
@@ -74,6 +80,7 @@ def build_view(session: GameSession, viewer_id: UUID) -> dict:
             "points": viewer.points,
             "hint": viewer.hint,
             "effects": [e.type for e in state.effects if e.owner_id == viewer.player_id],
+            "cooldowns": cooldowns,
         },
         "players": players,
         "reveals": reveals,

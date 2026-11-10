@@ -71,6 +71,7 @@ struct YouDTO: Codable {
     var points: Int
     var hint: HintDTO? = nil
     var effects: [String]? = nil
+    var cooldowns: [String: Int]? = nil
 
     enum CodingKeys: String, CodingKey {
         case playerId = "player_id"
@@ -78,7 +79,7 @@ struct YouDTO: Codable {
         case isHost = "is_host"
         case bounds
         case safeZone = "safe_zone"
-        case points, hint, effects
+        case points, hint, effects, cooldowns
     }
 }
 
