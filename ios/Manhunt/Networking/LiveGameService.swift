@@ -5,11 +5,21 @@ final class LiveGameService: GameService {
     private let client: APIClient
     private let socket = GameSocket()
     private(set) var joinCalls = 0
+    /// Rotating refresh token from the last auth response. Cleared on sign-out.
+    var refreshToken: String?
+    /// Called when a refresh attempt fails so the store can sign out.
+    var onRefreshFailed: (() -> Void)?
+    /// Called after a successful refresh so the store can persist both tokens.
+    var onTokensRotated: ((AuthOut) -> Void)?
     var onView: ((PlayerViewDTO) -> Void)?
     var onQR: ((String) -> Void)?
     var onEvent: ((BannerDTO) -> Void)?
     var onReconnect: ((Bool) -> Void)?
     var onUWBPeers: (([UWBPeer]) -> Void)?
+    var onSendFailure: ((String) -> Void)? {
+        get { socket.onSendFailure }
+        set { socket.onSendFailure = newValue }
+    }
 
     init(baseURL: URL) {
         client = APIClient(baseURL: baseURL)
@@ -18,11 +28,29 @@ final class LiveGameService: GameService {
         socket.onEvent = { [weak self] banner in self?.onEvent?(banner) }
         socket.onReconnect = { [weak self] reconnecting in self?.onReconnect?(reconnecting) }
         socket.onUWBPeers = { [weak self] peers in self?.onUWBPeers?(peers) }
+        client.refreshAccessToken = { [weak self] in
+            try await self?.rotateAccessToken()
+        }
     }
 
     var token: String? {
         get { client.token }
         set { client.token = newValue }
+    }
+
+    private func rotateAccessToken() async throws {
+        guard let refreshToken else {
+            onRefreshFailed?()
+            throw ServiceError(code: .unauthorized, message: "Session expired.")
+        }
+        do {
+            let auth = try await refresh(refreshToken: refreshToken)
+            self.refreshToken = auth.refreshToken ?? refreshToken
+            onTokensRotated?(auth)
+        } catch {
+            onRefreshFailed?()
+            throw error
+        }
     }
 
     func updateBaseURL(_ url: URL) {
@@ -32,6 +60,7 @@ final class LiveGameService: GameService {
     func signIn(displayName: String) async throws -> AuthOut {
         let auth: AuthOut = try await client.post("/v1/auth/dev", body: DevAuthBody(displayName: displayName))
         client.token = auth.accessToken
+        refreshToken = auth.refreshToken
         return auth
     }
 
@@ -41,6 +70,7 @@ final class LiveGameService: GameService {
             body: AppleAuthBody(identityToken: identityToken, displayName: displayName)
         )
         client.token = auth.accessToken
+        refreshToken = auth.refreshToken
         return auth
     }
 
@@ -111,8 +141,43 @@ final class LiveGameService: GameService {
         try await client.postEmpty("/v1/games/\(gameID.uuidString)/end")
     }
 
+    func leave(gameID: UUID) async throws {
+        let _: EmptyBody = try await client.postEmpty("/v1/games/\(gameID.uuidString)/leave")
+    }
+
+    func removePlayer(gameID: UUID, playerID: UUID) async throws -> PlayerViewDTO {
+        try await client.postEmpty(
+            "/v1/games/\(gameID.uuidString)/players/\(playerID.uuidString)/remove"
+        )
+    }
+
+    func undoTag(gameID: UUID) async throws -> PlayerViewDTO {
+        try await client.postEmpty("/v1/games/\(gameID.uuidString)/tags/undo")
+    }
+
+    func ackSafety(gameID: UUID) async throws -> PlayerViewDTO {
+        try await client.postEmpty("/v1/games/\(gameID.uuidString)/safety/ack")
+    }
+
+    func taunt(gameID: UUID) async throws -> PlayerViewDTO {
+        try await client.postEmpty("/v1/games/\(gameID.uuidString)/taunt")
+    }
+
     func view(gameID: UUID) async throws -> PlayerViewDTO {
         try await client.get("/v1/games/\(gameID.uuidString)")
+    }
+
+    func refresh(refreshToken: String) async throws -> AuthOut {
+        struct Body: Encodable {
+            var refreshToken: String
+            enum CodingKeys: String, CodingKey { case refreshToken = "refresh_token" }
+        }
+        let auth: AuthOut = try await client.post(
+            "/v1/auth/refresh",
+            body: Body(refreshToken: refreshToken)
+        )
+        client.token = auth.accessToken
+        return auth
     }
 
     func claimQR(gameID: UUID, token: String) async throws {

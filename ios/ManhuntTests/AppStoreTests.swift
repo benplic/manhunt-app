@@ -202,4 +202,89 @@ final class AppStoreTests: XCTestCase {
         XCTAssertTrue(store.decoyPicking)
         XCTAssertEqual(store.note, "Decoy has to sit inside the play area.")
     }
+
+    @MainActor
+    func testLeaveClearsTheMatchAndHitsTheService() async throws {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        XCTAssertNotNil(store.match)
+        store.goHome()
+        XCTAssertNil(store.match)
+        XCTAssertEqual(store.screen, .home)
+        let deadline = Date().addingTimeInterval(1)
+        while fake.leaveCalls == 0, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(fake.leaveCalls, 1)
+    }
+
+    @MainActor
+    func testTauntDuringActiveRaisesPoints() async throws {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.randomizeRoles(hiderCount: 1)
+        _ = store.startMatch()
+        guard let gameID = store.match?.snapshot.gameId,
+              let youID = store.match?.snapshot.you.playerId
+        else {
+            return XCTFail("Expected a match")
+        }
+        // Host may be seeker after randomize; force hider + active for the taunt path.
+        _ = try fake.setRoleSync(gameID: gameID, playerID: youID, role: .hider)
+        let view = try fake.advanceToActive(gameID: gameID)
+        store.apply(view)
+        let before = store.shownPoints
+        store.taunt()
+        let deadline = Date().addingTimeInterval(1)
+        while store.shownPoints == before, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertGreaterThan(store.shownPoints, before)
+        XCTAssertEqual(store.note, "Taunt sent. Seekers can see you for a few seconds.")
+    }
+
+    @MainActor
+    func testRemoveLobbyPlayerHitsTheService() async throws {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        let guest = store.players.first { !$0.isYou && !$0.isHost }
+        XCTAssertNotNil(guest)
+        store.removeLobbyPlayer(guest!.id)
+        let deadline = Date().addingTimeInterval(1)
+        while store.players.contains(where: { $0.id == guest!.id }), Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertFalse(store.players.contains(where: { $0.id == guest!.id }))
+    }
+
+    @MainActor
+    func testRefreshRotatesTheFakeToken() async throws {
+        let fake = FakeGameService()
+        _ = try await fake.signIn(displayName: "Casey")
+        let first = fake.signInSync("Casey").refreshToken
+        XCTAssertNotNil(first)
+        let rotated = try await fake.refresh(refreshToken: first!)
+        XCTAssertNotEqual(rotated.refreshToken, first)
+        XCTAssertEqual(fake.refreshCalls, 1)
+    }
+
+    @MainActor
+    func testPendingDeviceTokenRegistersAfterAuth() async throws {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.setPendingDeviceToken("deadbeef")
+        XCTAssertNil(fake.lastDeviceToken)
+        store.signInPreview()
+        let deadline = Date().addingTimeInterval(1)
+        while fake.lastDeviceToken == nil, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(fake.lastDeviceToken, "deadbeef")
+    }
 }

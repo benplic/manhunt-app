@@ -429,6 +429,13 @@ final class GameRulesTests: XCTestCase {
         XCTAssertEqual(store.joinCode, "PARK42")
     }
 
+    func testUwbMethodStillOffersQrScanFallback() {
+        XCTAssertTrue(TagChrome.showsQRScan(tagMethod: "uwb"))
+        XCTAssertTrue(TagChrome.showsQRScan(tagMethod: "qr"))
+        XCTAssertEqual(TagChrome.scanLabel(tagMethod: "uwb"), "Scan tag (fallback)")
+        XCTAssertEqual(TagChrome.scanLabel(tagMethod: "qr"), "Scan tag")
+    }
+
     func testArenaEditorCommitsACircleOnTheSecondTapAndUndoRemovesIt() {
         let editor = ArenaEditorModel()
         editor.tool = .safeCircle

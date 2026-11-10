@@ -81,6 +81,8 @@ final class AppStore {
     /// local token is resent even mid-match.
     private var lastUWBToken: String?
     private var lastUWBRangeAt: [UUID: Date] = [:]
+    /// APNs device token waiting for auth, then PUT /v1/me/device-token.
+    private var pendingDeviceToken: String?
 
     static let serverURLKey = "manhunt.serverURL"
 
@@ -127,6 +129,34 @@ final class AppStore {
         }
         live?.onUWBPeers = { [weak self] peers in
             self?.applyUWBPeers(peers)
+        }
+        live?.onSendFailure = { [weak self] _ in
+            self?.situation = .reconnecting
+            self?.note = "Connection hiccup. Retrying…"
+        }
+        live?.onRefreshFailed = { [weak self] in
+            self?.signOut()
+            self?.note = "Session expired. Sign in again."
+        }
+        live?.onTokensRotated = { [weak self] auth in
+            try? self?.keychain.saveToken(auth.accessToken)
+            if let refresh = auth.refreshToken {
+                try? self?.keychain.saveRefreshToken(refresh)
+            }
+            if let session = self?.session {
+                self?.session = Session(displayName: session.displayName, token: auth.accessToken)
+            }
+        }
+        // Cold start: restore refresh so a 401 can rotate without forcing sign-in.
+        if let live, let storedRefresh = keychain.readRefreshToken() {
+            live.refreshToken = storedRefresh
+        }
+        if let live, let storedAccess = keychain.readToken() {
+            live.token = storedAccess
+        }
+        location.onStreamFailure = { [weak self] in
+            self?.situation = .reconnecting
+            self?.note = "Location stream dropped. Reconnecting…"
         }
         ranger.onDistance = { [weak self] id, meters in
             Task { @MainActor in
@@ -259,6 +289,7 @@ final class AppStore {
         session = Session(displayName: "Casey Lee", token: "preview")
         displayName = "Casey Lee"
         screen = .home
+        Task { await registerPendingDeviceTokenIfNeeded() }
     }
 
     func signIn() {
@@ -269,6 +300,7 @@ final class AppStore {
             fake.signInSync(displayName)
             session = Session(displayName: displayName, token: "fake")
             screen = .home
+            Task { await registerPendingDeviceTokenIfNeeded() }
             return
         }
         note = WakeCopy.message
@@ -281,6 +313,7 @@ final class AppStore {
         if let fake {
             Task {
                 _ = try? await fake.signInWithApple(identityToken: identityToken, displayName: displayName)
+                await registerPendingDeviceTokenIfNeeded()
             }
             session = Session(displayName: displayName, token: "fake")
             screen = .home
@@ -320,6 +353,7 @@ final class AppStore {
     func signOut() {
         stopUWB()
         live?.disconnect()
+        live?.refreshToken = nil
         location.stop()
         keychain.deleteToken()
         session = nil
@@ -330,9 +364,23 @@ final class AppStore {
         note = nil
     }
 
+    /// Leave the current lobby/hunt (POST /leave) then return home.
     func goHome() {
+        leaveMatchThenHome()
+    }
+
+    func leaveMatchThenHome() {
+        let gameID = match?.snapshot.gameId
         stopUWB()
+        location.stop()
+        live?.disconnect()
+        match = nil
         screen = .home
+        note = nil
+        guard let gameID else { return }
+        Task {
+            try? await service.leave(gameID: gameID)
+        }
     }
     func openCreate() { screen = .createGame }
     func openPreset() {
@@ -571,6 +619,70 @@ final class AppStore {
                 if let view = try? await service.resume(gameID: id) { apply(view) }
             }
         }
+    }
+
+    func undoLastTag() {
+        guard isHost, let id = match?.snapshot.gameId else { return }
+        Task {
+            do {
+                let view = try await service.undoTag(gameID: id)
+                apply(view)
+                note = "Last tag undone."
+            } catch {
+                note = "Could not undo the tag."
+            }
+        }
+    }
+
+    func acknowledgeSafety() {
+        guard isHost, let id = match?.snapshot.gameId else { return }
+        Task {
+            do {
+                let view = try await service.ackSafety(gameID: id)
+                apply(view)
+                note = "Safety alert acknowledged."
+            } catch {
+                note = "Could not acknowledge the safety alert."
+            }
+        }
+    }
+
+    func removeLobbyPlayer(_ id: String) {
+        guard isHost, let gameID = match?.snapshot.gameId, let playerID = UUID(uuidString: id) else { return }
+        Task {
+            do {
+                let view = try await service.removePlayer(gameID: gameID, playerID: playerID)
+                apply(view)
+                note = "Player removed."
+            } catch {
+                note = "Could not remove that player."
+            }
+        }
+    }
+
+    func taunt() {
+        guard let id = match?.snapshot.gameId else { return }
+        guard match?.snapshot.you.role == .hider, match?.snapshot.phase == .active else {
+            note = "Taunt is only for hiders during the hunt."
+            return
+        }
+        Task {
+            do {
+                let view = try await service.taunt(gameID: id)
+                apply(view)
+                note = "Taunt sent. Seekers can see you for a few seconds."
+            } catch let error as ServiceError {
+                note = Self.copy(for: error.code)
+            } catch {
+                note = "Could not taunt."
+            }
+        }
+    }
+
+    /// Stash an APNs device token until after sign-in, then register it.
+    func setPendingDeviceToken(_ token: String) {
+        pendingDeviceToken = token
+        Task { await registerPendingDeviceTokenIfNeeded() }
     }
 
     func leaveResults() {
@@ -958,13 +1070,27 @@ final class AppStore {
 
     private func finishRemoteAuth(_ auth: AuthOut) async {
         try? keychain.saveToken(auth.accessToken)
+        if let refresh = auth.refreshToken {
+            try? keychain.saveRefreshToken(refresh)
+            live?.refreshToken = refresh
+        }
         session = Session(displayName: auth.user.displayName, token: auth.accessToken)
         displayName = auth.user.displayName
         note = nil
         if let loaded = try? await service.arenas() { arenas = loaded }
         screen = .home
-        // TODO: register the APNs device token with PUT /v1/me/device-token
-        // once the paid team adds the Push Notifications entitlement.
+        await registerPendingDeviceTokenIfNeeded()
+    }
+
+    private func registerPendingDeviceTokenIfNeeded() async {
+        guard session != nil, let token = pendingDeviceToken else { return }
+        do {
+            try await service.registerDeviceToken(token)
+            pendingDeviceToken = nil
+        } catch {
+            // Keep the pending token; a later auth or retry can send it.
+            note = "Could not register for push yet."
+        }
     }
 
     func loadTimeline() async {

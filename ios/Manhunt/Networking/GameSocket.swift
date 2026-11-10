@@ -9,6 +9,7 @@ final class GameSocket: @unchecked Sendable {
     var onEvent: ((BannerDTO) -> Void)?
     var onReconnect: ((Bool) -> Void)?
     var onUWBPeers: (([UWBPeer]) -> Void)?
+    var onSendFailure: ((String) -> Void)?
     var lastSeq: Int?
 
     private var task: URLSessionWebSocketTask?
@@ -189,8 +190,10 @@ final class GameSocket: @unchecked Sendable {
               let data = try? JSONSerialization.data(withJSONObject: payload),
               let text = String(data: data, encoding: .utf8)
         else { return }
-        task.send(.string(text)) { _ in
-            // TODO: surface send failures on the reconnecting banner.
+        task.send(.string(text)) { [weak self] error in
+            if let error {
+                self?.onSendFailure?(error.localizedDescription)
+            }
         }
     }
 }

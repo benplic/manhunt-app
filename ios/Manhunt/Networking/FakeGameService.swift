@@ -3,13 +3,16 @@ import Foundation
 /// In-memory server for UI tests and screenshots. Join code PARK42 is the sample lobby.
 final class FakeGameService: GameService {
     private(set) var joinCalls = 0
+    private(set) var leaveCalls = 0
     private(set) var lastLocationFlag: String?
     private(set) var lastDeviceToken: String?
     private(set) var appleSignIns = 0
+    private(set) var refreshCalls = 0
     private var signedIn: UserDTO?
     private(set) var storedArenas: [Arena]
     private var games: [UUID: FakeGame] = [:]
     private var presetsSaved: [SavedPresetDTO] = []
+    private var issuedRefresh = "fake-refresh"
     /// The known park lobby, created on init so join("park42") works before create.
     private let park = UUID(uuidString: "00000000-0000-0000-0000-00000000ABCD")!
 
@@ -52,7 +55,27 @@ final class FakeGameService: GameService {
     func signInSync(_ displayName: String) -> AuthOut {
         let user = UserDTO(id: signedIn?.id ?? UUID(), displayName: displayName)
         signedIn = user
-        return AuthOut(accessToken: "fake", expiresAt: "2099-01-01T00:00:00Z", user: user)
+        issuedRefresh = "fake-refresh-\(user.id.uuidString.prefix(8))"
+        return AuthOut(
+            accessToken: "fake",
+            expiresAt: "2099-01-01T00:00:00Z",
+            user: user,
+            refreshToken: issuedRefresh
+        )
+    }
+
+    func refresh(refreshToken: String) async throws -> AuthOut {
+        refreshCalls += 1
+        guard refreshToken == issuedRefresh, let user = signedIn else {
+            throw ServiceError(code: .unauthorized, message: "Refresh rejected.")
+        }
+        issuedRefresh = "fake-refresh-rotated-\(refreshCalls)"
+        return AuthOut(
+            accessToken: "fake-rotated-\(refreshCalls)",
+            expiresAt: "2099-01-01T00:00:00Z",
+            user: user,
+            refreshToken: issuedRefresh
+        )
     }
 
     func arenas() async throws -> [Arena] { storedArenas }
@@ -174,6 +197,59 @@ final class FakeGameService: GameService {
         try mutate(gameID) { $0.phase = .ended }
     }
 
+    /// Test helper: jump past head start so power-ups / taunt can fire.
+    func advanceToActive(gameID: UUID) throws -> PlayerViewDTO {
+        try mutate(gameID) { $0.phase = .active }
+    }
+
+    func setTagMethod(gameID: UUID, method: String) throws -> PlayerViewDTO {
+        try mutate(gameID) { $0.tagMethod = method }
+    }
+
+    func leave(gameID: UUID) async throws {
+        leaveCalls += 1
+        guard var game = games[gameID], let you = signedIn else {
+            throw ServiceError(code: .gameNotFound, message: "")
+        }
+        game.players.removeAll { $0.id == you.id }
+        games[gameID] = game
+    }
+
+    func removePlayer(gameID: UUID, playerID: UUID) async throws -> PlayerViewDTO {
+        try mutate(gameID) { game in
+            game.players.removeAll { $0.id == playerID }
+        }
+    }
+
+    func undoTag(gameID: UUID) async throws -> PlayerViewDTO {
+        try mutate(gameID) { game in
+            for index in game.players.indices where game.players[index].role == .hider {
+                game.players[index].status = .active
+            }
+            game.undidTag = true
+        }
+    }
+
+    func ackSafety(gameID: UUID) async throws -> PlayerViewDTO {
+        try mutate(gameID) { $0.ackedSafety = true }
+    }
+
+    func taunt(gameID: UUID) async throws -> PlayerViewDTO {
+        guard var game = games[gameID], let you = signedIn else {
+            throw ServiceError(code: .gameNotFound, message: "")
+        }
+        guard let index = game.players.firstIndex(where: { $0.id == you.id }) else {
+            throw ServiceError(code: .notAMember, message: "")
+        }
+        guard game.players[index].role == .hider, game.phase == .active else {
+            throw ServiceError(code: .wrongPhase, message: "Taunt only during the hunt.")
+        }
+        game.players[index].points += 12
+        game.taunted = true
+        games[gameID] = game
+        return game.view()
+    }
+
     func view(gameID: UUID) async throws -> PlayerViewDTO {
         guard let game = games[gameID] else { throw ServiceError(code: .gameNotFound, message: "") }
         return game.view()
@@ -241,6 +317,8 @@ private struct FakePlayer {
     var name: String
     var role: PlayerRole
     var isHost: Bool
+    var status: PlayerStatus = .active
+    var points: Int = 100
 }
 
 private struct FakeGame {
@@ -249,6 +327,10 @@ private struct FakeGame {
     var youAreHost: Bool
     var players: [FakePlayer]
     var phase: MatchPhase = .lobby
+    var undidTag = false
+    var ackedSafety = false
+    var taunted = false
+    var tagMethod: String = "qr"
 
     func view() -> PlayerViewDTO {
         let you = players.first(where: { $0.isHost == youAreHost }) ?? players[0]
@@ -262,25 +344,26 @@ private struct FakeGame {
             you: YouDTO(
                 playerId: you.id,
                 role: you.role,
-                status: .active,
+                status: you.status,
                 isHost: youAreHost,
                 bounds: BoundsDTO(phase: "inside", remainingS: nil),
                 safeZone: nil,
-                points: 100
+                points: you.points
             ),
             players: players.map {
                 PlayerDTO(
                     playerId: $0.id,
                     displayName: $0.name,
                     role: $0.role,
-                    status: .active,
+                    status: $0.status,
                     isHost: $0.isHost,
                     location: nil
                 )
             },
             reveals: [],
             banners: [],
-            result: phase == .ended ? ResultDTO(winner: "seekers", reason: "Host ended.", endedAt: nil) : nil
+            result: phase == .ended ? ResultDTO(winner: "seekers", reason: "Host ended.", endedAt: nil) : nil,
+            tagMethod: tagMethod
         )
     }
 }

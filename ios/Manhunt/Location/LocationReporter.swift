@@ -22,6 +22,7 @@ final class LocationReporter: NSObject {
 
     var onUpdate: ((CLLocation) -> Void)?
     var onAccuracy: ((Accuracy) -> Void)?
+    var onStreamFailure: (() -> Void)?
 
     override init() {
         super.init()
@@ -57,7 +58,7 @@ final class LocationReporter: NSObject {
                     self.consider(location)
                 }
             } catch {
-                // TODO: surface location stream failures on the live reconnecting banner.
+                await MainActor.run { self?.onStreamFailure?() }
             }
         }
         onAccuracy?(accuracy)

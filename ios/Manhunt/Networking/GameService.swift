@@ -19,6 +19,11 @@ protocol GameService: AnyObject {
     func pause(gameID: UUID) async throws -> PlayerViewDTO
     func resume(gameID: UUID) async throws -> PlayerViewDTO
     func end(gameID: UUID) async throws -> PlayerViewDTO
+    func leave(gameID: UUID) async throws
+    func removePlayer(gameID: UUID, playerID: UUID) async throws -> PlayerViewDTO
+    func undoTag(gameID: UUID) async throws -> PlayerViewDTO
+    func ackSafety(gameID: UUID) async throws -> PlayerViewDTO
+    func taunt(gameID: UUID) async throws -> PlayerViewDTO
     func view(gameID: UUID) async throws -> PlayerViewDTO
     func claimQR(gameID: UUID, token: String) async throws
     func claimUWB(gameID: UUID, hiderID: UUID) async throws
@@ -26,6 +31,7 @@ protocol GameService: AnyObject {
     func fetchModules() async throws -> [VisualModule]
     func savePreset(name: String, modules: [String: [String: RuleValue]]) async throws -> SavedPresetDTO
     func savedPresets() async throws -> [SavedPresetDTO]
+    func refresh(refreshToken: String) async throws -> AuthOut
 }
 
 struct SavedPresetDTO: Codable, Equatable, Identifiable {
