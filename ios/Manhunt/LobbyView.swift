@@ -16,6 +16,21 @@ struct LobbyView: View {
                 CodeReadout(code: store.joinCode)
                     .frame(maxWidth: .infinity)
 
+                if let inviteURL = store.inviteURL {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Invite")
+                            .font(.caption.weight(.bold))
+                            .tracking(1.2)
+                            .foregroundStyle(HuntColor.muted)
+                        QRCodeView(token: inviteURL.absoluteString)
+                            .frame(width: 180, height: 180)
+                        Text(inviteURL.absoluteString)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(HuntColor.paper)
+                            .textSelection(.enabled)
+                    }
+                }
+
                 HStack {
                     Label("\(store.players.count) players", systemImage: "person.2")
                     Spacer()

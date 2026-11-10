@@ -57,6 +57,8 @@ final class AppStore {
     var arenaID = SamplePark.riverside.id
     var paused = false
     var modules: [VisualModule] = SamplePark.classicModules()
+    var presetName = "Park night"
+    var savedPresets: [SavedPresetDTO] = []
     var locationAccuracy: LocationReporter.Accuracy = .notDetermined
     var pasteToken = ""
     var tagMessage: String?
@@ -329,6 +331,63 @@ final class AppStore {
     func openPreset() {
         presetReturn = screen == .preset ? presetReturn : screen
         screen = .preset
+        Task { await refreshPresetEditor() }
+    }
+
+    func refreshPresetEditor() async {
+        if let remote = try? await service.fetchModules(), !remote.isEmpty {
+            modules = remote
+        }
+        if let saved = try? await service.savedPresets() {
+            savedPresets = saved
+        }
+    }
+
+    func savePreset() async {
+        let name = presetName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = name.isEmpty ? "Custom" : name
+        do {
+            let saved = try await service.savePreset(
+                name: title,
+                modules: PresetOverrides.from(modules: modules)
+            )
+            savedPresets.removeAll { $0.id == saved.id }
+            savedPresets.insert(saved, at: 0)
+            note = "Saved \(saved.name)."
+        } catch {
+            note = "Could not save the preset."
+        }
+    }
+
+    func applySavedPreset(_ preset: SavedPresetDTO) {
+        modules = ModuleForm.apply(preset.modules, to: modules)
+        presetName = preset.name
+        note = "Loaded \(preset.name)."
+    }
+
+    @discardableResult
+    func open(url: URL) -> AppError? {
+        guard let code = InviteLink.joinCode(from: url) else {
+            lastError = .invalidFormat
+            joinMessage = "That link is not a hunt invite."
+            return .invalidFormat
+        }
+        return join(code: code)
+    }
+
+    func openInvite(_ payload: String) {
+        guard let code = InviteLink.joinCode(fromQR: payload) else {
+            lastError = .invalidFormat
+            joinMessage = "That code is not a hunt invite."
+            return
+        }
+        _ = join(code: code)
+    }
+
+    var inviteURL: URL? {
+        let code = joinCode
+        guard JoinCode.isValid(code) else { return nil }
+        return InviteLink.url(joinCode: code)
     }
 
     func closePreset() {
@@ -514,15 +573,39 @@ final class AppStore {
         refreshDraftsFromEditor()
     }
 
+    func selectPlayEdge(_ index: Int) {
+        editor.selectEdge(index)
+    }
+
+    func selectPlayVertex(_ index: Int) {
+        editor.selectVertex(index)
+    }
+
+    func deletePlayVertex(_ index: Int) {
+        editor.deleteVertex(at: index)
+        refreshDraftsFromEditor()
+    }
+
+    func renameZone(id: UUID, to name: String) {
+        editor.renameZone(id: id, to: name)
+        refreshDraftsFromEditor()
+    }
+
+    func deleteZone(id: UUID) {
+        editor.deleteZone(id: id)
+        refreshDraftsFromEditor()
+    }
+
     func undoDrop() {
         editor.undo()
         refreshDraftsFromEditor()
     }
 
     func saveArena() {
+        let trimmed = editor.name.trimmingCharacters(in: .whitespacesAndNewlines)
         var arena = Arena(
             id: UUID(),
-            name: arenaID == "new" ? "New arena" : arena.name,
+            name: trimmed.isEmpty ? "New arena" : trimmed,
             boundary: editor.boundary,
             zones: editor.zones
         )
@@ -820,7 +903,7 @@ final class AppStore {
     func loadTimeline() async {
         guard let id = match?.snapshot.gameId else { return }
         if let events = try? await service.timeline(gameID: id) {
-            timeline = events
+            timeline = TimelineOrder.sorted(events)
         }
     }
 
@@ -877,11 +960,7 @@ final class AppStore {
 
     private func loadEditor(from arena: Arena) {
         editor = ArenaEditorModel()
-        editor.tool = .playArea
-        for point in arena.boundary.vertices {
-            editor.addMapPoint(point)
-        }
-        editor.zones = arena.zones
+        editor.load(name: arena.name, boundary: arena.boundary, zones: arena.zones)
         refreshDraftsFromEditor()
     }
 

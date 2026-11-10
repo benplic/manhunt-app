@@ -8,6 +8,13 @@ struct ManhuntApp: App {
         WindowGroup {
             RootView()
                 .environment(store)
+                .onOpenURL { url in
+                    store.open(url: url)
+                }
+                .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+                    guard let url = activity.webpageURL else { return }
+                    store.open(url: url)
+                }
         }
     }
 }

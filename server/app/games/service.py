@@ -253,7 +253,9 @@ class GameService:
         game.end("The host ended the hunt.", winner="none")
         row.status = "ended"
         row.ended_at = datetime.now(UTC)
-        await self.persist_inputs(session, game)
+        # The results screen reads the event log. Tick events (reveal, bounds,
+        # signal loss) live in memory until something flushes them.
+        await self._persist_events(session, game)
         await session.commit()
         return game
 

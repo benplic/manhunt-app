@@ -1,0 +1,181 @@
+import Foundation
+
+/// One field from `GET /v1/modules`. Defaults are mixed JSON, so decoding is by hand.
+struct SchemaFieldDTO: Decodable, Equatable {
+    var type: String
+    var title: String
+    var min: Double?
+    var max: Double?
+    var step: Double?
+    var suffix: String
+    var values: [String]
+    var labels: [String]
+    var defaultBool: Bool?
+    var defaultNumber: Double?
+    var defaultString: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type, title, min, max, step, suffix, values, labels
+        case defaultValue = "default"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? type
+        min = try container.decodeIfPresent(Double.self, forKey: .min)
+        max = try container.decodeIfPresent(Double.self, forKey: .max)
+        step = try container.decodeIfPresent(Double.self, forKey: .step)
+        suffix = try container.decodeIfPresent(String.self, forKey: .suffix) ?? ""
+        values = try container.decodeIfPresent([String].self, forKey: .values) ?? []
+        labels = try container.decodeIfPresent([String].self, forKey: .labels) ?? []
+        defaultBool = nil
+        defaultNumber = nil
+        defaultString = nil
+        guard container.contains(.defaultValue) else { return }
+        // Bool before number: JSON `true` must not be read as 1.
+        if let flag = try? container.decode(Bool.self, forKey: .defaultValue) {
+            defaultBool = flag
+        } else if let whole = try? container.decode(Int.self, forKey: .defaultValue) {
+            defaultNumber = Double(whole)
+        } else if let number = try? container.decode(Double.self, forKey: .defaultValue) {
+            defaultNumber = number
+        } else if let text = try? container.decode(String.self, forKey: .defaultValue) {
+            defaultString = text
+        }
+    }
+}
+
+struct ModuleSchemaDTO: Decodable, Equatable {
+    var version: Int
+    var title: String?
+    var blurb: String?
+    var fieldOrder: [String]
+    var fields: [String: SchemaFieldDTO]
+
+    enum CodingKeys: String, CodingKey {
+        case version, title, blurb, fields
+        case fieldOrder = "field_order"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
+        title = try container.decodeIfPresent(String.self, forKey: .title)
+        blurb = try container.decodeIfPresent(String.self, forKey: .blurb)
+        fields = try container.decodeIfPresent([String: SchemaFieldDTO].self, forKey: .fields) ?? [:]
+        fieldOrder = try container.decodeIfPresent([String].self, forKey: .fieldOrder) ?? fields.keys.sorted()
+    }
+}
+
+struct ModulesResponse: Decodable, Equatable {
+    var modules: [String: ModuleSchemaDTO]
+    var order: [String]
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        modules = try container.decode([String: ModuleSchemaDTO].self, forKey: .modules)
+        let listed = try container.decodeIfPresent([String].self, forKey: .order) ?? []
+        order = listed.isEmpty ? modules.keys.sorted() : listed
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case modules, order
+    }
+}
+
+/// Builds the preset form from the module schema instead of a hand-written row list.
+enum ModuleForm {
+    /// Offline copy of `GET /v1/modules`. The server file is the source of truth;
+    /// regenerate this JSON when `server/app/schemas/modules.py` changes.
+    static func offlineModules() -> [VisualModule] {
+        guard let url = Bundle.main.url(forResource: "OfflineModuleSchema", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let response = try? JSONDecoder().decode(ModulesResponse.self, from: data)
+        else { return [] }
+        return modules(from: response)
+    }
+
+    static func modules(from response: ModulesResponse) -> [VisualModule] {
+        response.order.compactMap { id in
+            guard let schema = response.modules[id] else { return nil }
+            return module(id: id, schema: schema)
+        }
+    }
+
+    /// Copy saved `rule_presets.modules` back onto a schema-built form.
+    static func apply(
+        _ saved: [String: [String: RuleValue]],
+        to modules: [VisualModule]
+    ) -> [VisualModule] {
+        modules.map { module in
+            var copy = module
+            guard let fields = saved[module.id] else { return copy }
+            if copy.tracksEnabled, let enabled = fields["enabled"], case let .bool(flag) = enabled {
+                copy.enabled = flag
+            }
+            for index in copy.rows.indices {
+                if let value = fields[copy.rows[index].id] {
+                    copy.rows[index].apply(value)
+                }
+            }
+            return copy
+        }
+    }
+
+    private static func module(id: String, schema: ModuleSchemaDTO) -> VisualModule? {
+        // Points and effects have no host-facing fields. An empty card is not a control.
+        if schema.fields.isEmpty { return nil }
+        let enabledField = schema.fields["enabled"]
+        let tracksEnabled = enabledField?.type == "bool"
+        var rows: [VisualRow] = []
+        for key in schema.fieldOrder where key != "enabled" {
+            guard let field = schema.fields[key] else { continue }
+            rows.append(row(id: key, field: field))
+        }
+        return VisualModule(
+            id: id,
+            title: schema.title ?? id,
+            blurb: schema.blurb ?? "",
+            enabled: enabledField?.defaultBool ?? true,
+            tracksEnabled: tracksEnabled,
+            rows: rows
+        )
+    }
+
+    private static func row(id: String, field: SchemaFieldDTO) -> VisualRow {
+        let control: VisualRow.Control
+        var choice = 0
+        var number = field.defaultNumber ?? field.min ?? 0
+        let flag = field.defaultBool ?? false
+        switch field.type {
+        case "bool":
+            control = .toggle
+        case "enum":
+            let display = field.labels.count == field.values.count ? field.labels : field.values
+            control = .options(display: display, values: field.values)
+            if let raw = field.defaultString, let index = field.values.firstIndex(of: raw) {
+                choice = index
+            }
+        default:
+            let integer = field.type == "int"
+            let min = field.min ?? 0
+            let max = field.max ?? max(min, number)
+            let step = field.step ?? 1
+            control = .stepper(min: min, max: max, step: step, suffix: field.suffix, integer: integer)
+            number = minValue(number, min: min, max: max)
+        }
+        return VisualRow(
+            id: id,
+            title: field.title,
+            control: control,
+            number: number,
+            choice: choice,
+            flag: flag
+        )
+    }
+
+    private static func minValue(_ number: Double, min: Double, max: Double) -> Double {
+        Swift.min(max, Swift.max(min, number))
+    }
+}

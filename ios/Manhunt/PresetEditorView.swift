@@ -9,9 +9,25 @@ struct PresetEditorView: View {
             VStack(alignment: .leading, spacing: 16) {
                 ScreenHeader(
                     title: "Classic",
-                    subtitle: "Same form the phone will build from each rule's settings.",
+                    subtitle: "Built from the server's module schema.",
                     onBack: store.closePreset
                 )
+
+                Card {
+                    VStack(alignment: .leading, spacing: 12) {
+                        TextField("Preset name", text: $store.presetName)
+                            .textInputAutocapitalization(.words)
+                            .foregroundStyle(HuntColor.paper)
+                            .padding(12)
+                            .background(HuntColor.ink, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        HuntButton(title: "Save preset", action: { Task { await store.savePreset() } })
+                        ForEach(store.savedPresets) { preset in
+                            Button(preset.name) { store.applySavedPreset(preset) }
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(HuntColor.signal)
+                        }
+                    }
+                }
 
                 ForEach($store.modules) { $module in
                     Card {
@@ -48,7 +64,7 @@ struct PresetEditorView: View {
             Toggle(row.wrappedValue.title, isOn: row.flag)
                 .tint(HuntColor.signal)
                 .foregroundStyle(HuntColor.paper)
-        case let .stepper(min, max, step, suffix):
+        case let .stepper(min, max, step, suffix, _):
             Stepper(value: row.number, in: min...max, step: step) {
                 HStack {
                     Text(row.wrappedValue.title)
@@ -59,14 +75,14 @@ struct PresetEditorView: View {
                 }
                 .foregroundStyle(HuntColor.paper)
             }
-        case let .options(options):
+        case let .options(display, _):
             VStack(alignment: .leading, spacing: 6) {
                 Text(row.wrappedValue.title)
                     .font(.subheadline)
                     .foregroundStyle(HuntColor.muted)
                 Picker(row.wrappedValue.title, selection: row.choice) {
-                    ForEach(options.indices, id: \.self) { index in
-                        Text(options[index]).tag(index)
+                    ForEach(display.indices, id: \.self) { index in
+                        Text(display[index]).tag(index)
                     }
                 }
                 .pickerStyle(.segmented)

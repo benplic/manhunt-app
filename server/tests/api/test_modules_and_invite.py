@@ -11,8 +11,20 @@ def _auth(client: TestClient, name: str = "Casey") -> dict:
 def test_modules_schema_lists_classic_ids(client: TestClient) -> None:
     response = client.get("/v1/modules")
     assert response.status_code == 200
-    ids = set(response.json()["modules"].keys())
+    body = response.json()
+    ids = set(body["modules"].keys())
     assert {"roles", "head_start", "power_ups", "hot_cold"} <= ids
+    # The preset editor renders this document. Order and bounds are part of it.
+    assert body["order"][0] == "roles"
+    duration = body["modules"]["head_start"]["fields"]["duration"]
+    assert duration["min"] == 15
+    assert duration["max"] == 600
+    assert duration["default"] == 60
+    association = client.get("/.well-known/apple-app-site-association")
+    assert association.status_code == 200
+    details = association.json()["applinks"]["details"][0]
+    assert "H366S3X2VW.app.manhunt.ios" in details["appIDs"]
+    assert details["components"][0]["/"] == "/join/*"
 
 
 def test_saved_preset_and_invite(client: TestClient) -> None:

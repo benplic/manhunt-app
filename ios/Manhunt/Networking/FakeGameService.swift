@@ -9,6 +9,7 @@ final class FakeGameService: GameService {
     private var signedIn: UserDTO?
     private(set) var storedArenas: [Arena]
     private var games: [UUID: FakeGame] = [:]
+    private var presetsSaved: [SavedPresetDTO] = []
     /// The known park lobby, created on init so join("park42") works before create.
     private let park = UUID(uuidString: "00000000-0000-0000-0000-00000000ABCD")!
 
@@ -186,6 +187,20 @@ final class FakeGameService: GameService {
     func claimUWB(gameID: UUID, hiderID: UUID) async throws {
         guard games[gameID] != nil else { throw ServiceError(code: .gameNotFound, message: "") }
         _ = hiderID
+    }
+
+    func fetchModules() async throws -> [VisualModule] {
+        ModuleForm.offlineModules()
+    }
+
+    func savePreset(name: String, modules: [String: [String: RuleValue]]) async throws -> SavedPresetDTO {
+        let preset = SavedPresetDTO(id: UUID().uuidString, name: name, modules: modules)
+        presetsSaved.insert(preset, at: 0)
+        return preset
+    }
+
+    func savedPresets() async throws -> [SavedPresetDTO] {
+        presetsSaved
     }
 
     func purchase(gameID: UUID, powerID: String, extra: [String: Double]) async throws -> PlayerViewDTO {
