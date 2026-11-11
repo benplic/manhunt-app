@@ -91,6 +91,18 @@ final class AppStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testActivePhaseDropsTheStartLine() {
+        let store = AppStore.makePreview()
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.note = "The hunt is on."
+        guard var view = store.match?.snapshot else { return XCTFail("Expected a lobby") }
+        view.phase = .active
+        store.apply(view)
+        XCTAssertNil(store.note)
+    }
+
+    @MainActor
     func testSaveFailureStaysOnTheEditorWithTheServerReason() async {
         let fake = FakeGameService(arenas: [])
         fake.nextArenaError = ServiceError(

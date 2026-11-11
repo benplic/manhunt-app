@@ -48,6 +48,7 @@ struct LiveGameView: View {
                     }
                 }
                 .foregroundStyle(HuntColor.paper)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
             VStack(spacing: 10) {
@@ -55,7 +56,8 @@ struct LiveGameView: View {
                 if store.locationAccuracy == .denied || store.locationAccuracy == .reduced {
                     locationBlock
                 }
-                if let banner = store.match?.snapshot.banners.last {
+                if HeadStartChrome.showsFloatingNotice(chrome),
+                   let banner = store.match?.snapshot.banners.last {
                     self.banner(title: banner.title, detail: banner.detail, tint: tone(banner.tone))
                 }
                 if store.situation == .reconnecting {
@@ -85,7 +87,8 @@ struct LiveGameView: View {
                     .padding(.vertical, 8)
                     .background(.black.opacity(0.72), in: Capsule())
                     .foregroundStyle(HuntColor.paper)
-                } else if store.match?.snapshot.banners.isEmpty != false,
+                } else if HeadStartChrome.showsFloatingNotice(chrome),
+                          store.match?.snapshot.banners.isEmpty != false,
                           store.situation != .reconnecting,
                           store.situation != .outOfBounds,
                           !store.paused,

@@ -124,28 +124,43 @@ final class AppStore {
         location.onAuthorizationChange = { [weak self] accuracy in
             self?.noteLocationAuthorization(accuracy)
         }
+        // Socket callbacks arrive off the main actor. The store is @MainActor,
+        // so a direct call never moves the other phone off the lobby.
         live?.onView = { [weak self] view in
-            self?.apply(view)
+            Task { @MainActor in
+                self?.apply(view)
+            }
         }
         live?.onQR = { [weak self] token in
-            self?.match?.qrToken = token
+            Task { @MainActor in
+                self?.match?.qrToken = token
+            }
         }
         live?.onEvent = { [weak self] banner in
-            self?.note = banner.detail
+            Task { @MainActor in
+                guard let self else { return }
+                // The locked map already says to wait. Keeping this line makes it
+                // pop up again when head start ends.
+                if banner.title == "started" { return }
+                self.note = banner.detail
+            }
         }
         live?.onReconnect = { [weak self] reconnecting in
-            if reconnecting {
-                self?.situation = .reconnecting
+            Task { @MainActor in
+                guard let self, reconnecting else { return }
+                self.situation = .reconnecting
                 // Server restart drops tokens. Force a republish on the next view.
-                self?.lastUWBToken = nil
+                self.lastUWBToken = nil
             }
         }
         live?.onUWBPeers = { [weak self] peers in
             self?.applyUWBPeers(peers)
         }
         live?.onSendFailure = { [weak self] _ in
-            self?.situation = .reconnecting
-            self?.note = "Connection hiccup. Retrying…"
+            Task { @MainActor in
+                self?.situation = .reconnecting
+                self?.note = "Connection hiccup. Retrying…"
+            }
         }
         live?.onRefreshFailed = { [weak self] in
             self?.signOut()
@@ -1207,6 +1222,11 @@ final class AppStore {
                 situation = .active
             } else {
                 situation = .active
+            }
+            // A start event that landed before this rule existed should not
+            // sit under the map once seekers are released.
+            if note == "The hunt is on." {
+                note = nil
             }
         case .lobby:
             break

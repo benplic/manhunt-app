@@ -14,4 +14,9 @@ enum HeadStartChrome {
         if seekerLock == "spawn_zone" { return .spawnZone }
         return .fullMap
     }
+
+    /// The full-map lock already says to wait. A banner or note on top of it repeats that.
+    static func showsFloatingNotice(_ chrome: Kind) -> Bool {
+        chrome != .fullMap
+    }
 }

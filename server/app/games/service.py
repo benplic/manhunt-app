@@ -253,6 +253,9 @@ class GameService:
                     },
                 )
         await session.commit()
+        # The host already has this view from the HTTP response. Everyone else
+        # is still on the lobby socket, and the tick loop is off in tests.
+        await self.manager.broadcast(game_id)
         return game
 
     async def pause(self, session: AsyncSession, user: User, game_id: UUID) -> GameSession:
@@ -265,6 +268,7 @@ class GameService:
         row.status = game.state.phase
         await self.persist_inputs(session, game)
         await session.commit()
+        await self.manager.broadcast(game_id)
         return game
 
     async def resume(self, session: AsyncSession, user: User, game_id: UUID) -> GameSession:
@@ -277,6 +281,7 @@ class GameService:
         row.status = game.state.phase
         await self.persist_inputs(session, game)
         await session.commit()
+        await self.manager.broadcast(game_id)
         return game
 
     async def end(self, session: AsyncSession, user: User, game_id: UUID) -> GameSession:
@@ -289,6 +294,7 @@ class GameService:
         # signal loss) live in memory until something flushes them.
         await self._persist_events(session, game)
         await session.commit()
+        await self.manager.broadcast(game_id)
         return game
 
     async def remove_player(

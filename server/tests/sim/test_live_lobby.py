@@ -115,3 +115,13 @@ def test_join_and_roles_push_a_lobby_view(client: TestClient) -> None:
             }
             assert by_name["Riley"] == "hider"
             assert by_name["Casey"] == "seeker"
+
+            # Start must push on its own. Tests leave the tick loop off.
+            started = client.post(
+                f"/v1/games/{game_id}/start",
+                headers=_hdr(host["access_token"]),
+            )
+            assert started.status_code == 200, started.text
+            started_view = _next(guest_ws)
+            assert started_view["type"] == "view"
+            assert started_view["data"]["phase"] == "head_start"

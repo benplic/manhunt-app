@@ -42,4 +42,10 @@ final class Phase3Tests: XCTestCase {
             .none
         )
     }
+
+    func testFullMapLockHidesTheFloatingNotice() {
+        XCTAssertFalse(HeadStartChrome.showsFloatingNotice(.fullMap))
+        XCTAssertTrue(HeadStartChrome.showsFloatingNotice(.spawnZone))
+        XCTAssertTrue(HeadStartChrome.showsFloatingNotice(.none))
+    }
 }
