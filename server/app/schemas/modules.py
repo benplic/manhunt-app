@@ -169,9 +169,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
     "points": {
         "version": 1,
         "title": "Points",
-        "blurb": "Scored by the engine.",
-        "field_order": [],
-        "fields": {},
+        "blurb": "Scoring, including how often a hider can taunt.",
+        "field_order": ["taunt_cooldown"],
+        "fields": {
+            "taunt_cooldown": _int("Taunt cooldown", 10, 180, 45, step=5, suffix="s"),
+        },
     },
     "power_ups": {
         "version": 1,

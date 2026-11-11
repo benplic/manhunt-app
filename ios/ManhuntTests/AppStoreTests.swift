@@ -298,6 +298,25 @@ final class AppStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testJoinShowsTheServerMessage() {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        _ = store.join(code: "HUNT42")
+        XCTAssertEqual(store.joinMessage, "No game is using that code.")
+    }
+
+    @MainActor
+    func testLeaveResultsDropsTheLiveNote() {
+        let store = AppStore.makePreview()
+        store.note = "Taunt sent. Seekers can see you for a few seconds."
+        store.screen = .results
+        store.leaveResults()
+        XCTAssertNil(store.note)
+        XCTAssertEqual(store.screen, .home)
+    }
+
+    @MainActor
     func testLeaveClearsTheMatchAndHitsTheService() async throws {
         let fake = FakeGameService()
         let store = AppStore(service: fake)

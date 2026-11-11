@@ -69,13 +69,19 @@ def apply_taunt(s: GameSession, player_id) -> None:
         raise GameRuleError(ErrorCode.WRONG_ROLE)
     if s.state.phase != "active":
         raise GameRuleError(ErrorCode.WRONG_PHASE)
+    now = s.state.game_elapsed_s
+    ready = player.taunt_cooldown_until_s
+    if ready is not None and now < ready:
+        raise GameRuleError(ErrorCode.COOLING_DOWN, "Taunt is still cooling down.")
     seekers = [p for p in s.state.players.values() if p.role == "seeker"]
     dist = _nearest_seeker_m(player, seekers) or 200
     # Closer taunts score more. A distant ping is cheap bragging.
     points = max(5, int(40 - dist / 10))
     player.points += points
     duration = int(s.module_settings("points").get("taunt_s", 8))
-    player.taunt_until_s = s.state.game_elapsed_s + duration
+    cooldown = int(s.module_settings("points").get("taunt_cooldown", 45))
+    player.taunt_until_s = now + duration
+    player.taunt_cooldown_until_s = now + max(0, cooldown)
     add_effect(s, owner_id=player_id, type="taunt", duration_s=duration)
     s.emit(
         "taunt",

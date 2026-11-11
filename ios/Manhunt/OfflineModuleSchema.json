@@ -343,9 +343,21 @@
     "points": {
       "version": 1,
       "title": "Points",
-      "blurb": "Scored by the engine.",
-      "field_order": [],
-      "fields": {}
+      "blurb": "Scoring, including how often a hider can taunt.",
+      "field_order": [
+        "taunt_cooldown"
+      ],
+      "fields": {
+        "taunt_cooldown": {
+          "type": "int",
+          "title": "Taunt cooldown",
+          "min": 10,
+          "max": 180,
+          "step": 5,
+          "default": 45,
+          "suffix": "s"
+        }
+      }
     },
     "power_ups": {
       "version": 1,

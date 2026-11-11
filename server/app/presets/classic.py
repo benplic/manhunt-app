@@ -39,6 +39,7 @@ CLASSIC_MODULES: dict[str, dict[str, Any]] = {
         "close_call_points": 20,
         "others_tagged_points": 15,
         "taunt_s": 8,
+        "taunt_cooldown": 45,
     },
     "power_ups": {"enabled": True},
     "effects": {},
@@ -60,6 +61,7 @@ RANGES: dict[tuple[str, str], tuple[float, float]] = {
     ("signal_loss", "penalty_after"): (30, 900),
     ("win", "time_limit"): (5, 180),
     ("hot_cold", "interval"): (2, 30),
+    ("points", "taunt_cooldown"): (10, 180),
 }
 
 

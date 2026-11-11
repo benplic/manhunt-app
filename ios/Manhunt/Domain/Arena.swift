@@ -166,6 +166,16 @@ struct Arena: Identifiable, Hashable, Sendable, Codable {
     }
 }
 
+/// The live map draws the server snapshot. A phone with no snapshot yet keeps its local arena.
+enum MatchMap {
+    static func arena(snapshot: Arena?, local: VisualArena) -> VisualArena {
+        if let snapshot {
+            return snapshot.asVisual(place: snapshot.name)
+        }
+        return local
+    }
+}
+
 extension ArenaZone {
     func asVisual() -> VisualZone {
         switch shape {

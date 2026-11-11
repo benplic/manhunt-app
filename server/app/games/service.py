@@ -43,14 +43,17 @@ _SAMPLE_BOTS = (
 
 
 def _sample_arena() -> dict:
-    side = 200 / 111_320
+    # Same outline as the phone's Riverside Green sample, so PARK42 is a park
+    # both phones can stand in, not a square at latitude 0.
     arena = Arena(
         name="Sample park",
         boundary=[
-            GeoPoint(0, 0),
-            GeoPoint(0, side),
-            GeoPoint(side, side),
-            GeoPoint(side, 0),
+            GeoPoint(lat=40.66355, lon=-73.96995),
+            GeoPoint(lat=40.66320, lon=-73.96785),
+            GeoPoint(lat=40.66155, lon=-73.96735),
+            GeoPoint(lat=40.66025, lon=-73.96835),
+            GeoPoint(lat=40.66015, lon=-73.97015),
+            GeoPoint(lat=40.66185, lon=-73.97075),
         ],
     )
     return arena_to_dict(arena)

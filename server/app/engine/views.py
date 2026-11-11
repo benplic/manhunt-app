@@ -21,6 +21,7 @@ def build_view(session: GameSession, viewer_id: UUID) -> dict:
                 "role": player.role,
                 "status": player.status,
                 "is_host": player.is_host,
+                "points": player.points,
                 "location": _visible_location(state, viewer, player),
             }
         )
@@ -52,6 +53,8 @@ def build_view(session: GameSession, viewer_id: UUID) -> dict:
         }
     seeker_lock, spawn_lock = _spawn_lock(session, viewer_id)
     now = state.game_elapsed_s
+    taunt_ready = viewer.taunt_cooldown_until_s
+    taunt_cooldown_s = max(0, taunt_ready - now) if taunt_ready is not None else 0
     cooldowns = {
         power_id: max(0, ready_at - now)
         for power_id, ready_at in viewer.cooldowns.items()
@@ -82,7 +85,9 @@ def build_view(session: GameSession, viewer_id: UUID) -> dict:
             "hint": viewer.hint,
             "effects": [e.type for e in state.effects if e.owner_id == viewer.player_id],
             "cooldowns": cooldowns,
+            "taunt_cooldown_s": taunt_cooldown_s,
         },
+        "arena": arena_to_dict(state.arena),
         "players": players,
         "reveals": reveals,
         "banners": [

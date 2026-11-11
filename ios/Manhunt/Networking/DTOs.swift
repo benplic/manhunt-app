@@ -96,6 +96,8 @@ struct PlayerViewDTO: Codable {
     var spawnLock: SpawnLockDTO? = nil
     /// Seconds until a sample lobby starts. Nil for a normal game.
     var lobbyStartsInS: Int? = nil
+    /// Play area for this game. Every phone draws this, not its local selection.
+    var arena: Arena? = nil
 
     enum CodingKeys: String, CodingKey {
         case gameId = "game_id"
@@ -109,6 +111,7 @@ struct PlayerViewDTO: Codable {
         case spawnLock = "spawn_lock"
         case you, players, reveals, banners, result
         case lobbyStartsInS = "lobby_starts_in_s"
+        case arena
     }
 }
 
@@ -123,6 +126,8 @@ struct YouDTO: Codable {
     var hint: HintDTO? = nil
     var effects: [String]? = nil
     var cooldowns: [String: Int]? = nil
+    /// Seconds until this hider may taunt again. Nil on older servers.
+    var tauntCooldownS: Int? = nil
 
     enum CodingKeys: String, CodingKey {
         case playerId = "player_id"
@@ -131,6 +136,7 @@ struct YouDTO: Codable {
         case bounds
         case safeZone = "safe_zone"
         case points, hint, effects, cooldowns
+        case tauntCooldownS = "taunt_cooldown_s"
     }
 }
 
@@ -177,6 +183,7 @@ struct PlayerDTO: Codable, Identifiable, Hashable {
     var role: PlayerRole
     var status: PlayerStatus
     var isHost: Bool
+    var points: Int? = nil
     var location: LocationDTO?
 
     var id: UUID { playerId }
@@ -186,6 +193,7 @@ struct PlayerDTO: Codable, Identifiable, Hashable {
         case displayName = "display_name"
         case role, status
         case isHost = "is_host"
+        case points
         case location
     }
 }

@@ -48,6 +48,17 @@ def test_cooldowns_ride_on_you_only() -> None:
         assert "cooldowns" not in row
 
 
+def test_both_viewers_get_the_same_play_boundary() -> None:
+    session, _, hider, seeker = two_player_hunt()
+    hider_view = build_view(session, hider)
+    seeker_view = build_view(session, seeker)
+    assert hider_view["arena"]["boundary"] == seeker_view["arena"]["boundary"]
+    assert len(hider_view["arena"]["boundary"]) >= 3
+    assert hider_view["arena"]["name"] == session.state.arena.name
+    hider_row = next(p for p in hider_view["players"] if p["player_id"] == str(hider))
+    assert hider_row["points"] == session.state.players[hider].points
+
+
 def test_decoy_flag_is_never_on_the_wire() -> None:
     session, clock, hider, seeker = two_player_hunt()
     session.record_location(hider, reading(meters(40, 40), clock))

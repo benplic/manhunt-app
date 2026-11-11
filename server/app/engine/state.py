@@ -80,6 +80,8 @@ class PlayerState:
     tracker_until_s: int | None = None
     lockdown_until_s: int | None = None
     taunt_until_s: int | None = None
+    # Game second when another taunt is allowed. Separate from the reveal window.
+    taunt_cooldown_until_s: int | None = None
     cooldowns: dict[str, int] = field(default_factory=dict)
     close_near_since_s: int | None = None
     last_survival_award_s: int = 0

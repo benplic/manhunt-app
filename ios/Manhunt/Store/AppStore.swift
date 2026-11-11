@@ -142,6 +142,8 @@ final class AppStore {
                 // The locked map already says to wait. Keeping this line makes it
                 // pop up again when head start ends.
                 if banner.title == "started" { return }
+                // A toast from a hunt that already ended must not land on Home.
+                guard self.match != nil, self.screen == .live || self.screen == .lobby else { return }
                 self.note = banner.detail
             }
         }
@@ -243,7 +245,8 @@ final class AppStore {
                 isYou: player.playerId == match.snapshot.you.playerId,
                 isHost: player.isHost,
                 point: point,
-                points: player.playerId == match.snapshot.you.playerId ? match.snapshot.you.points : 0
+                points: player.points
+                    ?? (player.playerId == match.snapshot.you.playerId ? match.snapshot.you.points : 0)
             )
         }
     }
@@ -270,6 +273,11 @@ final class AppStore {
         return livePeople.contains { $0.role == .seeker && !$0.isYou }
     }
 
+    /// Boundary and zones for the hunt on screen. The server snapshot wins.
+    var mapArena: VisualArena {
+        MatchMap.arena(snapshot: match?.snapshot.arena, local: arena)
+    }
+
     var arena: VisualArena {
         if let selected = arenas.first(where: { $0.id.uuidString == arenaID }) {
             return selected.asVisual(place: selected.name)
@@ -281,7 +289,7 @@ final class AppStore {
     }
 
     var liveZones: [VisualZone] {
-        var zones = arena.zones
+        var zones = mapArena.zones
         if let reveals = match?.snapshot.reveals {
             zones += reveals.map { pin in
                 VisualZone(
@@ -588,6 +596,10 @@ final class AppStore {
             screen = .lobby
             joinMessage = nil
             return nil
+        } catch let error as ServiceError {
+            lastError = error.code == .gameNotFound ? .notFound : .service(error.code)
+            joinMessage = error.message
+            return error.code == .gameNotFound ? .notFound : .service(error.code)
         } catch {
             lastError = .notFound
             joinMessage = "No game is using \(normalized)."
@@ -768,6 +780,7 @@ final class AppStore {
 
     func leaveResults() {
         match = nil
+        note = nil
         screen = .home
     }
 
@@ -1067,7 +1080,7 @@ final class AppStore {
     /// Play area drawn on the live map (`HuntMap` boundary).
     private func playAreaPolygon() -> Polygon {
         Polygon(
-            vertices: arena.boundary.map {
+            vertices: mapArena.boundary.map {
                 GeoPoint(latitude: $0.latitude, longitude: $0.longitude)
             }
         )
@@ -1190,6 +1203,7 @@ final class AppStore {
         case .targetShielded: return "That hider has a shield up."
         case .targetInSafeZone: return "They are in a safe zone."
         case .tokenInvalid, .tokenExpired: return "That code is stale. Scan again."
+        case .coolingDown: return "Taunt is still cooling down."
         case .wrongRole: return "Only seekers can tag."
         case .eliminated, .targetNotActive: return "That player is already out."
         case .wrongPhase: return "Tags are closed during this phase."
@@ -1204,6 +1218,7 @@ final class AppStore {
         case .ended:
             location.stop()
             live?.disconnect()
+            note = nil
             screen = .results
             Task { await loadTimeline() }
         case .headStart:
@@ -1336,6 +1351,9 @@ final class AppStore {
             screen = .lobby
             joinMessage = nil
             live?.connect(gameID: view.gameId)
+        } catch let error as ServiceError {
+            lastError = error.code == .gameNotFound ? .notFound : .service(error.code)
+            joinMessage = error.message
         } catch {
             lastError = .notFound
             joinMessage = "No game is using \(code)."

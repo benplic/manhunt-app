@@ -17,6 +17,25 @@ def test_close_taunt_scores_more_than_a_distant_one() -> None:
     assert close_points > far_points
 
 
+def test_second_taunt_inside_the_cooldown_is_refused() -> None:
+    from app.errors import ErrorCode, GameRuleError
+
+    session, clock, hider, seeker = two_player_hunt({"points": {"taunt_cooldown": 45}})
+    session.record_location(hider, reading(meters(100, 100), clock))
+    session.record_location(seeker, reading(meters(110, 100), clock))
+    session.taunt(hider)
+    try:
+        session.taunt(hider)
+    except GameRuleError as exc:
+        assert exc.code == ErrorCode.COOLING_DOWN
+    else:
+        raise AssertionError("A second taunt inside the cooldown should be refused")
+    from tests.engine.helpers import run_for
+
+    run_for(session, clock, 45)
+    session.taunt(hider)
+
+
 def test_seeker_gains_twenty_five_for_a_tag() -> None:
     session, clock, hider, seeker = two_player_hunt()
     session.record_location(hider, reading(meters(100, 100), clock))
