@@ -2,7 +2,8 @@ import Foundation
 
 /// Clips zones to the play boundary for editor preview and save. Uses flat meters at play latitude.
 /// Convex play areas use Sutherland–Hodgman. Concave ones are split into ears first, because
-/// half-plane clipping is wrong when the play polygon has a dent.
+/// half-plane clipping is wrong when the play polygon has a dent. Ear pieces are unioned so a
+/// zone that covers several ears keeps the whole interior, not only the largest triangle.
 enum ZoneClip {
   /// Largest overlap of `zone` with `play`. Nil when the overlap is empty.
   /// A circle fully inside `play` is returned unchanged.
@@ -45,19 +46,164 @@ enum ZoneClip {
     // so an unflipped ring reports a real overlap as completely outside.
     let pieces = isConvex(playXY) ? [playXY] : earClip(playXY)
     guard !pieces.isEmpty else { return nil }
-    var best: [XY] = []
-    var bestArea = 0.0
+    var fragments: [[XY]] = []
     for piece in pieces {
       guard let clipped = clipConvex(subjectXY, clip: piece) else { continue }
-      let area = polygonAreaMeters(clipped)
-      if area > bestArea {
-        bestArea = area
-        best = clipped
+      fragments.append(clipped)
+    }
+    // Shared ear edges cancel. What remains is the outline of the overlap.
+    // A zone that crosses a bay can leave two polygons; keep the largest, and
+    // drop a sliver under 1 m². Same rule as the server's shapely clip.
+    guard let merged = unionFragments(fragments),
+          merged.count >= 3,
+          polygonAreaMeters(merged) >= 1
+    else { return nil }
+    return merged.map { geoFromLocal($0, origin: origin) }
+  }
+
+  /// Glue ear clippings into one ring by cancelling edges that bound two pieces.
+  private static func unionFragments(_ fragments: [[XY]]) -> [XY]? {
+    var edges: [DirectedEdge] = []
+    for fragment in fragments {
+      let ring = dropDuplicateNeighbors(fragment)
+      guard ring.count >= 3, polygonAreaMeters(ring) > 1e-6 else { continue }
+      for index in ring.indices {
+        edges.append(DirectedEdge(start: ring[index], end: ring[(index + 1) % ring.count]))
       }
     }
-    // Match the server: drop a sliver under 1 m², and keep only the largest piece.
-    guard best.count >= 3, bestArea >= 1 else { return nil }
-    return best.map { geoFromLocal($0, origin: origin) }
+    guard !edges.isEmpty else { return nil }
+    let split = splitEdges(edges)
+    var counts: [EdgeKey: Int] = [:]
+    var sample: [EdgeKey: DirectedEdge] = [:]
+    for edge in split {
+      let start = quantize(edge.start)
+      let end = quantize(edge.end)
+      if start == end { continue }
+      let key = EdgeKey(start: start, end: end)
+      counts[key, default: 0] += 1
+      sample[key] = edge
+    }
+    var outgoing: [QuantPoint: [QuantPoint]] = [:]
+    for (key, count) in counts {
+      let reverse = EdgeKey(start: key.end, end: key.start)
+      let net = count - (counts[reverse] ?? 0)
+      guard net > 0 else { continue }
+      for _ in 0..<net {
+        outgoing[key.start, default: []].append(key.end)
+      }
+    }
+    var rings: [[XY]] = []
+    var safety = split.count + 2
+    while safety > 0, let start = outgoing.first(where: { !$0.value.isEmpty })?.key {
+      safety -= 1
+      var ring: [XY] = []
+      var current = start
+      var steps = split.count + 2
+      while steps > 0 {
+        steps -= 1
+        guard var nexts = outgoing[current], !nexts.isEmpty else { break }
+        let next = nexts.removeFirst()
+        outgoing[current] = nexts
+        if let edge = sample[EdgeKey(start: current, end: next)] {
+          ring.append(edge.start)
+        }
+        current = next
+        if current == start { break }
+      }
+      let cleaned = dropDuplicateNeighbors(ring)
+      if cleaned.count >= 3, current == start {
+        rings.append(cleaned)
+      }
+    }
+    guard let best = rings.max(by: { polygonAreaMeters($0) < polygonAreaMeters($1) }) else { return nil }
+    return best
+  }
+
+  /// Break edges at vertices that lie on them so a T-junction cancels in pieces, not as one long edge.
+  private static func splitEdges(_ edges: [DirectedEdge]) -> [DirectedEdge] {
+    var canon: [XY] = []
+    for edge in edges {
+      for point in [edge.start, edge.end] {
+        if !canon.contains(where: { distance($0, point) <= 0.0001 }) {
+          canon.append(point)
+        }
+      }
+    }
+    func snap(_ point: XY) -> XY {
+      canon.first { distance($0, point) <= 0.0001 } ?? point
+    }
+    var split: [DirectedEdge] = []
+    for edge in edges {
+      let start = snap(edge.start)
+      let end = snap(edge.end)
+      var hits: [(Double, XY)] = []
+      for point in canon {
+        let (gap, t) = parameterAlong(point, from: start, to: end)
+        if gap <= 0.0001, t > 0.0001, t < 0.9999 {
+          hits.append((t, snap(point)))
+        }
+      }
+      hits.sort { $0.0 < $1.0 }
+      var chain = [start]
+      chain.append(contentsOf: hits.map(\.1))
+      chain.append(end)
+      for index in 0..<(chain.count - 1) where distance(chain[index], chain[index + 1]) > 0.0001 {
+        split.append(DirectedEdge(start: chain[index], end: chain[index + 1]))
+      }
+    }
+    return split
+  }
+
+  private static func dropDuplicateNeighbors(_ vertices: [XY]) -> [XY] {
+    var ring: [XY] = []
+    for point in vertices {
+      if let last = ring.last, distance(last, point) <= 0.0001 { continue }
+      ring.append(point)
+    }
+    if ring.count >= 2, let first = ring.first, let last = ring.last, distance(first, last) <= 0.0001 {
+      ring.removeLast()
+    }
+    return ring
+  }
+
+  private static func distance(_ a: XY, _ b: XY) -> Double {
+    hypot(a.x - b.x, a.y - b.y)
+  }
+
+  /// Distance to the segment, and the unclamped parameter along start→end.
+  private static func parameterAlong(_ point: XY, from start: XY, to end: XY) -> (Double, Double) {
+    let dx = end.x - start.x
+    let dy = end.y - start.y
+    let lengthSquared = dx * dx + dy * dy
+    if lengthSquared < 1e-18 {
+      return (distance(point, start), 0)
+    }
+    let t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared
+    let clamped = min(1, max(0, t))
+    let projected = XY(x: start.x + dx * clamped, y: start.y + dy * clamped)
+    return (distance(point, projected), t)
+  }
+
+  private struct DirectedEdge {
+    var start: XY
+    var end: XY
+  }
+
+  private struct QuantPoint: Hashable {
+    var x: Int
+    var y: Int
+  }
+
+  private struct EdgeKey: Hashable {
+    var start: QuantPoint
+    var end: QuantPoint
+  }
+
+  private static func quantize(_ point: XY) -> QuantPoint {
+    QuantPoint(
+      x: Int((point.x / 0.0001).rounded()),
+      y: Int((point.y / 0.0001).rounded())
+    )
   }
 
   private static func clipConvex(_ subject: [XY], clip: [XY]) -> [XY]? {
