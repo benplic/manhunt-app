@@ -13,9 +13,10 @@ The Mac stays awake for the length of a game. Phones on cellular reach it throug
 ### 1. Start the server
 
 ```bash
-cp server/.env.example .env   # then replace the signing and trail keys
-docker compose up
-# optional: docker compose --profile tunnel up
+cp server/.env.example .env   # repo root; set MANHUNT_SESSION_SIGNING_KEY, MANHUNT_QR_SIGNING_KEY, MANHUNT_TRAIL_KEY
+docker compose up -d
+# phones on cellular: also start the quick tunnel (server + db + tunnel):
+# docker compose --profile tunnel up -d
 ```
 
 Keep the Mac awake:
@@ -28,7 +29,7 @@ Health check from this Mac: `curl http://localhost:8000/v1/healthz` should retur
 
 ### 2. Expose it to phones
 
-**Quick tunnel (default):** `docker compose --profile tunnel up`. Watch the `tunnel` logs for `https://….trycloudflare.com`. That URL changes every time the container starts.
+**Quick tunnel (default):** `docker compose --profile tunnel up -d`. Watch with `docker compose logs tunnel` for `https://….trycloudflare.com`. That URL changes every time the `tunnel` container restarts. If you recreate `server` or `db`, restart `tunnel` too (`docker compose restart tunnel`) and paste the new URL into the app.
 
 **Named tunnel:** create a tunnel in the Cloudflare Zero Trust dashboard, put the token in `TUNNEL_TOKEN` (never commit it), and change the compose command to `tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}`.
 
@@ -76,8 +77,11 @@ The iOS client shows **Waking the hunt server…** and retries the first request
 
 ```bash
 cd server && python3 -m venv .venv && . .venv/bin/activate && pip install -e '.[dev]' && pytest -q && ruff check .
+# or, with Docker only: docker compose --profile test run --rm server-test
 cd ios && xcodebuild test -project Manhunt.xcodeproj -scheme Manhunt -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.4'
 ```
+
+On GitHub Actions macOS runners, CI picks an available iPhone 16 Pro simulator automatically (see `.github/workflows/ci.yml`).
 
 ## License
 

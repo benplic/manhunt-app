@@ -20,10 +20,18 @@ struct PresetEditorView: View {
                             .foregroundStyle(HuntColor.paper)
                             .padding(12)
                             .background(HuntColor.ink, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        if let note = store.note {
+                            Text(note)
+                                .font(.footnote)
+                                .foregroundStyle(HuntColor.warning)
+                        }
                         HuntButton(
-                            title: store.editingPresetID == nil ? "Save preset" : "Save changes",
+                            title: store.isSavingPreset
+                                ? "Saving…"
+                                : (store.editingPresetID == nil ? "Save preset" : "Save changes"),
                             action: { Task { await store.savePreset() } }
                         )
+                        .disabled(store.isSavingPreset)
                         Button("New preset", action: store.beginNewPreset)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(HuntColor.signal)
@@ -79,29 +87,63 @@ struct PresetEditorView: View {
                 .tint(HuntColor.signal)
                 .foregroundStyle(HuntColor.paper)
         case let .stepper(min, max, step, suffix, _):
-            Stepper(value: row.number, in: min...max, step: step) {
-                HStack {
-                    Text(row.wrappedValue.title)
-                    Spacer()
-                    Text(stepperLabel(row.wrappedValue.number, suffix: suffix))
-                        .foregroundStyle(HuntColor.signal)
-                        .monospacedDigit()
+            if row.wrappedValue.stepperRangeIsUsable {
+                Stepper(
+                    value: Binding(
+                        get: { Swift.min(max, Swift.max(min, row.wrappedValue.number)) },
+                        set: { row.wrappedValue.number = Swift.min(max, Swift.max(min, $0)) }
+                    ),
+                    in: min...max,
+                    step: step
+                ) {
+                    HStack {
+                        Text(row.wrappedValue.title)
+                        Spacer()
+                        Text(stepperLabel(row.wrappedValue.number, suffix: suffix))
+                            .foregroundStyle(HuntColor.signal)
+                            .monospacedDigit()
+                    }
+                    .foregroundStyle(HuntColor.paper)
                 }
-                .foregroundStyle(HuntColor.paper)
+            } else {
+                Text("\(row.wrappedValue.title) \(stepperLabel(row.wrappedValue.number, suffix: suffix))")
+                    .foregroundStyle(HuntColor.paper)
             }
-        case let .options(display, _):
+        case let .options(display, values):
+            let labels = display.count == values.count ? display : values
             VStack(alignment: .leading, spacing: 6) {
                 Text(row.wrappedValue.title)
                     .font(.subheadline)
                     .foregroundStyle(HuntColor.muted)
-                Picker(row.wrappedValue.title, selection: row.choice) {
-                    ForEach(display.indices, id: \.self) { index in
-                        Text(display[index]).tag(index)
+                if values.isEmpty {
+                    Text("No choices")
+                        .font(.footnote)
+                        .foregroundStyle(HuntColor.muted)
+                } else {
+                    Picker(row.wrappedValue.title, selection: optionSelection(row: row, values: values)) {
+                        ForEach(Array(values.enumerated()), id: \.offset) { index, value in
+                            Text(index < labels.count ? labels[index] : value).tag(value)
+                        }
                     }
+                    .pickerStyle(.segmented)
                 }
-                .pickerStyle(.segmented)
             }
         }
+    }
+
+    /// Selection is the schema string, clamped into the option list.
+    private func optionSelection(row: Binding<VisualRow>, values: [String]) -> Binding<String> {
+        Binding(
+            get: {
+                let choice = min(max(0, row.wrappedValue.choice), values.count - 1)
+                return values[choice]
+            },
+            set: { newValue in
+                if let index = values.firstIndex(of: newValue) {
+                    row.wrappedValue.choice = index
+                }
+            }
+        )
     }
 
     private func stepperLabel(_ value: Double, suffix: String) -> String {

@@ -14,6 +14,8 @@ struct HuntMap: View {
     var pendingCircleCenter: VisualPoint? = nil
     var highlightedEdge: (VisualPoint, VisualPoint)? = nil
     var homeCoordinate: CLLocationCoordinate2D? = nil
+    /// Bumped once after the location sheet is answered so the camera leaves the fallback.
+    var frameID: Int = 0
     var onDrop: ((VisualPoint) -> Void)?
     var onCrosshair: ((VisualPoint) -> Void)? = nil
     var emphasizeSpawn: Bool = false
@@ -94,16 +96,11 @@ struct HuntMap: View {
                     VStack(spacing: 8) {
                         if let homeCoordinate {
                             Button {
-                                let home = VisualPoint(
+                                let user = GeoPoint(
                                     latitude: homeCoordinate.latitude,
                                     longitude: homeCoordinate.longitude
                                 )
-                                position = .region(MKCoordinateRegion(
-                                    center: homeCoordinate,
-                                    span: MKCoordinateSpan(latitudeDelta: 0.004, longitudeDelta: 0.004)
-                                ))
-                                crosshair = home
-                                onCrosshair?(home)
+                                frame(to: EditorCamera.region(user: user, boundary: [], isNew: true))
                             } label: {
                                 Image(systemName: "location.fill")
                                     .font(.subheadline.weight(.semibold))
@@ -129,11 +126,17 @@ struct HuntMap: View {
                     .padding(.bottom, 12)
                 }
             }
-        .onAppear {
-            position = .region(region)
-            crosshair = VisualPoint(latitude: region.center.latitude, longitude: region.center.longitude)
-            onCrosshair?(crosshair)
+        .onAppear { frame(to: region) }
+        .onChange(of: frameID) { _, _ in
+            frame(to: region)
         }
+    }
+
+    /// One camera update. Callers pass EditorCamera.region so the span stays the editor default.
+    private func frame(to region: MKCoordinateRegion) {
+        position = .region(region)
+        crosshair = VisualPoint(latitude: region.center.latitude, longitude: region.center.longitude)
+        onCrosshair?(crosshair)
     }
 
     private func shouldShow(_ person: VisualPlayer) -> Bool {

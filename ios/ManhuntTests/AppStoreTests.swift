@@ -79,6 +79,88 @@ final class AppStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testHeadStartWhileInTheLobbyOpensTheLiveMap() {
+        let store = AppStore.makePreview()
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        XCTAssertEqual(store.screen, .lobby)
+        guard var view = store.match?.snapshot else { return XCTFail("Expected a lobby") }
+        view.phase = .headStart
+        store.apply(view)
+        XCTAssertEqual(store.screen, .live)
+    }
+
+    @MainActor
+    func testSaveFailureStaysOnTheEditorWithTheServerReason() async {
+        let fake = FakeGameService(arenas: [])
+        fake.nextArenaError = ServiceError(
+            code: .arenaInvalid,
+            message: "Arena failed validation.",
+            issues: [APIIssue(code: "self_intersection", name: "Play area")]
+        )
+        let store = AppStore(service: fake)
+        store.beginNewArena()
+        store.editor.addMapPoint(Fixtures.meters(x: 0, y: 0))
+        store.editor.addMapPoint(Fixtures.meters(x: 40, y: 0))
+        store.editor.addMapPoint(Fixtures.meters(x: 20, y: 30))
+        store.saveArena()
+        let deadline = Date().addingTimeInterval(2)
+        while store.editor.notice == nil, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(store.screen, .arenaEditor)
+        XCTAssertEqual(store.editor.notice, "Play area crosses itself.")
+        XCTAssertFalse(store.isSavingArena)
+    }
+
+    @MainActor
+    func testEmptyPlayAreaSaveExplainsWhy() {
+        let store = AppStore.makePreview()
+        store.beginNewArena()
+        store.saveArena()
+        XCTAssertEqual(store.screen, .arenaEditor)
+        XCTAssertEqual(store.editorWarning, "Play area needs at least three points.")
+    }
+
+    @MainActor
+    func testEditZoneShapeSelectsThatPolygon() {
+        let store = AppStore.makePreview()
+        store.beginNewArena()
+        store.editor.boundary = Polygon(vertices: [
+            Fixtures.meters(x: 0, y: 0),
+            Fixtures.meters(x: 80, y: 0),
+            Fixtures.meters(x: 80, y: 80),
+            Fixtures.meters(x: 0, y: 80),
+        ])
+        store.editor.tool = .outOfBounds
+        store.editor.addMapPoint(Fixtures.meters(x: 10, y: 10))
+        store.editor.addMapPoint(Fixtures.meters(x: 30, y: 10))
+        store.editor.addMapPoint(Fixtures.meters(x: 20, y: 30))
+        guard let id = store.editor.zones.first?.id else { return XCTFail("Expected a zone") }
+        store.tool = .playArea
+        store.editZoneShape(id: id)
+        XCTAssertEqual(store.tool, .outOfBounds)
+        XCTAssertEqual(store.editor.activeZoneID, id)
+    }
+
+    @MainActor
+    func testPresetScreenWaitsForTheSchema() async {
+        let fake = FakeGameService()
+        fake.moduleFetchDelay = .milliseconds(150)
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        store.modules = []
+        store.openPreset()
+        XCTAssertEqual(store.screen, .home)
+        let deadline = Date().addingTimeInterval(2)
+        while store.screen != .preset, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(store.screen, .preset)
+        XCTAssertFalse(store.modules.isEmpty)
+    }
+
+    @MainActor
     func testRandomizeThenStartOpensLive() {
         let store = AppStore.makePreview()
         store.signInPreview()

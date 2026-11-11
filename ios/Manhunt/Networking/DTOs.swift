@@ -24,12 +24,58 @@ struct AuthOut: Codable {
     }
 }
 
+struct APIIssue: Codable, Equatable {
+    var code: String
+    var name: String?
+}
+
 struct APIErrorBody: Codable {
     var error: Payload
+
     struct Payload: Codable {
         var code: ErrorCode
         var message: String
-        var details: [String: String]?
+        var issues: [APIIssue]
+
+        enum CodingKeys: String, CodingKey {
+            case code, message, details
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            code = try container.decode(ErrorCode.self, forKey: .code)
+            message = try container.decode(String.self, forKey: .message)
+            // details is sometimes {issues: [...]}, sometimes {field: "..."}.
+            // A mismatch must not throw away the message.
+            if let details = try? container.decode(Details.self, forKey: .details) {
+                issues = details.issues
+            } else {
+                issues = []
+            }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(code, forKey: .code)
+            try container.encode(message, forKey: .message)
+        }
+    }
+
+    private struct Details: Decodable {
+        var issues: [APIIssue]
+
+        enum CodingKeys: String, CodingKey { case issues }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            if let objects = try? container.decode([APIIssue].self, forKey: .issues) {
+                issues = objects
+            } else if let codes = try? container.decode([String].self, forKey: .issues) {
+                issues = codes.map { APIIssue(code: $0, name: nil) }
+            } else {
+                issues = []
+            }
+        }
     }
 }
 
@@ -48,6 +94,8 @@ struct PlayerViewDTO: Codable {
     var tagMethod: String? = nil
     var seekerLock: String? = nil
     var spawnLock: SpawnLockDTO? = nil
+    /// Seconds until a sample lobby starts. Nil for a normal game.
+    var lobbyStartsInS: Int? = nil
 
     enum CodingKeys: String, CodingKey {
         case gameId = "game_id"
@@ -60,6 +108,7 @@ struct PlayerViewDTO: Codable {
         case seekerLock = "seeker_lock"
         case spawnLock = "spawn_lock"
         case you, players, reveals, banners, result
+        case lobbyStartsInS = "lobby_starts_in_s"
     }
 }
 
@@ -217,4 +266,5 @@ struct TimelineOut: Codable {
 struct ServiceError: Error, Equatable {
     var code: ErrorCode
     var message: String
+    var issues: [APIIssue] = []
 }

@@ -58,6 +58,9 @@ final class AppStore {
     var draftCircleCenter: VisualPoint?
     var draftHighlightedEdge: (VisualPoint, VisualPoint)?
     var editorHomeCoordinate: CLLocationCoordinate2D?
+    /// Incremented once so HuntMap reframes after the permission sheet, not on every GPS tick.
+    var editorFrameID = 0
+    private var awaitingEditorFrame = false
     var editingPresetID: String?
     var arenaID = SamplePark.riverside.id
     var paused = false
@@ -113,12 +116,13 @@ final class AppStore {
         location.onUpdate = { [weak self] loc in
             guard let self else { return }
             sendFix(from: loc, isFinal: false)
-            if screen == .arenaEditor, draftBoundary.count < 3 {
-                editorHomeCoordinate = loc.coordinate
-            }
+            receiveEditorFix(loc.coordinate)
         }
         location.onAccuracy = { [weak self] accuracy in
             self?.locationAccuracy = accuracy
+        }
+        location.onAuthorizationChange = { [weak self] accuracy in
+            self?.noteLocationAuthorization(accuracy)
         }
         live?.onView = { [weak self] view in
             self?.apply(view)
@@ -283,6 +287,15 @@ final class AppStore {
         }
     }
 
+    /// One orange line: the latest editor notice, otherwise the first blocking issue.
+    var editorWarning: String? {
+        if let notice = editor.notice, !notice.isEmpty { return notice }
+        return editorIssues.first
+    }
+
+    var isSavingArena = false
+    var isSavingPreset = false
+
     var editorIssues: [String] {
         editor.issues.map { issue in
             switch issue {
@@ -394,8 +407,12 @@ final class AppStore {
     func openCreate() { screen = .createGame }
     func openPreset() {
         presetReturn = screen == .preset ? presetReturn : screen
-        screen = .preset
-        Task { await refreshPresetEditor() }
+        // Load the schema before the form appears. Replacing `modules` under a
+        // visible segmented picker crashes SwiftUI with an index-out-of-range trap.
+        Task {
+            await refreshPresetEditor()
+            screen = .preset
+        }
     }
 
     func refreshPresetEditor() async {
@@ -411,6 +428,9 @@ final class AppStore {
     }
 
     func savePreset() async {
+        if isSavingPreset { return }
+        isSavingPreset = true
+        defer { isSavingPreset = false }
         let name = presetName.trimmingCharacters(in: .whitespacesAndNewlines)
         let title = name.isEmpty ? "Custom" : name
         let overrides = PresetOverrides.from(modules: modules)
@@ -429,6 +449,8 @@ final class AppStore {
             savedPresets.insert(saved, at: 0)
             editingPresetID = saved.id
             note = "Saved \(saved.name)."
+        } catch let error as ServiceError {
+            note = error.message
         } catch {
             note = "Could not save the preset."
         }
@@ -760,7 +782,35 @@ final class AppStore {
         if live != nil {
             location.requestFix()
         }
+        awaitingEditorFrame = true
         screen = .arenaEditor
+    }
+
+    /// Permission sheet answered. Frame immediately when a fix is already in hand.
+    func noteLocationAuthorization(_ accuracy: LocationReporter.Accuracy) {
+        locationAccuracy = accuracy
+        guard screen == .arenaEditor, awaitingEditorFrame else { return }
+        let decision = EditorFraming.afterAuthorization(
+            accuracy: accuracy,
+            hasFix: location.lastFix != nil,
+            boundaryCount: editor.boundary.vertices.count
+        )
+        if accuracy == .denied {
+            awaitingEditorFrame = false
+            return
+        }
+        if decision.frameNow, let fix = location.lastFix {
+            receiveEditorFix(fix.coordinate)
+        }
+    }
+
+    /// First fix for a new arena moves the camera once. Later fixes only update the home pin.
+    func receiveEditorFix(_ coordinate: CLLocationCoordinate2D) {
+        guard screen == .arenaEditor, editor.boundary.vertices.count < 3 else { return }
+        editorHomeCoordinate = coordinate
+        guard awaitingEditorFrame else { return }
+        editorFrameID += 1
+        awaitingEditorFrame = false
     }
 
     func updateEditorCrosshair(_ point: VisualPoint) {
@@ -809,17 +859,26 @@ final class AppStore {
         refreshDraftsFromEditor()
     }
 
+    /// Layers sheet: keep editing this polygon. Safe circles stay rename-and-delete only.
+    func editZoneShape(id: UUID) {
+        editor.editZone(id)
+        tool = arenaTool(from: editor.tool)
+    }
+
     func undoDrop() {
         editor.undo()
         refreshDraftsFromEditor()
     }
 
     func saveArena() {
+        if isSavingArena { return }
         let trimmed = editor.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = trimmed.isEmpty ? "New arena" : trimmed
         var prepared = editor.preparedForSave()
         if !prepared.blocking.isEmpty {
-            note = prepared.blocking.map(issueCopy).joined(separator: " ")
+            let text = issueCopy(prepared.blocking[0])
+            editor.notice = text
+            note = text
             return
         }
         // Editing an existing arena must PUT the same id. Creating always POSTs a new one.
@@ -831,7 +890,9 @@ final class AppStore {
         arena.id = isUpdate ? existingID! : UUID()
         arena.name = name
         let warnings = prepared.warnings
+        isSavingArena = true
         Task {
+            defer { isSavingArena = false }
             do {
                 let saved: Arena
                 if isUpdate {
@@ -852,9 +913,33 @@ final class AppStore {
                     note = warnings.joined(separator: " ") + " Arena saved."
                 }
                 screen = .home
+            } catch let error as ServiceError {
+                let text = arenaFailureText(error)
+                editor.notice = text
+                note = text
             } catch {
-                note = "Could not save the arena. Is the home server running?"
+                let text = "Could not save the arena. Is the home server running?"
+                editor.notice = text
+                note = text
             }
+        }
+    }
+
+    private func arenaFailureText(_ error: ServiceError) -> String {
+        guard error.code == .arenaInvalid, let issue = error.issues.first else {
+            return error.message
+        }
+        switch issue.code {
+        case "self_intersection":
+            return "\(issue.name ?? "A shape") crosses itself."
+        case "outside_play_area":
+            return "\(issue.name ?? "A zone") leaves the play area."
+        case "too_many_zones":
+            return "An arena can have at most 30 zones."
+        case "play_area_too_small":
+            return "Play area needs at least three points."
+        default:
+            return error.message
         }
     }
 
@@ -1126,6 +1211,9 @@ final class AppStore {
         case .lobby:
             break
         }
+        if screen == .lobby, view.phase == .headStart || view.phase == .active || view.phase == .paused {
+            enterLive()
+        }
         if view.you.bounds.phase != "inside", view.phase == .active || view.phase == .headStart {
             situation = .outOfBounds
         }
@@ -1297,6 +1385,15 @@ final class AppStore {
         case .safe: return .safeCircle
         case .outOfBounds: return .outOfBounds
         case .spawn: return .seekerSpawn
+        }
+    }
+
+    private func arenaTool(from tool: EditorTool) -> ArenaTool {
+        switch tool {
+        case .playArea: return .playArea
+        case .safeCircle: return .safe
+        case .outOfBounds: return .outOfBounds
+        case .seekerSpawn: return .spawn
         }
     }
 

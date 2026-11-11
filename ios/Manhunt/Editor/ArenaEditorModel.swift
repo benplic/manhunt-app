@@ -84,6 +84,7 @@ final class ArenaEditorModel {
         snapshot()
         boundary.vertices[index] = point
         vertexToMove = nil
+        reclipZones()
     }
 
     func deleteVertex(at index: Int) {
@@ -92,6 +93,7 @@ final class ArenaEditorModel {
         boundary.vertices.remove(at: index)
         selectedEdge = nil
         vertexToMove = nil
+        reclipZones()
     }
 
     func renameZone(id: UUID, to name: String) {
@@ -105,6 +107,26 @@ final class ArenaEditorModel {
         zones.removeAll { $0.id == id }
         if activeZoneID == id {
             activeZoneID = nil
+        }
+    }
+
+    /// Layers sheet asked to keep editing this polygon. Circles are not vertex-edited.
+    func editZone(_ id: UUID) {
+        guard let zone = zones.first(where: { $0.id == id }) else { return }
+        guard case .polygon = zone.shape else { return }
+        pendingZoneVertices = []
+        pendingCircleCenter = nil
+        activeZoneID = id
+        selectedEdge = nil
+        vertexToMove = nil
+        notice = nil
+        switch zone.kind {
+        case .outOfBounds:
+            tool = .outOfBounds
+        case .seekerSpawn:
+            tool = .seekerSpawn
+        case .safe:
+            break
         }
     }
 
@@ -185,11 +207,15 @@ final class ArenaEditorModel {
                 var vertices = boundary.vertices
                 if insertIntoClosedRing(point, vertices: &vertices) {
                     boundary.vertices = vertices
+                    reclipZones()
                 }
                 return
             }
             snapshot()
             boundary.vertices.append(point)
+            if boundary.vertices.count >= 3 {
+                reclipZones()
+            }
         case .safeCircle:
             if let center = pendingCircleCenter {
                 snapshot()
@@ -263,6 +289,7 @@ final class ArenaEditorModel {
             var vertices = polygon.vertices
             if insertIntoClosedRing(point, vertices: &vertices) {
                 zones[index].shape = .polygon(Polygon(vertices: vertices))
+                reclipZone(at: index)
             }
             return
         }
@@ -275,7 +302,11 @@ final class ArenaEditorModel {
     private func finalizeZone(_ zone: inout ArenaZone) -> Bool {
         let playReady = boundary.vertices.count >= 3 && !ArenaGeometry.selfIntersects(boundary)
         guard playReady else { return true }
-        if ArenaGeometry.covers(zone: zone, playArea: boundary) { return true }
+        if ArenaGeometry.covers(zone: zone, playArea: boundary) {
+            // A later, fully inside shape replaces the previous warning.
+            notice = nil
+            return true
+        }
         if let clipped = ZoneClip.clip(zone, to: boundary) {
             notice = "Part of \(zone.name) is outside the play area, so it was clipped to the boundary."
             zone = clipped
@@ -283,6 +314,47 @@ final class ArenaEditorModel {
         }
         notice = "That zone is completely outside the play area, so it was not added."
         return false
+    }
+
+    /// Boundary edits can push a zone outside after it was accepted. One notice, the latest change.
+    private func reclipZones() {
+        guard boundary.vertices.count >= 3, !ArenaGeometry.selfIntersects(boundary) else { return }
+        var kept: [ArenaZone] = []
+        var message: String?
+        for zone in zones {
+            if ArenaGeometry.covers(zone: zone, playArea: boundary) {
+                kept.append(zone)
+                continue
+            }
+            if let clipped = ZoneClip.clip(zone, to: boundary) {
+                message = "Part of \(zone.name) is outside the play area, so it was clipped to the boundary."
+                var updated = zone
+                updated.shape = clipped.shape
+                kept.append(updated)
+            } else {
+                message = "That zone is completely outside the play area, so it was not added."
+                if activeZoneID == zone.id {
+                    activeZoneID = nil
+                }
+            }
+        }
+        zones = kept
+        notice = message
+    }
+
+    private func reclipZone(at index: Int) {
+        guard zones.indices.contains(index) else { return }
+        var zone = zones[index]
+        let id = zone.id
+        if finalizeZone(&zone) {
+            guard zones.indices.contains(index), zones[index].id == id else { return }
+            zones[index] = zone
+        } else if zones.indices.contains(index), zones[index].id == id {
+            zones.remove(at: index)
+            if activeZoneID == id {
+                activeZoneID = nil
+            }
+        }
     }
 
     private func insertIntoClosedRing(_ point: GeoPoint, vertices: inout [GeoPoint]) -> Bool {

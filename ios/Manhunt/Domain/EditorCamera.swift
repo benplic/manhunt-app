@@ -29,6 +29,28 @@ enum EditorCamera {
     }
 }
 
+/// Whether the new-arena camera should move after the location sheet is answered.
+enum EditorFraming {
+    struct Decision: Equatable {
+        var requestFix: Bool
+        var frameNow: Bool
+    }
+
+    static func afterAuthorization(
+        accuracy: LocationReporter.Accuracy,
+        hasFix: Bool,
+        boundaryCount: Int
+    ) -> Decision {
+        guard boundaryCount < 3 else { return Decision(requestFix: false, frameNow: false) }
+        switch accuracy {
+        case .full, .reduced:
+            return Decision(requestFix: !hasFix, frameNow: hasFix)
+        case .denied, .notDetermined:
+            return Decision(requestFix: false, frameNow: false)
+        }
+    }
+}
+
 private extension GeoPoint {
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)

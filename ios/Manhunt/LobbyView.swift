@@ -85,6 +85,12 @@ struct LobbyView: View {
                     }
                 }
 
+                if let seconds = store.match?.snapshot.lobbyStartsInS {
+                    Text("Sample hunt starts in \(seconds)s. Roles are already set. End the game to open results.")
+                        .font(.footnote)
+                        .foregroundStyle(HuntColor.warning)
+                }
+
                 if let note = store.note {
                     Text(note)
                         .font(.footnote)

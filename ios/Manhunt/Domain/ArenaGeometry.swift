@@ -60,7 +60,23 @@ enum ArenaGeometry {
                 return false
             }
             // A zone that crosses the play-area edge is not fully inside.
-            return !edgesCross(polygon.vertices, playArea.vertices)
+            if edgesCross(polygon.vertices, playArea.vertices) {
+                return false
+            }
+            // A chord can leave through a concave bay by touching vertices only,
+            // which a proper edge-cross test misses. The midpoint of that chord is outside.
+            for index in polygon.vertices.indices {
+                let start = polygon.vertices[index]
+                let end = polygon.vertices[(index + 1) % polygon.vertices.count]
+                let midpoint = GeoPoint(
+                    latitude: (start.latitude + end.latitude) / 2,
+                    longitude: (start.longitude + end.longitude) / 2
+                )
+                if !contains(midpoint, in: playArea) {
+                    return false
+                }
+            }
+            return true
         case let .circle(center, radius):
             if !contains(center, in: playArea) { return false }
             return distanceToEdges(center, polygon: playArea) >= radius - 0.01

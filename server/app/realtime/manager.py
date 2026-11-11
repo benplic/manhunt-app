@@ -19,6 +19,7 @@ from app.engine.qr import make_qr_token, token_ttl
 from app.engine.session import GameSession
 from app.engine.uwb import select_uwb_peers
 from app.engine.views import build_view
+from app.errors import GameRuleError
 from app.realtime.clock import WallClock
 
 LIVE_PHASES = frozenset({"lobby", "head_start", "active", "paused"})
@@ -79,10 +80,30 @@ class SessionManager:
 
     def tick_all(self) -> None:
         for session in list(self.sessions.values()):
+            # Lobby is otherwise skipped. A sample lobby still has to count down.
+            if session.sample_start_after_s is not None and session.state.phase == "lobby":
+                self._advance_sample(session)
+                continue
             if session.state.phase in {"ended", "lobby"}:
                 continue
             session.tick()
             self._refresh_qr(session)
+
+    def _advance_sample(self, session: GameSession) -> None:
+        delay = session.sample_start_after_s
+        if delay is None:
+            return
+        session.sample_waited_s += 1
+        remaining = delay - session.sample_waited_s
+        session.state.lobby_starts_in_s = max(0, remaining)
+        if remaining > 0:
+            return
+        session.sample_start_after_s = None
+        session.state.lobby_starts_in_s = None
+        try:
+            session.start()
+        except GameRuleError:
+            log.exception("sample_start_failed game_id=%s", session.state.game_id)
 
     def _refresh_qr(self, session: GameSession) -> None:
         now = session.clock.now()

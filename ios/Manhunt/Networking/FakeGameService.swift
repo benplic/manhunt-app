@@ -80,7 +80,14 @@ final class FakeGameService: GameService {
 
     func arenas() async throws -> [Arena] { storedArenas }
 
+    /// Next createArena throws this and then clears it. Tests use it for a visible save failure.
+    var nextArenaError: ServiceError?
+
     func createArena(_ arena: Arena) async throws -> Arena {
+        if let nextArenaError {
+            self.nextArenaError = nil
+            throw nextArenaError
+        }
         storedArenas.append(arena)
         return arena
     }
@@ -280,8 +287,14 @@ final class FakeGameService: GameService {
         _ = hiderID
     }
 
+    /// Tests hold the preset screen closed until the schema fetch finishes.
+    var moduleFetchDelay: Duration = .zero
+
     func fetchModules() async throws -> [VisualModule] {
-        ModuleForm.offlineModules()
+        if moduleFetchDelay > .zero {
+            try await Task.sleep(for: moduleFetchDelay)
+        }
+        return ModuleForm.offlineModules()
     }
 
     func savePreset(name: String, modules: [String: [String: RuleValue]]) async throws -> SavedPresetDTO {

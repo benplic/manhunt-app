@@ -18,19 +18,42 @@ from app.db.models import (
     GameRow,
     User,
 )
-from app.engine.arena import arena_from_dict, arena_to_dict, validate_arena
+from app.engine.arena import Arena, arena_from_dict, arena_to_dict, validate_arena
+from app.engine.geo import GeoPoint
 from app.engine.modules.base import TagClaim
 from app.engine.qr import parse_qr_token
 from app.engine.recovery import rebuild_session
 from app.engine.session import GameSession
 from app.engine.views import build_view
 from app.errors import ApiError, ErrorCode, GameRuleError
-from app.games.join_code import generate, is_valid, normalize
+from app.games.join_code import SAMPLE_CODE, generate, is_valid, normalize
 from app.games.join_limit import JoinRateLimiter
 from app.presets.classic import CLASSIC_ID, classic_preset
 from app.realtime.manager import SessionManager
 
 log = logging.getLogger("manhunt.games")
+
+_SAMPLE_BOTS = (
+    ("sample-bot-1", "Riley Chen"),
+    ("sample-bot-2", "Jordan Blake"),
+    ("sample-bot-3", "Quinn Adler"),
+    ("sample-bot-4", "Sam Patel"),
+    ("sample-bot-5", "Avery Nguyen"),
+)
+
+
+def _sample_arena() -> dict:
+    side = 200 / 111_320
+    arena = Arena(
+        name="Sample park",
+        boundary=[
+            GeoPoint(0, 0),
+            GeoPoint(0, side),
+            GeoPoint(side, side),
+            GeoPoint(side, 0),
+        ],
+    )
+    return arena_to_dict(arena)
 
 
 def _http_for_rule(exc: GameRuleError) -> ApiError:
@@ -101,6 +124,15 @@ class GameService:
         self.join_limiter.hit(user.id)
         if not is_valid(code):
             raise ApiError(ErrorCode.INVALID_JOIN_CODE, "Codes are 6 characters.", status_code=422)
+        if normalize(code) == SAMPLE_CODE:
+            existing = await session.scalar(
+                select(GameRow).where(
+                    GameRow.join_code == SAMPLE_CODE,
+                    GameRow.status.notin_(["ended", "abandoned"]),
+                )
+            )
+            if existing is None:
+                return await self._create_sample(session, user)
         row = await session.scalar(
             select(GameRow).where(
                 GameRow.join_code == normalize(code),
@@ -466,6 +498,60 @@ class GameService:
                     player.role = member.role
                     player.status = member.status
         return build_view(game, user.id)
+
+    async def _create_sample(self, session: AsyncSession, host: User) -> GameRow:
+        """PARK42: the host, five stable bots, classic rules, start after 30 lobby seconds."""
+        bots = await self._sample_bots(session)
+        seed = random.SystemRandom().randint(1, 2**31 - 1)
+        preset = classic_preset()
+        row = GameRow(
+            id=uuid4(),
+            join_code=SAMPLE_CODE,
+            host_id=host.id,
+            status="lobby",
+            arena_snapshot=_sample_arena(),
+            preset_snapshot=preset,
+            seed=seed,
+            inputs=[],
+        )
+        session.add(row)
+        session.add(GamePlayerRow(game_id=row.id, user_id=host.id, role="unassigned"))
+        for bot in bots:
+            session.add(GamePlayerRow(game_id=row.id, user_id=bot.id, role="unassigned"))
+        await session.commit()
+        game = self.manager.register(
+            row.id, row.arena_snapshot, row.preset_snapshot, seed, SAMPLE_CODE
+        )
+        game.add_player(host.id, host.display_name, is_host=True)
+        order = list(bots)
+        game.rng.shuffle(order)
+        for bot in order:
+            game.add_player(bot.id, bot.display_name, is_host=False)
+        hider_count = int(preset.get("modules", {}).get("roles", {}).get("hider_count", 1))
+        hider_count = max(1, min(hider_count, len(game.state.players) - 1))
+        game.assign_roles_random(hider_count)
+        for player in game.state.players.values():
+            member = await session.get(GamePlayerRow, (row.id, player.player_id))
+            if member is not None:
+                member.role = player.role
+        game.sample_start_after_s = 30
+        game.state.lobby_starts_in_s = 30
+        # TODO: a restart during this countdown does not re-arm the 30s start.
+        await self.persist_inputs(session, game)
+        await session.commit()
+        await self.manager.broadcast(row.id)
+        return row
+
+    async def _sample_bots(self, session: AsyncSession) -> list[User]:
+        bots: list[User] = []
+        for handle, name in _SAMPLE_BOTS:
+            row = await session.scalar(select(User).where(User.dev_handle == handle))
+            if row is None:
+                row = User(id=uuid4(), dev_handle=handle, display_name=name)
+                session.add(row)
+                await session.flush()
+            bots.append(row)
+        return bots
 
     async def _unique_code(self, session: AsyncSession) -> str:
         for _ in range(20):

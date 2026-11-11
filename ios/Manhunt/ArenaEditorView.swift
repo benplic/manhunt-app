@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ArenaEditorView: View {
     @Environment(AppStore.self) private var store
+    @State private var showLayers = false
 
     var body: some View {
         @Bindable var store = store
@@ -51,9 +52,22 @@ struct ArenaEditorView: View {
                 pendingCircleCenter: store.draftCircleCenter,
                 highlightedEdge: store.draftHighlightedEdge,
                 homeCoordinate: store.editorHomeCoordinate,
+                frameID: store.editorFrameID,
                 onDrop: { store.drop(at: $0) },
                 onCrosshair: { store.updateEditorCrosshair($0) }
             )
+            .overlay(alignment: .topTrailing) {
+                Button { showLayers = true } label: {
+                    Image(systemName: "square.3.layers.3d")
+                        .font(.subheadline.weight(.semibold))
+                        .padding(12)
+                        .background(HuntColor.inkRaised, in: Circle())
+                        .foregroundStyle(HuntColor.paper)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Layers")
+                .padding(12)
+            }
             .clipShape(RoundedRectangle(cornerRadius: 0))
 
             VStack(alignment: .leading, spacing: 8) {
@@ -61,15 +75,11 @@ struct ArenaEditorView: View {
                     .font(.subheadline)
                     .foregroundStyle(HuntColor.paper)
                     .fixedSize(horizontal: false, vertical: true)
-                if let notice = store.editor.notice {
-                    Text(notice)
+                if let warning = store.editorWarning {
+                    Text(warning)
                         .font(.footnote)
                         .foregroundStyle(HuntColor.warning)
-                }
-                ForEach(store.editorIssues, id: \.self) { issue in
-                    Text(issue)
-                        .font(.footnote)
-                        .foregroundStyle(HuntColor.warning)
+                        .lineLimit(3)
                 }
                 vertexTools
                 HStack {
@@ -82,12 +92,23 @@ struct ArenaEditorView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(HuntColor.signal)
                 }
-                HuntButton(title: "Save arena", action: store.saveArena)
+                HuntButton(
+                    title: store.isSavingArena ? "Saving…" : "Save arena",
+                    action: store.saveArena
+                )
+                .disabled(store.isSavingArena)
             }
             .padding(16)
             .background(HuntColor.ink)
         }
         .background(HuntColor.ink)
+        .onChange(of: store.tool) { _, _ in
+            store.editor.notice = nil
+        }
+        .sheet(isPresented: $showLayers) {
+            ZoneLayersSheet { showLayers = false }
+                .presentationDetents([.medium, .large])
+        }
     }
 
     private var editorRegion: MKCoordinateRegion {
@@ -173,27 +194,77 @@ struct ArenaEditorView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(HuntColor.signal)
         }
-        ForEach(store.editor.zones) { zone in
-            HStack {
-                TextField(
-                    "Zone name",
-                    text: Binding(
-                        get: { zone.name },
-                        set: { store.renameZone(id: zone.id, to: $0) }
-                    )
-                )
-                .foregroundStyle(HuntColor.paper)
-                Button("Delete zone") { store.deleteZone(id: zone.id) }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(HuntColor.warning)
-            }
-        }
     }
 
     private func legend(_ color: Color, _ title: String) -> some View {
         HStack(spacing: 4) {
             Circle().fill(color).frame(width: 8, height: 8)
             Text(title).font(.caption).foregroundStyle(HuntColor.muted)
+        }
+    }
+}
+
+/// Zone list that used to sit under the map. Rename, delete, and jump back to a shape.
+private struct ZoneLayersSheet: View {
+    @Environment(AppStore.self) private var store
+    var dismiss: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if store.editor.zones.isEmpty {
+                    Text("No zones yet. Drop an out, spawn, or safe shape on the map.")
+                        .foregroundStyle(HuntColor.muted)
+                        .listRowBackground(HuntColor.ink)
+                }
+                ForEach(store.editor.zones) { zone in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(zoneKindTitle(zone.kind))
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(HuntColor.muted)
+                        TextField(
+                            "Zone name",
+                            text: Binding(
+                                get: { zone.name },
+                                set: { store.renameZone(id: zone.id, to: $0) }
+                            )
+                        )
+                        .foregroundStyle(HuntColor.paper)
+                        HStack {
+                            if case .polygon = zone.shape {
+                                Button("Edit shape") {
+                                    store.editZoneShape(id: zone.id)
+                                    dismiss()
+                                }
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(HuntColor.signal)
+                            }
+                            Spacer()
+                            Button("Delete") { store.deleteZone(id: zone.id) }
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(HuntColor.warning)
+                        }
+                    }
+                    .listRowBackground(HuntColor.inkRaised)
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(HuntColor.ink)
+            .navigationTitle("Zones")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: dismiss)
+                }
+            }
+        }
+    }
+
+    private func zoneKindTitle(_ kind: ZoneKind) -> String {
+        switch kind {
+        case .safe: return "Safe"
+        case .outOfBounds: return "Out of bounds"
+        case .seekerSpawn: return "Seeker spawn"
         }
     }
 }

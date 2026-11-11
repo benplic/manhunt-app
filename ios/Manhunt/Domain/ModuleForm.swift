@@ -129,8 +129,9 @@ enum ModuleForm {
         let enabledField = schema.fields["enabled"]
         let tracksEnabled = enabledField?.type == "bool"
         var rows: [VisualRow] = []
+        var seen: Set<String> = []
         for key in schema.fieldOrder where key != "enabled" {
-            guard let field = schema.fields[key] else { continue }
+            guard seen.insert(key).inserted, let field = schema.fields[key] else { continue }
             rows.append(row(id: key, field: field))
         }
         return VisualModule(

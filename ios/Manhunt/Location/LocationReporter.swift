@@ -23,6 +23,8 @@ final class LocationReporter: NSObject {
     var onUpdate: ((CLLocation) -> Void)?
     var onAccuracy: ((Accuracy) -> Void)?
     var onStreamFailure: (() -> Void)?
+    /// Fires after the system permission sheet is answered, and on later status changes.
+    var onAuthorizationChange: ((Accuracy) -> Void)?
 
     override init() {
         super.init()
@@ -90,8 +92,16 @@ final class LocationReporter: NSObject {
 
 extension LocationReporter: CLLocationManagerDelegate {
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
         Task { @MainActor in
-            onAccuracy?(accuracy)
+            let current = accuracy
+            onAccuracy?(current)
+            onAuthorizationChange?(current)
+            // The first requestLocation is ignored while status is notDetermined.
+            // Ask again once the person has answered the sheet.
+            if status == .authorizedWhenInUse || status == .authorizedAlways {
+                self.manager.requestLocation()
+            }
         }
     }
 

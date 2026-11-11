@@ -1,3 +1,4 @@
+import CoreLocation
 import XCTest
 @testable import Manhunt
 
@@ -509,6 +510,155 @@ final class GameRulesTests: XCTestCase {
         XCTAssertTrue(editor.notice?.contains("clipped") == true)
         guard case let .polygon(polygon) = editor.zones[0].shape else { return XCTFail() }
         XCTAssertTrue(polygon.vertices.allSatisfy { ArenaGeometry.contains($0, in: editor.boundary) })
+    }
+
+    func testClockwisePlayAreaStillClipsAnOverhang() {
+        let editor = ArenaEditorModel()
+        editor.boundary = Polygon(vertices: [
+            Fixtures.meters(x: 0, y: 0),
+            Fixtures.meters(x: 0, y: 200),
+            Fixtures.meters(x: 200, y: 200),
+            Fixtures.meters(x: 200, y: 0),
+        ])
+        editor.tool = .outOfBounds
+        editor.addMapPoint(Fixtures.meters(x: -20, y: 20))
+        editor.addMapPoint(Fixtures.meters(x: 40, y: 20))
+        editor.addMapPoint(Fixtures.meters(x: 10, y: 80))
+        XCTAssertEqual(editor.zones.count, 1)
+        guard editor.zones.count == 1 else { return }
+        XCTAssertTrue(editor.notice?.contains("clipped") == true)
+        guard case let .polygon(polygon) = editor.zones[0].shape else { return XCTFail() }
+        XCTAssertTrue(polygon.vertices.allSatisfy { ArenaGeometry.contains($0, in: editor.boundary) })
+    }
+
+    func testZoneInAConcaveBayIsRejectedAndAStraddleIsClipped() {
+        let editor = ArenaEditorModel()
+        editor.boundary = Self.concavePlayArea()
+        editor.tool = .outOfBounds
+        editor.addMapPoint(Fixtures.meters(x: 40, y: 40))
+        editor.addMapPoint(Fixtures.meters(x: 60, y: 40))
+        editor.addMapPoint(Fixtures.meters(x: 50, y: 60))
+        XCTAssertEqual(editor.zones.count, 0)
+        XCTAssertTrue(editor.notice?.contains("completely outside") == true)
+
+        editor.notice = nil
+        editor.addMapPoint(Fixtures.meters(x: 10, y: 40))
+        editor.addMapPoint(Fixtures.meters(x: 50, y: 40))
+        editor.addMapPoint(Fixtures.meters(x: 10, y: 60))
+        guard editor.zones.count == 1 else {
+            XCTAssertEqual(editor.zones.count, 1)
+            return
+        }
+        XCTAssertTrue(editor.notice?.contains("clipped") == true)
+        guard case let .polygon(polygon) = editor.zones[0].shape else { return XCTFail() }
+        XCTAssertTrue(polygon.vertices.allSatisfy { ArenaGeometry.contains($0, in: editor.boundary) })
+        XCTAssertTrue(polygon.vertices.allSatisfy { $0.longitude * 111_320 < 21 })
+    }
+
+    func testMovingTheBoundaryReclipsAnExistingZone() {
+        let editor = ArenaEditorModel()
+        editor.boundary = Polygon(vertices: [
+            Fixtures.meters(x: 0, y: 0),
+            Fixtures.meters(x: 200, y: 0),
+            Fixtures.meters(x: 200, y: 200),
+            Fixtures.meters(x: 0, y: 200),
+        ])
+        editor.tool = .outOfBounds
+        editor.addMapPoint(Fixtures.meters(x: 10, y: 10))
+        editor.addMapPoint(Fixtures.meters(x: 30, y: 10))
+        editor.addMapPoint(Fixtures.meters(x: 20, y: 30))
+        XCTAssertEqual(editor.zones.count, 1)
+        XCTAssertNil(editor.notice)
+        editor.dragVertex(at: 0, to: Fixtures.meters(x: 0, y: 150))
+        XCTAssertEqual(editor.zones.count, 0)
+        XCTAssertTrue(editor.notice?.contains("completely outside") == true)
+    }
+
+    func testChordAcrossAConcaveBayIsNotCovered() {
+        let play = Self.concavePlayArea()
+        let zone = ArenaZone(
+            id: UUID(),
+            name: "Mouth",
+            kind: .outOfBounds,
+            shape: .polygon(Polygon(vertices: [
+                Fixtures.meters(x: 100, y: 20),
+                Fixtures.meters(x: 100, y: 80),
+                Fixtures.meters(x: 20, y: 80),
+            ]))
+        )
+        XCTAssertFalse(ArenaGeometry.covers(zone: zone, playArea: play))
+    }
+
+    private static func concavePlayArea() -> Polygon {
+        Polygon(vertices: [
+            Fixtures.meters(x: 0, y: 0),
+            Fixtures.meters(x: 100, y: 0),
+            Fixtures.meters(x: 100, y: 20),
+            Fixtures.meters(x: 20, y: 20),
+            Fixtures.meters(x: 20, y: 80),
+            Fixtures.meters(x: 100, y: 80),
+            Fixtures.meters(x: 100, y: 100),
+            Fixtures.meters(x: 0, y: 100),
+        ])
+    }
+
+    @MainActor
+    func testNewArenaFramesOnceAfterTheFirstFix() {
+        let store = AppStore.makePreview()
+        store.beginNewArena()
+        XCTAssertEqual(store.editorFrameID, 0)
+        store.receiveEditorFix(CLLocationCoordinate2D(latitude: 41, longitude: -73))
+        XCTAssertEqual(store.editorFrameID, 1)
+        XCTAssertEqual(store.editorHomeCoordinate?.latitude ?? 0, 41, accuracy: 1e-6)
+        store.receiveEditorFix(CLLocationCoordinate2D(latitude: 42, longitude: -73))
+        XCTAssertEqual(store.editorFrameID, 1)
+        XCTAssertEqual(store.editorHomeCoordinate?.latitude ?? 0, 42, accuracy: 1e-6)
+    }
+
+    func testPermissionDecisionFramesOnlyWhileTheOutlineIsOpen() {
+        let ready = EditorFraming.afterAuthorization(accuracy: .full, hasFix: true, boundaryCount: 0)
+        XCTAssertTrue(ready.frameNow)
+        XCTAssertFalse(ready.requestFix)
+        let waiting = EditorFraming.afterAuthorization(accuracy: .reduced, hasFix: false, boundaryCount: 2)
+        XCTAssertFalse(waiting.frameNow)
+        XCTAssertTrue(waiting.requestFix)
+        let denied = EditorFraming.afterAuthorization(accuracy: .denied, hasFix: false, boundaryCount: 0)
+        XCTAssertFalse(denied.frameNow)
+        XCTAssertFalse(denied.requestFix)
+        let closed = EditorFraming.afterAuthorization(accuracy: .full, hasFix: true, boundaryCount: 3)
+        XCTAssertFalse(closed.frameNow)
+    }
+
+    func testOutOfRangeChoiceIsClamped() {
+        var row = VisualRow(
+            id: "mode",
+            title: "Assignment",
+            control: .options(display: ["Random", "Manual"], values: ["random", "manual"]),
+            number: 0,
+            choice: 9,
+            flag: false
+        )
+        row.clampToControl()
+        XCTAssertEqual(row.choice, 1)
+        var broken = VisualRow(
+            id: "duration",
+            title: "Duration",
+            control: .stepper(min: 10, max: 5, step: 0, suffix: "s", integer: true),
+            number: 99,
+            choice: 0,
+            flag: false
+        )
+        XCTAssertFalse(broken.stepperRangeIsUsable)
+    }
+
+    func testDuplicateSchemaKeysDoNotRepeatRows() throws {
+        let json = """
+        {"modules":{"roles":{"version":1,"title":"Roles","blurb":"","field_order":["mode","mode"],"fields":{"mode":{"type":"enum","title":"Assignment","values":["random","manual"],"labels":["Random","Manual"],"default":"random"}}}},"order":["roles"]}
+        """
+        let response = try JSONDecoder().decode(ModulesResponse.self, from: Data(json.utf8))
+        let modules = ModuleForm.modules(from: response)
+        XCTAssertEqual(modules.count, 1)
+        XCTAssertEqual(modules[0].rows.map(\.id), ["mode"])
     }
 
     func testNewArenaUsesTheUserAndFallsBackToNewYork() {

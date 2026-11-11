@@ -65,6 +65,7 @@ def build_view(session: GameSession, viewer_id: UUID) -> dict:
         "seeker_lock": seeker_lock,
         "spawn_lock": spawn_lock,
         "phase_remaining_s": state.phase_remaining_s,
+        "lobby_starts_in_s": state.lobby_starts_in_s,
         "game_elapsed_s": state.game_elapsed_s,
         "time_limit_remaining_s": state.time_limit_remaining_s,
         "you": {

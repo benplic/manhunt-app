@@ -110,6 +110,8 @@ class GameState:
     paused_from: str | None = None
     game_elapsed_s: int = 0
     phase_remaining_s: int | None = None
+    # Sample lobby countdown. The realtime loop writes it; the engine does not.
+    lobby_starts_in_s: int | None = None
     time_limit_remaining_s: int | None = None
     players: dict[UUID, PlayerState] = field(default_factory=dict)
     reveals: list[RevealPin] = field(default_factory=list)

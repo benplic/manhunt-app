@@ -1,7 +1,8 @@
 import Foundation
 
 /// Clips zones to the play boundary for editor preview and save. Uses flat meters at play latitude.
-/// Concave play areas use successive half-plane clips (exact when the play polygon is convex).
+/// Convex play areas use Sutherland–Hodgman. Concave ones are split into ears first, because
+/// half-plane clipping is wrong when the play polygon has a dent.
 enum ZoneClip {
   /// Largest overlap of `zone` with `play`. Nil when the overlap is empty.
   /// A circle fully inside `play` is returned unchanged.
@@ -38,16 +39,112 @@ enum ZoneClip {
   static func clipPolygon(_ subject: [GeoPoint], play: [GeoPoint]) -> [GeoPoint]? {
     guard subject.count >= 3, play.count >= 3 else { return nil }
     let origin = play[0]
-    var output = subject.map { localXY($0, origin: origin) }
-    let clip = play.map { localXY($0, origin: origin) }
+    let subjectXY = ensureCCW(subject.map { localXY($0, origin: origin) })
+    let playXY = ensureCCW(play.map { localXY($0, origin: origin) })
+    // A clockwise ring has its interior on the right. Sutherland–Hodgman keeps the left side,
+    // so an unflipped ring reports a real overlap as completely outside.
+    let pieces = isConvex(playXY) ? [playXY] : earClip(playXY)
+    guard !pieces.isEmpty else { return nil }
+    var best: [XY] = []
+    var bestArea = 0.0
+    for piece in pieces {
+      guard let clipped = clipConvex(subjectXY, clip: piece) else { continue }
+      let area = polygonAreaMeters(clipped)
+      if area > bestArea {
+        bestArea = area
+        best = clipped
+      }
+    }
+    // Match the server: drop a sliver under 1 m², and keep only the largest piece.
+    guard best.count >= 3, bestArea >= 1 else { return nil }
+    return best.map { geoFromLocal($0, origin: origin) }
+  }
+
+  private static func clipConvex(_ subject: [XY], clip: [XY]) -> [XY]? {
+    var output = subject
     for index in clip.indices {
       let start = clip[index]
       let end = clip[(index + 1) % clip.count]
       output = clipAgainstEdge(output, start: start, end: end)
       if output.isEmpty { return nil }
     }
-    guard output.count >= 3, polygonAreaMeters(output) >= 1 else { return nil }
-    return output.map { geoFromLocal($0, origin: origin) }
+    return output.count >= 3 ? output : nil
+  }
+
+  private static func ensureCCW(_ vertices: [XY]) -> [XY] {
+    signedArea(vertices) < 0 ? Array(vertices.reversed()) : vertices
+  }
+
+  private static func isConvex(_ vertices: [XY]) -> Bool {
+    guard vertices.count >= 3 else { return false }
+    for index in vertices.indices {
+      let previous = vertices[(index + vertices.count - 1) % vertices.count]
+      let current = vertices[index]
+      let next = vertices[(index + 1) % vertices.count]
+      if cross(previous, current, next) < -1e-8 { return false }
+    }
+    return true
+  }
+
+  /// Triangles that cover a simple concave polygon. Empty when the ring is not a simple ear clip.
+  private static func earClip(_ polygon: [XY]) -> [[XY]] {
+    var ring = polygon
+    var triangles: [[XY]] = []
+    var safety = ring.count * ring.count
+    while ring.count > 3 && safety > 0 {
+      safety -= 1
+      var found = false
+      for index in ring.indices {
+        let previousIndex = (index + ring.count - 1) % ring.count
+        let nextIndex = (index + 1) % ring.count
+        let previous = ring[previousIndex]
+        let current = ring[index]
+        let next = ring[nextIndex]
+        if cross(previous, current, next) <= 1e-8 { continue }
+        if earContainsVertex(ring, skip: [previousIndex, index, nextIndex], a: previous, b: current, c: next) {
+          continue
+        }
+        triangles.append([previous, current, next])
+        ring.remove(at: index)
+        found = true
+        break
+      }
+      if !found { return [] }
+    }
+    if ring.count == 3, cross(ring[0], ring[1], ring[2]) > 1e-8 {
+      triangles.append(ring)
+    }
+    return triangles
+  }
+
+  private static func earContainsVertex(_ ring: [XY], skip: [Int], a: XY, b: XY, c: XY) -> Bool {
+    for (index, point) in ring.enumerated() where !skip.contains(index) {
+      if pointInTriangle(point, a, b, c) { return true }
+    }
+    return false
+  }
+
+  /// Strict interior. Points on an edge are not inside, so a neighbor on the diagonal is not a blocker.
+  private static func pointInTriangle(_ point: XY, _ a: XY, _ b: XY, _ c: XY) -> Bool {
+    let ab = cross(a, b, point)
+    let bc = cross(b, c, point)
+    let ca = cross(c, a, point)
+    let hasNegative = ab < -1e-9 || bc < -1e-9 || ca < -1e-9
+    let hasPositive = ab > 1e-9 || bc > 1e-9 || ca > 1e-9
+    return !(hasNegative && hasPositive) && abs(ab) > 1e-9 && abs(bc) > 1e-9 && abs(ca) > 1e-9
+  }
+
+  private static func cross(_ a: XY, _ b: XY, _ c: XY) -> Double {
+    (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+  }
+
+  private static func signedArea(_ vertices: [XY]) -> Double {
+    var area = 0.0
+    for index in vertices.indices {
+      let next = (index + 1) % vertices.count
+      area += vertices[index].x * vertices[next].y - vertices[next].x * vertices[index].y
+    }
+    return area / 2
   }
 
   private static func circleSamples(center: GeoPoint, radiusMeters: Double, steps: Int) -> [GeoPoint] {

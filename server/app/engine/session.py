@@ -48,6 +48,9 @@ class GameSession:
         )
         self._pending: list[GameEvent] = []
         self.replaying = False
+        # Sample lobby (PARK42). The realtime loop counts this down. Not engine time.
+        self.sample_start_after_s: int | None = None
+        self.sample_waited_s = 0
 
     def module_settings(self, module_id: str) -> dict[str, Any]:
         return self.state.preset.get("modules", {}).get(module_id, {})

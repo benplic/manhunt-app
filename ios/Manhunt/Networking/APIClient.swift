@@ -110,7 +110,7 @@ final class APIClient: @unchecked Sendable {
             }
         }
         if let body = try? JSONDecoder().decode(APIErrorBody.self, from: data) {
-            throw ServiceError(code: body.error.code, message: body.error.message)
+            throw ServiceError(code: body.error.code, message: body.error.message, issues: body.error.issues)
         }
         throw ServiceError(code: .internal, message: "HTTP \(http.statusCode)")
     }

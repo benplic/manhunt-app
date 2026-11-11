@@ -103,6 +103,38 @@ def test_overhanging_triangle_is_clipped_into_the_square() -> None:
     assert all(contains(p, play) for p in clipped)
 
 
+def test_clockwise_square_still_clips_an_overhang() -> None:
+    from app.engine.geo import clip_polygon, contains
+
+    play = [meters(0, 0), meters(0, 200), meters(200, 200), meters(200, 0)]
+    clipped = clip_polygon([meters(-20, 20), meters(40, 20), meters(10, 80)], play)
+    assert clipped is not None
+    assert all(contains(point, play) for point in clipped)
+
+
+def test_concave_bay_clips_to_the_inside_and_drops_the_bay() -> None:
+    from app.engine.geo import clip_polygon, contains
+
+    play = [
+        meters(0, 0),
+        meters(100, 0),
+        meters(100, 20),
+        meters(20, 20),
+        meters(20, 80),
+        meters(100, 80),
+        meters(100, 100),
+        meters(0, 100),
+    ]
+    assert clip_polygon([meters(40, 40), meters(60, 40), meters(50, 60)], play) is None
+    clipped = clip_polygon(
+        [meters(10, 40), meters(50, 40), meters(50, 60), meters(10, 60)],
+        play,
+    )
+    assert clipped is not None
+    assert all(contains(point, play) for point in clipped)
+    assert all(point.lon * 111_320 < 21 for point in clipped)
+
+
 def test_zone_completely_outside_clips_to_nothing() -> None:
     from app.engine.geo import clip_polygon
 

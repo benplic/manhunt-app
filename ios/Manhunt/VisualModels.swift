@@ -157,6 +157,28 @@ struct VisualRow: Identifiable {
             break
         }
     }
+
+    /// Keep picker and stepper values inside the control so SwiftUI does not trap.
+    mutating func clampToControl() {
+        switch control {
+        case let .options(_, values):
+            if values.isEmpty {
+                choice = 0
+            } else {
+                choice = min(values.count - 1, max(0, choice))
+            }
+        case let .stepper(min, max, _, _, _):
+            guard min <= max else { return }
+            number = Swift.min(max, Swift.max(min, number))
+        case .toggle:
+            break
+        }
+    }
+
+    var stepperRangeIsUsable: Bool {
+        guard case let .stepper(min, max, step, _, _) = control else { return false }
+        return min <= max && step > 0
+    }
 }
 
 struct PowerChip: Identifiable {
