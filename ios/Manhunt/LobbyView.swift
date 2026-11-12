@@ -39,6 +39,12 @@ struct LobbyView: View {
                 .font(.subheadline)
                 .foregroundStyle(HuntColor.muted)
 
+                if let timers = store.match?.snapshot.timers {
+                    Text(RulesSummary.line(timers: timers))
+                        .font(.footnote)
+                        .foregroundStyle(HuntColor.muted)
+                }
+
                 VStack(spacing: 10) {
                     ForEach(store.players) { player in
                         HStack(spacing: 8) {

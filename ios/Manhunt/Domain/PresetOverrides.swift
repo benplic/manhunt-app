@@ -49,4 +49,15 @@ enum PresetOverrides {
         }
         return overrides
     }
+
+    /// Zone shrink requires a circle play area. Force it off when the selected arena is a polygon.
+    static func from(modules: [VisualModule], arena: Arena?) -> [String: [String: RuleValue]] {
+        var overrides = from(modules: modules)
+        if arena?.boundaryCircle == nil {
+            var shrink = overrides["zone_shrink"] ?? [:]
+            shrink["enabled"] = .bool(false)
+            overrides["zone_shrink"] = shrink
+        }
+        return overrides
+    }
 }

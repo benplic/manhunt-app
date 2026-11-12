@@ -552,14 +552,14 @@ final class AppStore {
 
     func createMatch(arenaID: UUID, presetID: String) {
         lastError = nil
-        if !arenas.contains(where: { $0.id == arenaID }) {
+        guard let selected = arenas.first(where: { $0.id == arenaID }) else {
             lastError = .missingArena
             return
         }
         // Keep the live map boundary in sync with the arena used for create.
         self.arenaID = arenaID.uuidString
         guard let fake else {
-            let overrides = PresetOverrides.from(modules: modules)
+            let overrides = PresetOverrides.from(modules: modules, arena: selected)
             Task { await createMatchRemote(arenaID: arenaID, presetID: presetID, overrides: overrides) }
             return
         }
@@ -570,6 +570,17 @@ final class AppStore {
         } catch {
             lastError = .missingArena
         }
+    }
+
+    var selectedArena: Arena? {
+        guard let id = selectedArenaID() else { return arenas.first }
+        return arenas.first(where: { $0.id == id })
+    }
+
+    func applyRulePreset(_ preset: RulePreset) {
+        var updated = modules
+        preset.apply(to: &updated)
+        modules = updated
     }
 
     func join() {

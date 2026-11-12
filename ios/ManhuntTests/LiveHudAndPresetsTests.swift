@@ -96,4 +96,86 @@ final class LiveHudAndPresetsTests: XCTestCase {
         XCTAssertEqual(shrink?.enabled, false)
         XCTAssertEqual(shrink?.rows.map(\.id), ["every", "shrink_to", "min_radius_m"])
     }
+
+    func testRulePresetsMatchSchemaBoundsAndRoundTrip() {
+        let schemaModules = ModuleForm.offlineModules()
+        let winRow = schemaModules.first { $0.id == "win" }?.rows.first { $0.id == "time_limit" }
+        let hsRow = schemaModules.first { $0.id == "head_start" }?.rows.first { $0.id == "duration" }
+        let pingRow = schemaModules.first { $0.id == "reveal_fuzzy" }?.rows.first { $0.id == "interval" }
+
+        for preset in RulePreset.allCases {
+            var modules = schemaModules
+            preset.apply(to: &modules)
+            XCTAssertEqual(RulePreset.matching(modules: modules), preset)
+
+            if case let .stepper(min, max, step, _, _) = winRow?.control {
+                let val = Double(preset.roundMinutes)
+                XCTAssertTrue(val >= min && val <= max)
+                XCTAssertEqual((val - min).truncatingRemainder(dividingBy: step), 0, accuracy: 0.001)
+            } else {
+                XCTFail("Expected win.time_limit stepper")
+            }
+            if case let .stepper(min, max, step, _, _) = hsRow?.control {
+                let val = Double(preset.headStartSeconds)
+                XCTAssertTrue(val >= min && val <= max)
+                XCTAssertEqual((val - min).truncatingRemainder(dividingBy: step), 0, accuracy: 0.001)
+            } else {
+                XCTFail("Expected head_start.duration stepper")
+            }
+            if case let .stepper(min, max, step, _, _) = pingRow?.control {
+                let val = Double(preset.pingSeconds)
+                XCTAssertTrue(val >= min && val <= max)
+                XCTAssertEqual((val - min).truncatingRemainder(dividingBy: step), 0, accuracy: 0.001)
+            } else {
+                XCTFail("Expected reveal_fuzzy.interval stepper")
+            }
+        }
+
+        var custom = schemaModules
+        if let idx = custom.firstIndex(where: { $0.id == "win" }),
+           let rIdx = custom[idx].rows.firstIndex(where: { $0.id == "time_limit" }) {
+            custom[idx].rows[rIdx].number = 45
+        }
+        XCTAssertNil(RulePreset.matching(modules: custom))
+    }
+
+    func testPresetOverridesGatesZoneShrinkToCircleArenas() {
+        var modules = ModuleForm.offlineModules()
+        if let idx = modules.firstIndex(where: { $0.id == "zone_shrink" }) {
+            modules[idx].enabled = true
+        }
+        let polygonArena = Arena.sampleSquare()
+        let polyOverrides = PresetOverrides.from(modules: modules, arena: polygonArena)
+        XCTAssertEqual(polyOverrides["zone_shrink"]?["enabled"], .bool(false))
+
+        let circleArena = Arena(
+            id: UUID(),
+            name: "Circle",
+            boundary: polygonArena.boundary,
+            zones: [],
+            boundaryCircle: CircleBoundary(
+                center: GeoPoint(latitude: 40.66, longitude: -73.97),
+                radiusMeters: 250
+            )
+        )
+        let circleOverrides = PresetOverrides.from(modules: modules, arena: circleArena)
+        XCTAssertEqual(circleOverrides["zone_shrink"]?["enabled"], .bool(true))
+    }
+
+    func testLobbyRulesSummaryFormatsTimers() {
+        let plain = TimersDTO(headStartS: 60, timeLimitS: 1800, revealIntervalS: 60, nextRevealInS: 60, zone: nil)
+        XCTAssertEqual(RulesSummary.line(timers: plain), "30 min · 1:00 head start · 1:00 pings")
+
+        let shrinking = TimersDTO(
+            headStartS: 30,
+            timeLimitS: 900,
+            revealIntervalS: 40,
+            nextRevealInS: 40,
+            zone: ZoneTimerDTO(radiusM: 250, nextRadiusM: 187.5, shrinksInS: 330)
+        )
+        XCTAssertEqual(
+            RulesSummary.line(timers: shrinking),
+            "15 min · 0:30 head start · 0:40 pings · Zone shrinks"
+        )
+    }
 }
