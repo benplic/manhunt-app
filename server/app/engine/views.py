@@ -71,6 +71,7 @@ def build_view(session: GameSession, viewer_id: UUID) -> dict:
         "lobby_starts_in_s": state.lobby_starts_in_s,
         "game_elapsed_s": state.game_elapsed_s,
         "time_limit_remaining_s": state.time_limit_remaining_s,
+        "timers": _build_timers(session),
         "you": {
             "player_id": str(viewer.player_id),
             "role": viewer.role,
@@ -162,3 +163,34 @@ def _spawn_lock(session: GameSession, viewer_id: UUID) -> tuple[str | None, dict
         if zone["kind"] == ZoneKind.SEEKER_SPAWN
     ]
     return seeker_lock, {"outside": outside, "zones": zones}
+
+
+def _build_timers(session: GameSession) -> dict:
+    state = session.state
+    head_start = session.module_settings("head_start")
+    head_start_enabled = bool(head_start.get("enabled", True))
+    head_start_s = int(head_start.get("duration", 60)) if head_start_enabled else 0
+    win = session.module_settings("win")
+    time_limit_s = int(win.get("time_limit", 30)) * 60
+    reveal = session.module_settings("reveal_fuzzy")
+    reveal_enabled = bool(reveal.get("enabled", True))
+    reveal_interval_s = int(reveal.get("interval", 60)) if reveal_enabled else None
+    next_reveal_in_s: int | None = None
+    if reveal_interval_s is not None and state.phase != "ended":
+        if state.phase == "lobby":
+            next_reveal_in_s = reveal_interval_s
+        else:
+            next_at = (
+                reveal_interval_s
+                if state.last_reveal_at_s is None
+                else state.last_reveal_at_s + reveal_interval_s
+            )
+            next_reveal_in_s = max(0, next_at - state.game_elapsed_s)
+    return {
+        "head_start_s": head_start_s,
+        "time_limit_s": time_limit_s,
+        "reveal_interval_s": reveal_interval_s,
+        "next_reveal_in_s": next_reveal_in_s,
+        "zone": None,
+    }
+
