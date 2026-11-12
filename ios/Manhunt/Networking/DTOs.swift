@@ -79,6 +79,34 @@ struct APIErrorBody: Codable {
     }
 }
 
+struct ZoneTimerDTO: Codable, Equatable {
+    var radiusM: Double
+    var nextRadiusM: Double?
+    var shrinksInS: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case radiusM = "radius_m"
+        case nextRadiusM = "next_radius_m"
+        case shrinksInS = "shrinks_in_s"
+    }
+}
+
+struct TimersDTO: Codable, Equatable {
+    var headStartS: Int
+    var timeLimitS: Int
+    var revealIntervalS: Int?
+    var nextRevealInS: Int?
+    var zone: ZoneTimerDTO?
+
+    enum CodingKeys: String, CodingKey {
+        case headStartS = "head_start_s"
+        case timeLimitS = "time_limit_s"
+        case revealIntervalS = "reveal_interval_s"
+        case nextRevealInS = "next_reveal_in_s"
+        case zone
+    }
+}
+
 struct PlayerViewDTO: Codable {
     var gameId: UUID
     var joinCode: String
@@ -86,6 +114,7 @@ struct PlayerViewDTO: Codable {
     var phaseRemainingS: Int?
     var gameElapsedS: Int
     var timeLimitRemainingS: Int?
+    var timers: TimersDTO? = nil
     var you: YouDTO
     var players: [PlayerDTO]
     var reveals: [RevealDTO]
@@ -96,6 +125,8 @@ struct PlayerViewDTO: Codable {
     var spawnLock: SpawnLockDTO? = nil
     /// Seconds until a sample lobby starts. Nil for a normal game.
     var lobbyStartsInS: Int? = nil
+    /// Play area for this game. Every phone draws this, not its local selection.
+    var arena: Arena? = nil
 
     enum CodingKeys: String, CodingKey {
         case gameId = "game_id"
@@ -104,11 +135,13 @@ struct PlayerViewDTO: Codable {
         case phaseRemainingS = "phase_remaining_s"
         case gameElapsedS = "game_elapsed_s"
         case timeLimitRemainingS = "time_limit_remaining_s"
+        case timers
         case tagMethod = "tag_method"
         case seekerLock = "seeker_lock"
         case spawnLock = "spawn_lock"
         case you, players, reveals, banners, result
         case lobbyStartsInS = "lobby_starts_in_s"
+        case arena
     }
 }
 
@@ -123,6 +156,8 @@ struct YouDTO: Codable {
     var hint: HintDTO? = nil
     var effects: [String]? = nil
     var cooldowns: [String: Int]? = nil
+    /// Seconds until this hider may taunt again. Nil on older servers.
+    var tauntCooldownS: Int? = nil
 
     enum CodingKeys: String, CodingKey {
         case playerId = "player_id"
@@ -131,6 +166,7 @@ struct YouDTO: Codable {
         case bounds
         case safeZone = "safe_zone"
         case points, hint, effects, cooldowns
+        case tauntCooldownS = "taunt_cooldown_s"
     }
 }
 
@@ -177,6 +213,7 @@ struct PlayerDTO: Codable, Identifiable, Hashable {
     var role: PlayerRole
     var status: PlayerStatus
     var isHost: Bool
+    var points: Int? = nil
     var location: LocationDTO?
 
     var id: UUID { playerId }
@@ -186,6 +223,7 @@ struct PlayerDTO: Codable, Identifiable, Hashable {
         case displayName = "display_name"
         case role, status
         case isHost = "is_host"
+        case points
         case location
     }
 }

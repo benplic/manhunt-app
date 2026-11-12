@@ -13,7 +13,8 @@ from app.errors import ApiError, ErrorCode
 
 class ArenaIn(BaseModel):
     name: str = Field(min_length=1, max_length=80)
-    boundary: list[dict[str, float]]
+    boundary: list[dict[str, float]] = Field(default_factory=list)
+    boundary_circle: dict[str, Any] | None = None
     zones: list[dict[str, Any]] = []
 
 
@@ -38,7 +39,14 @@ def bind_arena_routes(get_session, current_user):
         session: AsyncSession = Depends(get_session),
         user=Depends(current_user),
     ) -> dict:
-        data = _clip_payload({"name": body.name, "boundary": body.boundary, "zones": body.zones})
+        data = _clip_payload(
+            {
+                "name": body.name,
+                "boundary": body.boundary,
+                "boundary_circle": body.boundary_circle,
+                "zones": body.zones,
+            }
+        )
         _validate(data)
         row = ArenaRow(owner_id=user.id, name=body.name, data=data)
         session.add(row)
@@ -63,7 +71,14 @@ def bind_arena_routes(get_session, current_user):
         user=Depends(current_user),
     ) -> dict:
         row = await _owned(session, user.id, arena_id)
-        data = _clip_payload({"name": body.name, "boundary": body.boundary, "zones": body.zones})
+        data = _clip_payload(
+            {
+                "name": body.name,
+                "boundary": body.boundary,
+                "boundary_circle": body.boundary_circle,
+                "zones": body.zones,
+            }
+        )
         _validate(data)
         row.name = body.name
         row.data = data

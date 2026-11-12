@@ -176,3 +176,62 @@ def test_arena_dataclass_roundtrip_name() -> None:
     arena = square()
     assert arena.name == "Square"
     assert isinstance(arena, Arena)
+
+
+def test_circle_play_area_roundtrip_regenerates_ring_and_validates_radius() -> None:
+    from app.engine.arena import CircleShape, arena_from_dict, arena_to_dict, clip_arena
+
+    center = meters(100, 100)
+    p0 = meters(0, 0)
+    p1 = meters(1, 0)
+    p2 = meters(0, 1)
+    raw = {
+        "name": "Circle Park",
+        "boundary": [
+            {"lat": p0.lat, "lon": p0.lon},
+            {"lat": p1.lat, "lon": p1.lon},
+            {"lat": p2.lat, "lon": p2.lon},
+        ],
+        "boundary_circle": {
+            "center": {"lat": center.lat, "lon": center.lon},
+            "radius_m": 150.0,
+        },
+        "zones": [],
+    }
+    parsed = arena_from_dict(raw)
+    assert parsed.boundary_circle == CircleShape(center=center, radius_m=150.0)
+    assert len(parsed.boundary) == 64
+    assert validate_arena(parsed) == []
+    # Clipped copy keeps boundary_circle intact.
+    clipped = clip_arena(parsed)
+    assert clipped.boundary_circle == parsed.boundary_circle
+    out = arena_to_dict(clipped)
+    assert out["boundary_circle"] == {
+        "center": {"lat": center.lat, "lon": center.lon},
+        "radius_m": 150.0,
+    }
+    assert len(out["boundary"]) == 64
+
+    too_small = arena_from_dict(
+        {
+            "name": "Tiny",
+            "boundary": [],
+            "boundary_circle": {"center": {"lat": center.lat, "lon": center.lon}, "radius_m": 20.0},
+            "zones": [],
+        }
+    )
+    assert any(i.code == "play_area_radius_invalid" for i in validate_arena(too_small))
+
+    too_big = arena_from_dict(
+        {
+            "name": "Huge",
+            "boundary": [],
+            "boundary_circle": {
+                "center": {"lat": center.lat, "lon": center.lon},
+                "radius_m": 2500.0,
+            },
+            "zones": [],
+        }
+    )
+    assert any(i.code == "play_area_radius_invalid" for i in validate_arena(too_big))
+

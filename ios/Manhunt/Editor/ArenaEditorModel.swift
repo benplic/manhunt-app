@@ -2,6 +2,7 @@ import Foundation
 
 enum EditorTool: String, CaseIterable {
     case playArea
+    case playCircle
     case safeCircle
     case outOfBounds
     case seekerSpawn
@@ -13,6 +14,7 @@ final class ArenaEditorModel {
     var tool: EditorTool = .playArea
     var name = "New arena"
     var boundary = Polygon(vertices: [])
+    var boundaryCircle: CircleBoundary?
     var zones: [ArenaZone] = []
     /// Edge that the next drop splits on the closed play area or active zone.
     var selectedEdge: Int?
@@ -25,10 +27,14 @@ final class ArenaEditorModel {
     /// Last non-fatal editor message (clip warning, refused insert).
     var notice: String?
     private var pendingCircleCenter: GeoPoint?
+    private var pendingBoundaryCircleCenter: GeoPoint?
     private var history: [Snapshot] = []
 
     /// True after the first tap of a safe-circle pair, before the radius tap.
     var hasPendingSafeCenter: Bool { pendingCircleCenter != nil }
+
+    /// True after the first tap of a circle play-area pair, before the radius tap.
+    var hasPendingPlayCircleCenter: Bool { pendingBoundaryCircleCenter != nil }
 
     /// Dots and segment on the map before a polygon closes.
     var pendingVertices: [GeoPoint] {
@@ -44,17 +50,30 @@ final class ArenaEditorModel {
 
     var issues: [ArenaIssue] {
         ArenaValidator.issues(
-            in: Arena(id: UUID(), name: name, boundary: boundary, zones: zones)
+            in: Arena(
+                id: UUID(),
+                name: name,
+                boundary: boundary,
+                zones: zones,
+                boundaryCircle: boundaryCircle
+            )
         )
     }
 
     /// Load a saved outline as-is. Dropping points must not run, or the fourth
     /// vertex would be inserted into an edge instead of restored.
-    func load(name: String, boundary: Polygon, zones: [ArenaZone]) {
+    func load(
+        name: String,
+        boundary: Polygon,
+        zones: [ArenaZone],
+        boundaryCircle: CircleBoundary? = nil
+    ) {
         self.name = name
         self.boundary = boundary
+        self.boundaryCircle = boundaryCircle
         self.zones = zones
         pendingCircleCenter = nil
+        pendingBoundaryCircleCenter = nil
         pendingZoneVertices = []
         activeZoneID = nil
         selectedEdge = nil
@@ -140,7 +159,7 @@ final class ArenaEditorModel {
     /// Edge segment under the crosshair for map highlight, or the selected play edge.
     func previewEdge(near point: GeoPoint) -> (GeoPoint, GeoPoint)? {
         switch tool {
-        case .playArea where boundary.vertices.count >= 3:
+        case .playArea where boundaryCircle == nil && boundary.vertices.count >= 3:
             let edge = selectedEdge ?? nearestEdge(in: boundary.vertices, to: point)
             guard let edge, boundary.vertices.count >= 2 else { return nil }
             let start = boundary.vertices[edge]
@@ -162,8 +181,35 @@ final class ArenaEditorModel {
         }
     }
 
-    /// Circle center marker before the radius tap.
-    var pendingCircleCenterForMap: GeoPoint? { pendingCircleCenter }
+    /// Circle center marker before the radius tap (either play-area circle or safe circle).
+    var pendingCircleCenterForMap: GeoPoint? {
+        tool == .playCircle ? pendingBoundaryCircleCenter : pendingCircleCenter
+    }
+
+    /// 64-vertex ring matching `server/app/engine/geo.py:circle_sample_ring`.
+    static func circleRing(center: GeoPoint, radiusMeters: Double, steps: Int = 64) -> [GeoPoint] {
+        let lat0 = center.latitude * .pi / 180
+        let lonScale = 111_320.0 * max(cos(lat0), 1e-9)
+        return (0..<steps).map { index in
+            let angle = Double(index) / Double(steps) * 2 * .pi
+            let north = radiusMeters * cos(angle)
+            let east = radiusMeters * sin(angle)
+            return GeoPoint(
+                latitude: center.latitude + north / 111_320.0,
+                longitude: center.longitude + east / lonScale
+            )
+        }
+    }
+
+    func clearPlayArea() {
+        snapshot()
+        boundary = Polygon(vertices: [])
+        boundaryCircle = nil
+        pendingBoundaryCircleCenter = nil
+        selectedEdge = nil
+        vertexToMove = nil
+        notice = nil
+    }
 
     func preparedForSave() -> PreparedArena {
         var preparedZones: [ArenaZone] = []
@@ -189,7 +235,8 @@ final class ArenaEditorModel {
             id: UUID(),
             name: name,
             boundary: boundary,
-            zones: preparedZones
+            zones: preparedZones,
+            boundaryCircle: boundaryCircle
         )
         return PreparedArena(arena: arena, blocking: ArenaValidator.issues(in: arena), warnings: warnings)
     }
@@ -197,6 +244,10 @@ final class ArenaEditorModel {
     func addMapPoint(_ point: GeoPoint) {
         switch tool {
         case .playArea:
+            if boundaryCircle != nil {
+                notice = "This arena uses a circle play area. Clear it first to draw a polygon."
+                return
+            }
             if let index = vertexToMove {
                 dragVertex(at: index, to: point)
                 return
@@ -215,6 +266,27 @@ final class ArenaEditorModel {
             boundary.vertices.append(point)
             if boundary.vertices.count >= 3 {
                 reclipZones()
+            }
+        case .playCircle:
+            if let center = pendingBoundaryCircleCenter {
+                let radius = ArenaGeometry.meters(from: center, to: point)
+                if radius < 1 {
+                    notice = "Pan outward to set the circle radius (30 m to 2,000 m)."
+                    return
+                }
+                snapshot()
+                let circle = CircleBoundary(center: center, radiusMeters: radius)
+                boundaryCircle = circle
+                boundary = Polygon(vertices: Self.circleRing(center: center, radiusMeters: radius))
+                pendingBoundaryCircleCenter = nil
+                reclipZones()
+                if radius < 30 || radius > 2000 {
+                    notice = "Play area radius must be between 30 m and 2,000 m."
+                }
+            } else {
+                snapshot()
+                pendingBoundaryCircleCenter = point
+                notice = nil
             }
         case .safeCircle:
             if let center = pendingCircleCenter {
@@ -244,8 +316,10 @@ final class ArenaEditorModel {
     func undo() {
         if let previous = history.popLast() {
             boundary = previous.boundary
+            boundaryCircle = previous.boundaryCircle
             zones = previous.zones
             pendingCircleCenter = previous.pendingCircleCenter
+            pendingBoundaryCircleCenter = previous.pendingBoundaryCircleCenter
             pendingZoneVertices = previous.pendingZoneVertices
             activeZoneID = previous.activeZoneID
             selectedEdge = previous.selectedEdge
@@ -253,7 +327,9 @@ final class ArenaEditorModel {
             notice = previous.notice
             return
         }
-        if pendingCircleCenter != nil {
+        if pendingBoundaryCircleCenter != nil {
+            pendingBoundaryCircleCenter = nil
+        } else if pendingCircleCenter != nil {
             pendingCircleCenter = nil
         }
     }
@@ -377,8 +453,10 @@ final class ArenaEditorModel {
         history.append(
             Snapshot(
                 boundary: boundary,
+                boundaryCircle: boundaryCircle,
                 zones: zones,
                 pendingCircleCenter: pendingCircleCenter,
+                pendingBoundaryCircleCenter: pendingBoundaryCircleCenter,
                 pendingZoneVertices: pendingZoneVertices,
                 activeZoneID: activeZoneID,
                 selectedEdge: selectedEdge,
@@ -432,8 +510,10 @@ final class ArenaEditorModel {
 
     private struct Snapshot {
         var boundary: Polygon
+        var boundaryCircle: CircleBoundary?
         var zones: [ArenaZone]
         var pendingCircleCenter: GeoPoint?
+        var pendingBoundaryCircleCenter: GeoPoint?
         var pendingZoneVertices: [GeoPoint]
         var activeZoneID: UUID?
         var selectedEdge: Int?

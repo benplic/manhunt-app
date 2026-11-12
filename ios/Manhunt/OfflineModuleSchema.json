@@ -237,6 +237,51 @@
         }
       }
     },
+    "zone_shrink": {
+      "version": 1,
+      "title": "Zone shrink",
+      "blurb": "Shrinks a circle play area on a timer. Disabled for polygon arenas.",
+      "field_order": [
+        "enabled",
+        "every",
+        "shrink_to",
+        "min_radius_m"
+      ],
+      "fields": {
+        "enabled": {
+          "type": "bool",
+          "title": "Enabled",
+          "default": false
+        },
+        "every": {
+          "type": "int",
+          "title": "Every",
+          "min": 1,
+          "max": 30,
+          "step": 1,
+          "default": 5,
+          "suffix": "min"
+        },
+        "shrink_to": {
+          "type": "int",
+          "title": "Keep per shrink",
+          "min": 50,
+          "max": 95,
+          "step": 5,
+          "default": 75,
+          "suffix": "%"
+        },
+        "min_radius_m": {
+          "type": "int",
+          "title": "Minimum radius",
+          "min": 30,
+          "max": 500,
+          "step": 10,
+          "default": 50,
+          "suffix": "m"
+        }
+      }
+    },
     "signal_loss": {
       "version": 1,
       "title": "Going dark",
@@ -343,9 +388,21 @@
     "points": {
       "version": 1,
       "title": "Points",
-      "blurb": "Scored by the engine.",
-      "field_order": [],
-      "fields": {}
+      "blurb": "Scoring, including how often a hider can taunt.",
+      "field_order": [
+        "taunt_cooldown"
+      ],
+      "fields": {
+        "taunt_cooldown": {
+          "type": "int",
+          "title": "Taunt cooldown",
+          "min": 10,
+          "max": 180,
+          "step": 5,
+          "default": 45,
+          "suffix": "s"
+        }
+      }
     },
     "power_ups": {
       "version": 1,
@@ -376,6 +433,7 @@
     "reveal_fuzzy",
     "tag_policy",
     "zone_policy",
+    "zone_shrink",
     "signal_loss",
     "win",
     "hot_cold",

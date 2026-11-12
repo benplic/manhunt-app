@@ -8,38 +8,22 @@ struct ResultsView: View {
         let winner = result?.winner ?? "none"
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                HuntButton(title: "Home", action: store.leaveResults)
+                    .accessibilityIdentifier("back-home")
                 Text(winnerTitle(winner))
                     .font(.caption.weight(.bold))
                     .tracking(1.6)
                     .foregroundStyle(HuntColor.signal)
-                Text(store.arena.name)
+                Text(store.mapArena.name)
                     .font(HuntFont.title(40))
                     .foregroundStyle(HuntColor.paper)
                 Text(result?.reason ?? "The host ended the hunt.")
                     .foregroundStyle(HuntColor.muted)
 
-                if !store.timeline.isEmpty {
-                    Text("WHAT HAPPENED")
-                        .font(.caption.weight(.bold))
-                        .tracking(1.2)
-                        .foregroundStyle(HuntColor.muted)
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(TimelineOrder.sorted(store.timeline)) { event in
-                            HStack(alignment: .top, spacing: 8) {
-                                Circle().fill(HuntColor.signal).frame(width: 6, height: 6).padding(.top, 6)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(event.type.replacingOccurrences(of: "_", with: " "))
-                                        .font(.caption.weight(.bold))
-                                        .foregroundStyle(HuntColor.muted)
-                                    Text(event.payload.text ?? event.type)
-                                }
-                            }
-                            .font(.subheadline)
-                            .foregroundStyle(HuntColor.paper)
-                        }
-                    }
-                }
-
+                Text("LEADERBOARD")
+                    .font(.caption.weight(.bold))
+                    .tracking(1.2)
+                    .foregroundStyle(HuntColor.muted)
                 VStack(spacing: 8) {
                     ForEach(Array(ranked.enumerated()), id: \.element.id) { index, player in
                         HStack {
@@ -64,8 +48,27 @@ struct ResultsView: View {
                     }
                 }
 
-                HuntButton(title: "Back home", action: store.leaveResults)
-                    .accessibilityIdentifier("back-home")
+                if !store.timeline.isEmpty {
+                    Text("EVENT LOG")
+                        .font(.caption.weight(.bold))
+                        .tracking(1.2)
+                        .foregroundStyle(HuntColor.muted)
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(TimelineOrder.sorted(store.timeline)) { event in
+                            HStack(alignment: .top, spacing: 8) {
+                                Circle().fill(HuntColor.signal).frame(width: 6, height: 6).padding(.top, 6)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(event.type.replacingOccurrences(of: "_", with: " "))
+                                        .font(.caption.weight(.bold))
+                                        .foregroundStyle(HuntColor.muted)
+                                    Text(event.payload.text ?? event.type)
+                                }
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(HuntColor.paper)
+                        }
+                    }
+                }
             }
             .padding(20)
         }

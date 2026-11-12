@@ -5,6 +5,8 @@ struct LiveGameView: View {
     @State private var showCode = false
     @State private var showHost = false
     @State private var showScanner = false
+    @State private var showBoard = false
+    @State private var showLog = false
 
     var body: some View {
         @Bindable var store = store
@@ -20,7 +22,8 @@ struct LiveGameView: View {
         let zones = store.liveZones + spawnZones.filter { !known.contains($0.id) }
         return ZStack(alignment: .top) {
             HuntMap(
-                boundary: store.arena.boundary,
+                boundary: store.mapArena.boundary,
+                boundaryCircle: store.mapArena.boundaryCircle,
                 zones: zones,
                 people: store.livePeople,
                 showHiders: true,
@@ -28,7 +31,7 @@ struct LiveGameView: View {
                 // still draw without inventing pins from a local toggle.
                 showSeekers: youAreHider ? store.shouldShowSeekerPins : true,
                 fuzzyHiders: false,
-                region: store.arena.region,
+                region: store.mapArena.region,
                 onDrop: store.decoyPicking ? { store.dropDecoy(at: $0) } : nil,
                 emphasizeSpawn: chrome == .spawnZone
             )
@@ -42,10 +45,6 @@ struct LiveGameView: View {
                         .tracking(1.4)
                     Text("Seekers wait here.")
                         .font(HuntFont.title(28))
-                    if let remaining = store.match?.snapshot.phaseRemainingS {
-                        Text("Hiders still have \(clock(remaining)).")
-                            .foregroundStyle(HuntColor.muted)
-                    }
                 }
                 .foregroundStyle(HuntColor.paper)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -88,50 +87,58 @@ struct LiveGameView: View {
                     .background(.black.opacity(0.72), in: Capsule())
                     .foregroundStyle(HuntColor.paper)
                 } else if HeadStartChrome.showsFloatingNotice(chrome),
+                          let update = store.liveUpdate {
+                    LiveUpdatePill(triggerKey: update.id.uuidString, text: update.text, tone: update.tone)
+                } else if HeadStartChrome.showsFloatingNotice(chrome),
                           store.match?.snapshot.banners.isEmpty != false,
                           store.situation != .reconnecting,
                           store.situation != .outOfBounds,
                           !store.paused,
                           let note = store.note {
-                    Text(note)
-                        .font(.footnote.weight(.semibold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(.black.opacity(0.72), in: Capsule())
-                        .foregroundStyle(HuntColor.paper)
+                    LiveUpdatePill(triggerKey: "note:\(note)", text: note, tone: "info")
                 }
                 Spacer()
                 if !store.decoyPicking {
-                    dock(youAreHider: youAreHider)
+                    LiveControls(
+                        flashlightOn: store.flashlightOn,
+                        onToggleFlashlight: store.toggleFlashlight,
+                        onTapSpeaker: store.tapVoicePlaceholder,
+                        onTapMic: store.tapVoicePlaceholder
+                    )
                 }
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
             .padding(.bottom, 12)
         }
+        .safeAreaInset(edge: .bottom) {
+            // Banners stay in the top column. The dock is pinned so a safety
+            // alert cannot push Taunt off the screen.
+            if !store.decoyPicking {
+                dock(youAreHider: youAreHider)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+            }
+        }
         .sheet(isPresented: $showCode) {
             TagCodeSheet(token: store.match?.qrToken ?? "manhunt-preview")
                 .presentationDetents([.medium])
         }
         .sheet(isPresented: $showScanner) {
-            VStack {
-                QRScannerView { token in
-                    store.submitQR(token)
-                    showScanner = false
-                }
-                .ignoresSafeArea()
-                #if DEBUG
-                TextField("Paste token", text: $store.pasteToken)
-                    .textInputAutocapitalization(.never)
-                    .padding(12)
-                Button("Submit token") {
-                    store.submitQR(store.pasteToken)
-                    showScanner = false
-                }
-                .padding(.bottom, 12)
-                #endif
+            TagScanSheet(code: $store.pasteToken) { token in
+                store.submitQR(token)
+                showScanner = false
             }
-            .background(HuntColor.ink)
+        }
+        .sheet(isPresented: $showBoard) {
+            LeaderboardSheet(players: store.players.sorted { $0.points > $1.points }) {
+                showBoard = false
+            }
+            .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showLog) {
+            EventLogSheet(events: store.timeline) { showLog = false }
+                .presentationDetents([.medium, .large])
         }
         .confirmationDialog("Host", isPresented: $showHost, titleVisibility: .visible) {
             Button(store.paused ? "Resume" : "Pause", action: store.pauseOrResume)
@@ -148,35 +155,48 @@ struct LiveGameView: View {
     }
 
     private var topBar: some View {
-        HStack(spacing: 8) {
-            Button(action: store.goHome) {
-                Image(systemName: "xmark")
-                    .frame(width: 40, height: 40)
-                    .background(.black.opacity(0.55), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close map")
-            VStack(alignment: .leading, spacing: 0) {
-                Text(store.paused ? "Paused" : store.situation.rawValue)
-                    .font(.headline)
-                Text(store.viewingRole == .hider ? "You are hiding" : "You are seeking")
-                    .font(.caption)
-                    .foregroundStyle(HuntColor.muted)
-            }
-            Spacer()
-            if store.isHost {
-                Button {
-                    showHost = true
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .frame(width: 40, height: 40)
-                        .background(.black.opacity(0.55), in: Circle())
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                mapChip("Home", action: store.goHome)
+                    .accessibilityLabel("Home")
+                mapChip("Leaderboard") { showBoard = true }
+                mapChip("Event log") {
+                    showLog = true
+                    Task { await store.loadTimeline() }
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Host controls")
+                RolePill(role: store.viewingRole)
+                Spacer(minLength: 0)
+                if store.isHost {
+                    Button {
+                        showHost = true
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .frame(width: 36, height: 36)
+                            .background(.black.opacity(0.55), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Host controls")
+                }
             }
+            LiveHUD(
+                clock: PhaseClock(snapshot: store.match?.snapshot, paused: store.paused),
+                situation: store.situation
+            )
         }
         .foregroundStyle(HuntColor.paper)
+    }
+
+    private func mapChip(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.caption2.weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .padding(.horizontal, 8)
+                .frame(height: 32)
+                .background(.black.opacity(0.55), in: Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private var locationBlock: some View {
@@ -205,7 +225,14 @@ struct LiveGameView: View {
                 }
                 Spacer()
             }
-            if !youAreHider && store.situation != .headStart {
+            switch DockChrome.state(
+                phase: store.match?.snapshot.phase ?? .active,
+                role: store.viewingRole,
+                remainingS: store.match?.snapshot.phaseRemainingS
+            ) {
+            case let .headStartWaiting(title, subtitle):
+                waitingCard(title: title, subtitle: subtitle)
+            case .activeTagging:
                 if store.match?.snapshot.tagMethod == "uwb" {
                     uwbTags
                 }
@@ -216,11 +243,11 @@ struct LiveGameView: View {
                         .font(.caption)
                         .foregroundStyle(HuntColor.warning)
                 }
-            }
-            if youAreHider {
+            case .activeHider:
                 if store.match?.snapshot.phase == .active {
+                    let wait = store.match?.snapshot.you.tauntCooldownS ?? 0
                     Button(action: store.taunt) {
-                        Label("Taunt", systemImage: "megaphone.fill")
+                        Label(wait > 0 ? "Taunt · \(wait)s" : "Taunt", systemImage: "megaphone.fill")
                             .font(.body.weight(.semibold))
                             .frame(maxWidth: .infinity)
                             .frame(minHeight: 48)
@@ -228,6 +255,7 @@ struct LiveGameView: View {
                             .foregroundStyle(HuntColor.ink)
                     }
                     .buttonStyle(.plain)
+                    .disabled(wait > 0)
                     .accessibilityIdentifier("taunt")
                 }
                 Button {
@@ -273,6 +301,27 @@ struct LiveGameView: View {
         .padding(14)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .colorScheme(.dark)
+    }
+
+    private func waitingCard(title: String, subtitle: String) -> some View {
+        VStack(spacing: 4) {
+            Text(title)
+                .font(.headline.weight(.bold))
+                .foregroundStyle(HuntColor.paper)
+            Text(subtitle)
+                .font(.subheadline.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(HuntColor.muted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .padding(.horizontal, 12)
+        .background(HuntColor.ink.opacity(0.65), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(HuntColor.line, lineWidth: 1)
+        )
+        .accessibilityIdentifier("head-start-waiting")
     }
 
     private var scanTagButton: some View {
@@ -361,6 +410,72 @@ struct LiveGameView: View {
         String(format: "%d:%02d", seconds / 60, seconds % 60)
     }
 
+}
+
+private struct LeaderboardSheet: View {
+    var players: [VisualPlayer]
+    var dismiss: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if players.isEmpty {
+                    Text("No scores yet.")
+                        .foregroundStyle(HuntColor.muted)
+                }
+                ForEach(Array(players.enumerated()), id: \.element.id) { index, player in
+                    HStack {
+                        Text("\(index + 1)")
+                            .font(.headline.monospacedDigit())
+                            .frame(width: 24, alignment: .leading)
+                            .foregroundStyle(HuntColor.signal)
+                        Text(player.isYou ? "\(player.name) (you)" : player.name)
+                        Spacer()
+                        Text("\(player.points)")
+                            .font(.headline.monospacedDigit())
+                    }
+                }
+            }
+            .navigationTitle("Leaderboard")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: dismiss)
+                }
+            }
+        }
+    }
+}
+
+private struct EventLogSheet: View {
+    var events: [TimelineEventDTO]
+    var dismiss: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if events.isEmpty {
+                    Text("Nothing has happened yet.")
+                        .foregroundStyle(HuntColor.muted)
+                }
+                ForEach(TimelineOrder.sorted(events)) { event in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(event.type.replacingOccurrences(of: "_", with: " "))
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(HuntColor.muted)
+                        Text(event.payload.text ?? event.type)
+                    }
+                }
+            }
+            .navigationTitle("Event log")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: dismiss)
+                }
+            }
+        }
+    }
 }
 
 private struct TagCodeSheet: View {

@@ -27,6 +27,12 @@ CLASSIC_MODULES: dict[str, dict[str, Any]] = {
         "safe_visit": 60,
         "safe_cooldown": 60,
     },
+    "zone_shrink": {
+        "enabled": False,
+        "every": 5,
+        "shrink_to": 75,
+        "min_radius_m": 50,
+    },
     "signal_loss": {"silence": 45, "penalty_after": 180, "penalty": "none"},
     "win": {"condition": "either", "time_limit": 30},
     "hot_cold": {"enabled": True, "interval": 5},
@@ -39,6 +45,7 @@ CLASSIC_MODULES: dict[str, dict[str, Any]] = {
         "close_call_points": 20,
         "others_tagged_points": 15,
         "taunt_s": 8,
+        "taunt_cooldown": 45,
     },
     "power_ups": {"enabled": True},
     "effects": {},
@@ -56,10 +63,14 @@ RANGES: dict[tuple[str, str], tuple[float, float]] = {
     ("zone_policy", "oob_countdown"): (5, 120),
     ("zone_policy", "safe_visit"): (5, 300),
     ("zone_policy", "safe_cooldown"): (0, 300),
+    ("zone_shrink", "every"): (1, 30),
+    ("zone_shrink", "shrink_to"): (50, 95),
+    ("zone_shrink", "min_radius_m"): (30, 500),
     ("signal_loss", "silence"): (15, 300),
     ("signal_loss", "penalty_after"): (30, 900),
     ("win", "time_limit"): (5, 180),
     ("hot_cold", "interval"): (2, 30),
+    ("points", "taunt_cooldown"): (10, 180),
 }
 
 

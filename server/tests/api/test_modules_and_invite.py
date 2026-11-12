@@ -13,9 +13,15 @@ def test_modules_schema_lists_classic_ids(client: TestClient) -> None:
     assert response.status_code == 200
     body = response.json()
     ids = set(body["modules"].keys())
-    assert {"roles", "head_start", "power_ups", "hot_cold"} <= ids
+    assert {"roles", "head_start", "power_ups", "hot_cold", "zone_shrink"} <= ids
     # The preset editor renders this document. Order and bounds are part of it.
     assert body["order"][0] == "roles"
+    assert set(body["modules"]["zone_shrink"]["fields"]) == {
+        "enabled",
+        "every",
+        "shrink_to",
+        "min_radius_m",
+    }
     duration = body["modules"]["head_start"]["fields"]["duration"]
     assert duration["min"] == 15
     assert duration["max"] == 600
@@ -101,3 +107,56 @@ def test_overhanging_circle_arena_clips_on_create(client: TestClient) -> None:
     assert invite.status_code == 200
     assert invite.json()["join_code"] == game.json()["join_code"]
     assert invite.json()["url"].endswith(game.json()["join_code"])
+
+
+def test_zone_shrink_requires_circle_arena_on_create(client: TestClient) -> None:
+    host = _auth(client)
+    headers = {"Authorization": f"Bearer {host['access_token']}"}
+    polygon_arena = client.post("/v1/arenas", json=arena_to_dict(square()), headers=headers).json()
+    rejected_poly = client.post(
+        "/v1/games",
+        json={
+            "arena_id": polygon_arena["id"],
+            "preset_id": "classic",
+            "overrides": {"zone_shrink": {"enabled": True}},
+        },
+        headers=headers,
+    )
+    assert rejected_poly.status_code == 422
+    assert rejected_poly.json()["error"]["code"] == "VALIDATION_FAILED"
+    assert rejected_poly.json()["error"]["details"]["field"] == "zone_shrink.enabled"
+
+    circle_arena = client.post(
+        "/v1/arenas",
+        json={
+            "name": "Circle Park",
+            "boundary": [],
+            "boundary_circle": {"center": {"lat": 40.6616, "lon": -73.9688}, "radius_m": 200},
+            "zones": [],
+        },
+        headers=headers,
+    ).json()
+    rejected_min = client.post(
+        "/v1/games",
+        json={
+            "arena_id": circle_arena["id"],
+            "preset_id": "classic",
+            "overrides": {"zone_shrink": {"enabled": True, "min_radius_m": 250}},
+        },
+        headers=headers,
+    )
+    assert rejected_min.status_code == 422
+    assert rejected_min.json()["error"]["code"] == "VALIDATION_FAILED"
+    assert rejected_min.json()["error"]["details"]["field"] == "zone_shrink.min_radius_m"
+
+    accepted = client.post(
+        "/v1/games",
+        json={
+            "arena_id": circle_arena["id"],
+            "preset_id": "classic",
+            "overrides": {"zone_shrink": {"enabled": True, "min_radius_m": 50}},
+        },
+        headers=headers,
+    )
+    assert accepted.status_code == 200, accepted.text
+

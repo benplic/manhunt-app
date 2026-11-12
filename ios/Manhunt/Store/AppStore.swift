@@ -32,6 +32,13 @@ struct MatchHandle {
     var qrToken: String?
 }
 
+struct LiveUpdate: Equatable {
+    var id: UUID
+    var text: String
+    var tone: String
+    var receivedAt: Date
+}
+
 @MainActor
 @Observable
 final class AppStore {
@@ -53,9 +60,11 @@ final class AppStore {
     var decoyPicking = false
     var tool: ArenaTool = .playArea
     var draftBoundary: [VisualPoint] = []
+    var draftBoundaryCircle: CircleBoundary?
     var draftZones: [VisualZone] = []
     var draftPending: [VisualPoint] = []
     var draftCircleCenter: VisualPoint?
+    var draftCrosshair: VisualPoint?
     var draftHighlightedEdge: (VisualPoint, VisualPoint)?
     var editorHomeCoordinate: CLLocationCoordinate2D?
     /// Incremented once so HuntMap reframes after the permission sheet, not on every GPS tick.
@@ -70,9 +79,12 @@ final class AppStore {
     var locationAccuracy: LocationReporter.Accuracy = .notDetermined
     var pasteToken = ""
     var tagMessage: String?
+    var liveUpdate: LiveUpdate?
+    var flashlightOn = false
     var timeline: [TimelineEventDTO] = []
     var uwbPeers: [UWBPeer] = []
     var uwbDistance: [UUID: Double] = [:]
+    private var liveUpdateExpiryTask: Task<Void, Never>?
     private var presetReturn: AppScreen = .home
     private var sentLowBattery = false
     private var lastSentLocation: CLLocation?
@@ -84,6 +96,7 @@ final class AppStore {
     private let keychain = KeychainStore()
     private let location = LocationReporter()
     private let defaults: UserDefaults
+    private let torch: TorchControlling
     /// Last discovery token pushed to the server. Cleared on reconnect so a
     /// rebuilt session gets a fresh publish. Compared by value so a rotated
     /// local token is resent even mid-match.
@@ -97,7 +110,8 @@ final class AppStore {
     init(
         service: GameService,
         serverURL: String = AppStore.defaultServerURL(),
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        torch: TorchControlling = DeviceTorch()
     ) {
         self.service = service
         self.fake = service as? FakeGameService
@@ -105,6 +119,7 @@ final class AppStore {
         self.live = liveService
         self.ranger = UWBRangers.make(enabled: liveService != nil)
         self.defaults = defaults
+        self.torch = torch
         if let stored = defaults.string(forKey: Self.serverURLKey), !stored.isEmpty {
             self.serverURL = stored
         } else {
@@ -139,10 +154,9 @@ final class AppStore {
         live?.onEvent = { [weak self] banner in
             Task { @MainActor in
                 guard let self else { return }
-                // The locked map already says to wait. Keeping this line makes it
-                // pop up again when head start ends.
-                if banner.title == "started" { return }
-                self.note = banner.detail
+                // A toast from a hunt that already ended must not land on Home.
+                guard self.match != nil, self.screen == .live || self.screen == .lobby else { return }
+                self.recordLiveEvent(banner)
             }
         }
         live?.onReconnect = { [weak self] reconnecting in
@@ -243,7 +257,8 @@ final class AppStore {
                 isYou: player.playerId == match.snapshot.you.playerId,
                 isHost: player.isHost,
                 point: point,
-                points: player.playerId == match.snapshot.you.playerId ? match.snapshot.you.points : 0
+                points: player.points
+                    ?? (player.playerId == match.snapshot.you.playerId ? match.snapshot.you.points : 0)
             )
         }
     }
@@ -270,6 +285,11 @@ final class AppStore {
         return livePeople.contains { $0.role == .seeker && !$0.isYou }
     }
 
+    /// Boundary and zones for the hunt on screen. The server snapshot wins.
+    var mapArena: VisualArena {
+        MatchMap.arena(snapshot: match?.snapshot.arena, local: arena)
+    }
+
     var arena: VisualArena {
         if let selected = arenas.first(where: { $0.id.uuidString == arenaID }) {
             return selected.asVisual(place: selected.name)
@@ -281,7 +301,7 @@ final class AppStore {
     }
 
     var liveZones: [VisualZone] {
-        var zones = arena.zones
+        var zones = mapArena.zones
         if let reveals = match?.snapshot.reveals {
             zones += reveals.map { pin in
                 VisualZone(
@@ -315,6 +335,7 @@ final class AppStore {
         editor.issues.map { issue in
             switch issue {
             case .playAreaTooSmall: return "Play area needs at least three points."
+            case .playAreaRadiusInvalid: return "Play area radius must be between 30 m and 2,000 m."
             case let .selfIntersection(name): return "\(name) crosses itself."
             case let .outsidePlayArea(name): return "\(name) leaves the play area."
             }
@@ -362,9 +383,43 @@ final class AppStore {
 
     /// Best-effort last ping when the hunt is backgrounded or the host ends it.
     func handleScenePhase(isBackground: Bool) {
-        if isBackground, screen == .live {
-            sendFinalPing()
+        if isBackground {
+            turnOffFlashlight()
+            if screen == .live {
+                sendFinalPing()
+            }
         }
+    }
+
+    func toggleFlashlight() {
+        let target = !flashlightOn
+        do {
+            try torch.setOn(target)
+            flashlightOn = target
+        } catch let error as TorchError {
+            flashlightOn = false
+            note = error.localizedDescription
+        } catch {
+            flashlightOn = false
+            note = "Could not toggle flashlight."
+        }
+    }
+
+    func turnOffFlashlight() {
+        guard flashlightOn else { return }
+        flashlightOn = false
+        do {
+            try torch.setOn(false)
+        } catch let error as TorchError {
+            note = error.localizedDescription
+        } catch {
+            note = "Could not turn off flashlight."
+        }
+    }
+
+    func tapVoicePlaceholder() {
+        // TODO: replace with live radio mute / push-to-talk once audio transport is implemented.
+        note = "Voice is coming soon."
     }
 
     func sendFix(from location: CLLocation, isFinal: Bool, battery: Float? = nil) {
@@ -387,7 +442,36 @@ final class AppStore {
         sendFix(from: fix, isFinal: true)
     }
 
+    func recordLiveEvent(_ banner: BannerDTO, now: Date = Date()) {
+        let ignored: Set<String> = ["started", "player_joined", "location"]
+        let trimmed = banner.detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ignored.contains(banner.title), !trimmed.isEmpty else { return }
+        let update = LiveUpdate(
+            id: banner.bannerId,
+            text: trimmed,
+            tone: banner.tone,
+            receivedAt: now
+        )
+        liveUpdate = update
+        liveUpdateExpiryTask?.cancel()
+        liveUpdateExpiryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(12))
+            guard !Task.isCancelled, let self else { return }
+            if self.liveUpdate?.id == update.id {
+                self.liveUpdate = nil
+            }
+        }
+    }
+
+    func clearExpiredLiveUpdate(now: Date = Date()) {
+        guard let liveUpdate else { return }
+        if now.timeIntervalSince(liveUpdate.receivedAt) >= 12 {
+            self.liveUpdate = nil
+        }
+    }
+
     func signOut() {
+        turnOffFlashlight()
         stopUWB()
         live?.disconnect()
         live?.refreshToken = nil
@@ -399,6 +483,8 @@ final class AppStore {
         joinDraft = ""
         joinMessage = nil
         note = nil
+        liveUpdate = nil
+        liveUpdateExpiryTask?.cancel()
     }
 
     /// Leave the current lobby/hunt (POST /leave) then return home.
@@ -408,12 +494,15 @@ final class AppStore {
 
     func leaveMatchThenHome() {
         let gameID = match?.snapshot.gameId
+        turnOffFlashlight()
         stopUWB()
         location.stop()
         live?.disconnect()
         match = nil
         screen = .home
         note = nil
+        liveUpdate = nil
+        liveUpdateExpiryTask?.cancel()
         guard let gameID else { return }
         Task {
             try? await service.leave(gameID: gameID)
@@ -544,14 +633,14 @@ final class AppStore {
 
     func createMatch(arenaID: UUID, presetID: String) {
         lastError = nil
-        if !arenas.contains(where: { $0.id == arenaID }) {
+        guard let selected = arenas.first(where: { $0.id == arenaID }) else {
             lastError = .missingArena
             return
         }
         // Keep the live map boundary in sync with the arena used for create.
         self.arenaID = arenaID.uuidString
         guard let fake else {
-            let overrides = PresetOverrides.from(modules: modules)
+            let overrides = PresetOverrides.from(modules: modules, arena: selected)
             Task { await createMatchRemote(arenaID: arenaID, presetID: presetID, overrides: overrides) }
             return
         }
@@ -562,6 +651,17 @@ final class AppStore {
         } catch {
             lastError = .missingArena
         }
+    }
+
+    var selectedArena: Arena? {
+        guard let id = selectedArenaID() else { return arenas.first }
+        return arenas.first(where: { $0.id == id })
+    }
+
+    func applyRulePreset(_ preset: RulePreset) {
+        var updated = modules
+        preset.apply(to: &updated)
+        modules = updated
     }
 
     func join() {
@@ -588,6 +688,10 @@ final class AppStore {
             screen = .lobby
             joinMessage = nil
             return nil
+        } catch let error as ServiceError {
+            lastError = error.code == .gameNotFound ? .notFound : .service(error.code)
+            joinMessage = error.message
+            return error.code == .gameNotFound ? .notFound : .service(error.code)
         } catch {
             lastError = .notFound
             joinMessage = "No game is using \(normalized)."
@@ -768,6 +872,7 @@ final class AppStore {
 
     func leaveResults() {
         match = nil
+        note = nil
         screen = .home
     }
 
@@ -781,6 +886,7 @@ final class AppStore {
             )
         } else if let sample = SamplePark.arenas.first(where: { $0.id == id }) {
             draftBoundary = sample.boundary
+            draftBoundaryCircle = sample.boundaryCircle
             draftZones = sample.zones
         }
         screen = .arenaEditor
@@ -789,6 +895,8 @@ final class AppStore {
     func beginNewArena() {
         arenaID = "new"
         editor = ArenaEditorModel()
+        tool = .playArea
+        draftCrosshair = nil
         draftBoundary = []
         draftZones = []
         refreshDraftsFromEditor()
@@ -829,6 +937,7 @@ final class AppStore {
     }
 
     func updateEditorCrosshair(_ point: VisualPoint) {
+        draftCrosshair = point
         let geo = GeoPoint(latitude: point.latitude, longitude: point.longitude)
         if let edge = editor.previewEdge(near: geo) {
             draftHighlightedEdge = (
@@ -838,6 +947,11 @@ final class AppStore {
         } else {
             draftHighlightedEdge = nil
         }
+    }
+
+    func clearPlayArea() {
+        editor.clearPlayArea()
+        refreshDraftsFromEditor()
     }
 
     func drop(at point: VisualPoint) {
@@ -953,6 +1067,8 @@ final class AppStore {
             return "An arena can have at most 30 zones."
         case "play_area_too_small":
             return "Play area needs at least three points."
+        case "play_area_radius_invalid":
+            return "Play area radius must be between 30 m and 2,000 m."
         default:
             return error.message
         }
@@ -1067,7 +1183,7 @@ final class AppStore {
     /// Play area drawn on the live map (`HuntMap` boundary).
     private func playAreaPolygon() -> Polygon {
         Polygon(
-            vertices: arena.boundary.map {
+            vertices: mapArena.boundary.map {
                 GeoPoint(latitude: $0.latitude, longitude: $0.longitude)
             }
         )
@@ -1190,6 +1306,7 @@ final class AppStore {
         case .targetShielded: return "That hider has a shield up."
         case .targetInSafeZone: return "They are in a safe zone."
         case .tokenInvalid, .tokenExpired: return "That code is stale. Scan again."
+        case .coolingDown: return "Taunt is still cooling down."
         case .wrongRole: return "Only seekers can tag."
         case .eliminated, .targetNotActive: return "That player is already out."
         case .wrongPhase: return "Tags are closed during this phase."
@@ -1202,8 +1319,12 @@ final class AppStore {
         publishUWBTokenIfNeeded()
         switch view.phase {
         case .ended:
+            turnOffFlashlight()
             location.stop()
             live?.disconnect()
+            note = nil
+            liveUpdate = nil
+            liveUpdateExpiryTask?.cancel()
             screen = .results
             Task { await loadTimeline() }
         case .headStart:
@@ -1336,6 +1457,9 @@ final class AppStore {
             screen = .lobby
             joinMessage = nil
             live?.connect(gameID: view.gameId)
+        } catch let error as ServiceError {
+            lastError = error.code == .gameNotFound ? .notFound : .service(error.code)
+            joinMessage = error.message
         } catch {
             lastError = .notFound
             joinMessage = "No game is using \(code)."
@@ -1366,7 +1490,14 @@ final class AppStore {
 
     private func loadEditor(from arena: Arena) {
         editor = ArenaEditorModel()
-        editor.load(name: arena.name, boundary: arena.boundary, zones: arena.zones)
+        editor.load(
+            name: arena.name,
+            boundary: arena.boundary,
+            zones: arena.zones,
+            boundaryCircle: arena.boundaryCircle
+        )
+        tool = arena.boundaryCircle != nil ? .playCircle : .playArea
+        editor.tool = editorTool(from: tool)
         refreshDraftsFromEditor()
     }
 
@@ -1374,6 +1505,7 @@ final class AppStore {
         draftBoundary = editor.boundary.vertices.map {
             VisualPoint(latitude: $0.latitude, longitude: $0.longitude)
         }
+        draftBoundaryCircle = editor.boundaryCircle
         draftZones = editor.zones.map { $0.asVisual() }
         draftPending = editor.pendingVertices.map {
             VisualPoint(latitude: $0.latitude, longitude: $0.longitude)
@@ -1394,6 +1526,7 @@ final class AppStore {
     private func issueCopy(_ issue: ArenaIssue) -> String {
         switch issue {
         case .playAreaTooSmall: return "Play area needs at least three points."
+        case .playAreaRadiusInvalid: return "Play area radius must be between 30 m and 2,000 m."
         case let .selfIntersection(name): return "\(name) crosses itself."
         case let .outsidePlayArea(name): return "\(name) leaves the play area."
         }
@@ -1402,6 +1535,7 @@ final class AppStore {
     private func editorTool(from tool: ArenaTool) -> EditorTool {
         switch tool {
         case .playArea: return .playArea
+        case .playCircle: return .playCircle
         case .safe: return .safeCircle
         case .outOfBounds: return .outOfBounds
         case .spawn: return .seekerSpawn
@@ -1411,6 +1545,7 @@ final class AppStore {
     private func arenaTool(from tool: EditorTool) -> ArenaTool {
         switch tool {
         case .playArea: return .playArea
+        case .playCircle: return .playCircle
         case .safeCircle: return .safe
         case .outOfBounds: return .outOfBounds
         case .seekerSpawn: return .spawn

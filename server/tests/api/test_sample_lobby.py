@@ -65,6 +65,22 @@ def test_park42_fills_bots_starts_and_can_end(client: TestClient) -> None:
     assert payload["result"]["reason"]
 
 
+def test_park42_after_end_opens_a_riverside_lobby(client: TestClient) -> None:
+    headers = _headers(_auth(client, "Casey"))
+    first = client.post("/v1/games/join", headers=headers, json={"join_code": "PARK42"})
+    assert first.status_code == 200
+    game_id = first.json()["id"]
+    ended = client.post(f"/v1/games/{game_id}/end", headers=headers)
+    assert ended.status_code == 200
+    second = client.post("/v1/games/join", headers=headers, json={"join_code": "PARK42"})
+    assert second.status_code == 200
+    assert second.json()["id"] != game_id
+    view = client.get(f"/v1/games/{second.json()['id']}", headers=headers).json()
+    assert view["phase"] == "lobby"
+    lats = [point["lat"] for point in view["arena"]["boundary"]]
+    assert min(lats) > 40
+
+
 def test_second_park42_join_reuses_the_lobby(client: TestClient) -> None:
     first = _headers(_auth(client, "Casey"))
     second = _headers(_auth(client, "Morgan"))

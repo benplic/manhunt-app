@@ -3,6 +3,12 @@ import Foundation
 enum ArenaValidator {
     static func issues(in arena: Arena) -> [ArenaIssue] {
         var found: [ArenaIssue] = []
+        if let circle = arena.boundaryCircle {
+            if !circle.radiusMeters.isFinite || circle.radiusMeters < 30 || circle.radiusMeters > 2000 {
+                found.append(.playAreaRadiusInvalid)
+                return found
+            }
+        }
         if arena.boundary.vertices.count < 3 {
             found.append(.playAreaTooSmall)
         } else if ArenaGeometry.selfIntersects(arena.boundary) {

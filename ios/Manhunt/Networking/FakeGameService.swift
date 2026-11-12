@@ -381,6 +381,13 @@ private struct FakeGame {
             phaseRemainingS: phase == .headStart ? 60 : nil,
             gameElapsedS: 0,
             timeLimitRemainingS: 1800,
+            timers: TimersDTO(
+                headStartS: 60,
+                timeLimitS: 1800,
+                revealIntervalS: 60,
+                nextRevealInS: 60,
+                zone: nil
+            ),
             you: YouDTO(
                 playerId: you.id,
                 role: you.role,

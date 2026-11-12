@@ -43,14 +43,17 @@ _SAMPLE_BOTS = (
 
 
 def _sample_arena() -> dict:
-    side = 200 / 111_320
+    # Same outline as the phone's Riverside Green sample, so PARK42 is a park
+    # both phones can stand in, not a square at latitude 0.
     arena = Arena(
         name="Sample park",
         boundary=[
-            GeoPoint(0, 0),
-            GeoPoint(0, side),
-            GeoPoint(side, side),
-            GeoPoint(side, 0),
+            GeoPoint(lat=40.66355, lon=-73.96995),
+            GeoPoint(lat=40.66320, lon=-73.96785),
+            GeoPoint(lat=40.66155, lon=-73.96735),
+            GeoPoint(lat=40.66025, lon=-73.96835),
+            GeoPoint(lat=40.66015, lon=-73.97015),
+            GeoPoint(lat=40.66185, lon=-73.97075),
         ],
     )
     return arena_to_dict(arena)
@@ -96,6 +99,23 @@ class GameService:
                 status_code=422,
                 details={"issues": [i.code for i in issues]},
             )
+        zone_shrink = preset["modules"].get("zone_shrink", {})
+        if bool(zone_shrink.get("enabled", False)):
+            if arena.boundary_circle is None:
+                raise ApiError(
+                    ErrorCode.VALIDATION_FAILED,
+                    "Zone shrink requires a circle play area.",
+                    status_code=422,
+                    details={"field": "zone_shrink.enabled"},
+                )
+            min_r = float(zone_shrink.get("min_radius_m", 50))
+            if arena.boundary_circle.radius_m <= min_r:
+                raise ApiError(
+                    ErrorCode.VALIDATION_FAILED,
+                    "Play area radius must exceed the shrink minimum radius.",
+                    status_code=422,
+                    details={"field": "zone_shrink.min_radius_m"},
+                )
         join_code = await self._unique_code(session)
         seed = random.SystemRandom().randint(1, 2**31 - 1)
         row = GameRow(

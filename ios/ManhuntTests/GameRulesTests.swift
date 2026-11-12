@@ -6,6 +6,14 @@ import XCTest
 /// points, concave play areas, tiny zones, self-intersection, and GPS accuracy
 /// wider than the out-of-bounds margin.
 final class GameRulesTests: XCTestCase {
+    func testLiveMapPrefersTheServerArenaOverTheLocalPark() {
+        let shown = MatchMap.arena(snapshot: Arena.sampleSquare(), local: SamplePark.riverside)
+        XCTAssertEqual(shown.boundary.first?.latitude ?? -1, 0, accuracy: 1e-6)
+        let fallback = MatchMap.arena(snapshot: nil, local: SamplePark.riverside)
+        XCTAssertEqual(fallback.name, "Riverside Green")
+        XCTAssertGreaterThan(fallback.boundary.first?.latitude ?? 0, 40)
+    }
+
     func testJoinCodeNormalizesAndRejectsAmbiguousCharacters() {
         XCTAssertEqual(JoinCode.normalize(" park42 "), "PARK42")
         XCTAssertTrue(JoinCode.isValid("PARK42"))

@@ -10,6 +10,7 @@ from app.engine.modules.signal_loss import SignalLossModule
 from app.engine.modules.tag_policy import TagPolicyModule
 from app.engine.modules.win import WinModule
 from app.engine.modules.zone_policy import ZonePolicyModule
+from app.engine.modules.zone_shrink import ZoneShrinkModule
 
 MODULE_TYPES: dict[str, type[BaseModule]] = {
     "roles": RolesModule,
@@ -17,6 +18,7 @@ MODULE_TYPES: dict[str, type[BaseModule]] = {
     "reveal_fuzzy": RevealFuzzyModule,
     "tag_policy": TagPolicyModule,
     "zone_policy": ZonePolicyModule,
+    "zone_shrink": ZoneShrinkModule,
     "signal_loss": SignalLossModule,
     "win": WinModule,
     "effects": EffectsModule,
