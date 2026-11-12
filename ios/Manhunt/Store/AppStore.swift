@@ -80,6 +80,7 @@ final class AppStore {
     var pasteToken = ""
     var tagMessage: String?
     var liveUpdate: LiveUpdate?
+    var flashlightOn = false
     var timeline: [TimelineEventDTO] = []
     var uwbPeers: [UWBPeer] = []
     var uwbDistance: [UUID: Double] = [:]
@@ -95,6 +96,7 @@ final class AppStore {
     private let keychain = KeychainStore()
     private let location = LocationReporter()
     private let defaults: UserDefaults
+    private let torch: TorchControlling
     /// Last discovery token pushed to the server. Cleared on reconnect so a
     /// rebuilt session gets a fresh publish. Compared by value so a rotated
     /// local token is resent even mid-match.
@@ -108,7 +110,8 @@ final class AppStore {
     init(
         service: GameService,
         serverURL: String = AppStore.defaultServerURL(),
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        torch: TorchControlling = DeviceTorch()
     ) {
         self.service = service
         self.fake = service as? FakeGameService
@@ -116,6 +119,7 @@ final class AppStore {
         self.live = liveService
         self.ranger = UWBRangers.make(enabled: liveService != nil)
         self.defaults = defaults
+        self.torch = torch
         if let stored = defaults.string(forKey: Self.serverURLKey), !stored.isEmpty {
             self.serverURL = stored
         } else {
@@ -379,9 +383,43 @@ final class AppStore {
 
     /// Best-effort last ping when the hunt is backgrounded or the host ends it.
     func handleScenePhase(isBackground: Bool) {
-        if isBackground, screen == .live {
-            sendFinalPing()
+        if isBackground {
+            turnOffFlashlight()
+            if screen == .live {
+                sendFinalPing()
+            }
         }
+    }
+
+    func toggleFlashlight() {
+        let target = !flashlightOn
+        do {
+            try torch.setOn(target)
+            flashlightOn = target
+        } catch let error as TorchError {
+            flashlightOn = false
+            note = error.localizedDescription
+        } catch {
+            flashlightOn = false
+            note = "Could not toggle flashlight."
+        }
+    }
+
+    func turnOffFlashlight() {
+        guard flashlightOn else { return }
+        flashlightOn = false
+        do {
+            try torch.setOn(false)
+        } catch let error as TorchError {
+            note = error.localizedDescription
+        } catch {
+            note = "Could not turn off flashlight."
+        }
+    }
+
+    func tapVoicePlaceholder() {
+        // TODO: replace with live radio mute / push-to-talk once audio transport is implemented.
+        note = "Voice is coming soon."
     }
 
     func sendFix(from location: CLLocation, isFinal: Bool, battery: Float? = nil) {
@@ -433,6 +471,7 @@ final class AppStore {
     }
 
     func signOut() {
+        turnOffFlashlight()
         stopUWB()
         live?.disconnect()
         live?.refreshToken = nil
@@ -455,6 +494,7 @@ final class AppStore {
 
     func leaveMatchThenHome() {
         let gameID = match?.snapshot.gameId
+        turnOffFlashlight()
         stopUWB()
         location.stop()
         live?.disconnect()
@@ -1279,6 +1319,7 @@ final class AppStore {
         publishUWBTokenIfNeeded()
         switch view.phase {
         case .ended:
+            turnOffFlashlight()
             location.stop()
             live?.disconnect()
             note = nil

@@ -358,4 +358,55 @@ final class LiveHudAndPresetsTests: XCTestCase {
         XCTAssertEqual(DockChrome.state(phase: .active, role: .seeker, remainingS: nil), .activeTagging)
         XCTAssertEqual(DockChrome.state(phase: .active, role: .hider, remainingS: nil), .activeHider)
     }
+
+    @MainActor
+    func testFlashlightTogglesAndAutoTurnsOffOnLifecycleEvents() {
+        let torch = FakeTorch()
+        let store = AppStore(service: FakeGameService(), torch: torch)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.randomizeRoles(hiderCount: 1)
+        _ = store.startMatch()
+
+        store.toggleFlashlight()
+        XCTAssertTrue(store.flashlightOn)
+        XCTAssertEqual(torch.calls, [true])
+
+        store.handleScenePhase(isBackground: true)
+        XCTAssertFalse(store.flashlightOn)
+        XCTAssertEqual(torch.calls, [true, false])
+
+        store.toggleFlashlight()
+        XCTAssertTrue(store.flashlightOn)
+        store.leaveMatchThenHome()
+        XCTAssertFalse(store.flashlightOn)
+
+        store.toggleFlashlight()
+        XCTAssertTrue(store.flashlightOn)
+        store.signOut()
+        XCTAssertFalse(store.flashlightOn)
+
+        let brokenTorch = FakeTorch()
+        brokenTorch.errorToThrow = TorchError.unavailable
+        let brokenStore = AppStore(service: FakeGameService(), torch: brokenTorch)
+        brokenStore.toggleFlashlight()
+        XCTAssertFalse(brokenStore.flashlightOn)
+        XCTAssertEqual(brokenStore.note, TorchError.unavailable.localizedDescription)
+
+        brokenStore.tapVoicePlaceholder()
+        XCTAssertEqual(brokenStore.note, "Voice is coming soon.")
+    }
+}
+
+private final class FakeTorch: TorchControlling {
+    var isAvailable: Bool = true
+    var calls: [Bool] = []
+    var errorToThrow: Error?
+
+    func setOn(_ on: Bool) throws {
+        if let errorToThrow {
+            throw errorToThrow
+        }
+        calls.append(on)
+    }
 }

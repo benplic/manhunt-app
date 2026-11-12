@@ -98,6 +98,14 @@ struct LiveGameView: View {
                     LiveUpdatePill(triggerKey: "note:\(note)", text: note, tone: "info")
                 }
                 Spacer()
+                if !store.decoyPicking {
+                    LiveControls(
+                        flashlightOn: store.flashlightOn,
+                        onToggleFlashlight: store.toggleFlashlight,
+                        onTapSpeaker: store.tapVoicePlaceholder,
+                        onTapMic: store.tapVoicePlaceholder
+                    )
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
