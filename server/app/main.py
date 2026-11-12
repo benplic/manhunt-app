@@ -67,6 +67,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ).scalars()
             restored = 0
             for row in rows:
+                if row.join_code == "PARK42":
+                    # TODO: persist demo snapshot if sample lobbies ever need crash
+                    # recovery across restarts.
+                    row.status = "abandoned"
+                    continue
                 if row.inputs:
                     game = rebuild_session(
                         game_id=row.id,

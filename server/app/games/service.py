@@ -18,6 +18,8 @@ from app.db.models import (
     GameRow,
     User,
 )
+from app.demo.bots import BotDriver
+from app.demo.state import DemoState
 from app.engine.arena import (
     PLAY_CIRCLE_STEPS,
     Arena,
@@ -214,6 +216,8 @@ class GameService:
             await session.commit()
             game = self._live(row)
             game.add_player(user.id, user.display_name, is_host=False)
+            if game.demo is not None:
+                BotDriver.seed_positions(game)
             await self.persist_inputs(session, game)
             await session.commit()
             # The host is already on the socket. Push the new roster instead of
@@ -610,6 +614,8 @@ class GameService:
                 member.role = player.role
         game.sample_start_after_s = 30
         game.state.lobby_starts_in_s = 30
+        game.demo = DemoState.initial(game, bot_ids=[b.id for b in order])
+        BotDriver.seed_positions(game)
         # TODO: a restart during this countdown does not re-arm the 30s start.
         await self.persist_inputs(session, game)
         await session.commit()

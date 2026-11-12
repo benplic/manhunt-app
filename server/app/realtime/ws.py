@@ -81,6 +81,8 @@ def bind_ws(manager: SessionManager, get_settings, persist_location=None):
                 if kind == "ping":
                     await ws.send_json(envelope("pong", {}))
                 elif kind == "location":
+                    if session.demo is not None:
+                        continue
                     now = time.monotonic()
                     if now - last_loc < 0.5:
                         continue

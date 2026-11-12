@@ -13,6 +13,7 @@ from uuid import UUID
 
 from fastapi import WebSocket
 
+from app.demo.bots import BotDriver
 from app.engine.arena import arena_from_dict
 from app.engine.clock import Clock
 from app.engine.qr import make_qr_token, token_ttl
@@ -86,10 +87,22 @@ class SessionManager:
                 continue
             if session.state.phase in {"ended", "lobby"}:
                 continue
-            session.tick()
-            self._refresh_qr(session)
+            steps = (
+                session.demo.speed
+                if session.demo is not None and session.state.phase in {"head_start", "active"}
+                else 1
+            )
+            for _ in range(steps):
+                if session.state.phase in {"ended", "lobby", "paused"}:
+                    break
+                session.tick()
+                if session.demo is not None:
+                    BotDriver.step(session)
+                self._refresh_qr(session)
 
     def _advance_sample(self, session: GameSession) -> None:
+        if session.demo is not None and session.demo.lobby_hold:
+            return
         delay = session.sample_start_after_s
         if delay is None:
             return
