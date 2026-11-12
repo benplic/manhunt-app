@@ -32,6 +32,10 @@ Each item is open until the acceptance line is true. Human items stay open until
 
 - **5.6 TestFlight (human).** `.github/workflows/testflight.yml` archives with manual signing and uploads with `xcrun altool` when the `prod` environment has `BUILD_CERTIFICATE_BASE64`, `BUILD_PROVISION_PROFILE_BASE64`, `P12_PASSWORD`, `APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`, and `APP_STORE_CONNECT_API_KEY`. Acceptance: a human with the signing credentials runs that workflow and the build appears in TestFlight. Stays open until that person does it.
 
+### Demo
+
+- **Demo lobby: bots and controls.** Design: [2026-11-12-demo-lobby-design.md](../specs/2026-11-12-demo-lobby-design.md). Acceptance: `PARK42` uses a circle sample arena with `zone_shrink`, safe/no-go/spawn zones, five moving server bots (where seeker bots chase and tag active hiders via `claim_tag`), server-walked `move_me` ignoring phone GPS on the WebSocket, host-only `POST /v1/games/{id}/demo` gated off in `azure`/`prod`, and iOS `DemoPanelView` + `LobbyView` demo card verified by server `pytest` and iOS `DemoControlsTests`.
+
 ## How to close an item
 
 1. Read the roadmap bullet and the acceptance line above.
