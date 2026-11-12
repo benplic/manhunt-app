@@ -53,9 +53,11 @@ final class AppStore {
     var decoyPicking = false
     var tool: ArenaTool = .playArea
     var draftBoundary: [VisualPoint] = []
+    var draftBoundaryCircle: CircleBoundary?
     var draftZones: [VisualZone] = []
     var draftPending: [VisualPoint] = []
     var draftCircleCenter: VisualPoint?
+    var draftCrosshair: VisualPoint?
     var draftHighlightedEdge: (VisualPoint, VisualPoint)?
     var editorHomeCoordinate: CLLocationCoordinate2D?
     /// Incremented once so HuntMap reframes after the permission sheet, not on every GPS tick.
@@ -323,6 +325,7 @@ final class AppStore {
         editor.issues.map { issue in
             switch issue {
             case .playAreaTooSmall: return "Play area needs at least three points."
+            case .playAreaRadiusInvalid: return "Play area radius must be between 30 m and 2,000 m."
             case let .selfIntersection(name): return "\(name) crosses itself."
             case let .outsidePlayArea(name): return "\(name) leaves the play area."
             }
@@ -805,6 +808,7 @@ final class AppStore {
             )
         } else if let sample = SamplePark.arenas.first(where: { $0.id == id }) {
             draftBoundary = sample.boundary
+            draftBoundaryCircle = sample.boundaryCircle
             draftZones = sample.zones
         }
         screen = .arenaEditor
@@ -813,6 +817,8 @@ final class AppStore {
     func beginNewArena() {
         arenaID = "new"
         editor = ArenaEditorModel()
+        tool = .playArea
+        draftCrosshair = nil
         draftBoundary = []
         draftZones = []
         refreshDraftsFromEditor()
@@ -853,6 +859,7 @@ final class AppStore {
     }
 
     func updateEditorCrosshair(_ point: VisualPoint) {
+        draftCrosshair = point
         let geo = GeoPoint(latitude: point.latitude, longitude: point.longitude)
         if let edge = editor.previewEdge(near: geo) {
             draftHighlightedEdge = (
@@ -862,6 +869,11 @@ final class AppStore {
         } else {
             draftHighlightedEdge = nil
         }
+    }
+
+    func clearPlayArea() {
+        editor.clearPlayArea()
+        refreshDraftsFromEditor()
     }
 
     func drop(at point: VisualPoint) {
@@ -977,6 +989,8 @@ final class AppStore {
             return "An arena can have at most 30 zones."
         case "play_area_too_small":
             return "Play area needs at least three points."
+        case "play_area_radius_invalid":
+            return "Play area radius must be between 30 m and 2,000 m."
         default:
             return error.message
         }
@@ -1395,7 +1409,14 @@ final class AppStore {
 
     private func loadEditor(from arena: Arena) {
         editor = ArenaEditorModel()
-        editor.load(name: arena.name, boundary: arena.boundary, zones: arena.zones)
+        editor.load(
+            name: arena.name,
+            boundary: arena.boundary,
+            zones: arena.zones,
+            boundaryCircle: arena.boundaryCircle
+        )
+        tool = arena.boundaryCircle != nil ? .playCircle : .playArea
+        editor.tool = editorTool(from: tool)
         refreshDraftsFromEditor()
     }
 
@@ -1403,6 +1424,7 @@ final class AppStore {
         draftBoundary = editor.boundary.vertices.map {
             VisualPoint(latitude: $0.latitude, longitude: $0.longitude)
         }
+        draftBoundaryCircle = editor.boundaryCircle
         draftZones = editor.zones.map { $0.asVisual() }
         draftPending = editor.pendingVertices.map {
             VisualPoint(latitude: $0.latitude, longitude: $0.longitude)
@@ -1423,6 +1445,7 @@ final class AppStore {
     private func issueCopy(_ issue: ArenaIssue) -> String {
         switch issue {
         case .playAreaTooSmall: return "Play area needs at least three points."
+        case .playAreaRadiusInvalid: return "Play area radius must be between 30 m and 2,000 m."
         case let .selfIntersection(name): return "\(name) crosses itself."
         case let .outsidePlayArea(name): return "\(name) leaves the play area."
         }
@@ -1431,6 +1454,7 @@ final class AppStore {
     private func editorTool(from tool: ArenaTool) -> EditorTool {
         switch tool {
         case .playArea: return .playArea
+        case .playCircle: return .playCircle
         case .safe: return .safeCircle
         case .outOfBounds: return .outOfBounds
         case .spawn: return .seekerSpawn
@@ -1440,6 +1464,7 @@ final class AppStore {
     private func arenaTool(from tool: EditorTool) -> ArenaTool {
         switch tool {
         case .playArea: return .playArea
+        case .playCircle: return .playCircle
         case .safeCircle: return .safe
         case .outOfBounds: return .outOfBounds
         case .seekerSpawn: return .spawn

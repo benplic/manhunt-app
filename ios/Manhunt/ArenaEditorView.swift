@@ -8,6 +8,7 @@ struct ArenaEditorView: View {
     var body: some View {
         @Bindable var store = store
         @Bindable var editor = store.editor
+        let livePreviewRadius = previewCircleRadiusMeters
         return VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -29,12 +30,36 @@ struct ArenaEditorView: View {
                             .foregroundStyle(HuntColor.muted)
                     }
                 }
-                Picker("Tool", selection: $store.tool) {
-                    ForEach(ArenaTool.allCases) { tool in
-                        Text(tool.rawValue).tag(tool)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(ArenaTool.allCases) { tool in
+                            let selected = store.tool == tool
+                            Button {
+                                store.tool = tool
+                                store.editor.tool = editorTool(from: tool)
+                                store.editor.notice = nil
+                                store.draftCircleCenter = store.editor.pendingCircleCenterForMap.map {
+                                    VisualPoint(latitude: $0.latitude, longitude: $0.longitude)
+                                }
+                            } label: {
+                                Label(tool.rawValue, systemImage: tool.symbolName)
+                                    .font(.caption.weight(.semibold))
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        selected ? HuntColor.signal : HuntColor.inkRaised,
+                                        in: Capsule()
+                                    )
+                                    .overlay(
+                                        Capsule().stroke(selected ? HuntColor.signal : HuntColor.line, lineWidth: 1)
+                                    )
+                                    .foregroundStyle(selected ? HuntColor.ink : HuntColor.paper)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("tool-\(tool.rawValue)")
+                        }
                     }
                 }
-                .pickerStyle(.segmented)
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)
@@ -42,6 +67,7 @@ struct ArenaEditorView: View {
 
             HuntMap(
                 boundary: store.draftBoundary,
+                boundaryCircle: store.draftBoundaryCircle,
                 zones: store.draftZones,
                 people: [],
                 showHiders: false,
@@ -50,6 +76,7 @@ struct ArenaEditorView: View {
                 region: editorRegion,
                 pendingVertices: store.draftPending,
                 pendingCircleCenter: store.draftCircleCenter,
+                pendingCircleRadiusMeters: livePreviewRadius,
                 highlightedEdge: store.draftHighlightedEdge,
                 homeCoordinate: store.editorHomeCoordinate,
                 frameID: store.editorFrameID,
@@ -67,6 +94,17 @@ struct ArenaEditorView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Layers")
                 .padding(12)
+            }
+            .overlay(alignment: .topLeading) {
+                if let radius = livePreviewRadius, store.tool == .playCircle {
+                    Text("Radius: \(Int(radius.rounded())) m")
+                        .font(.caption.weight(.bold).monospacedDigit())
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.black.opacity(0.75), in: Capsule())
+                        .foregroundStyle(HuntColor.paper)
+                        .padding(12)
+                }
             }
             .clipShape(RoundedRectangle(cornerRadius: 0))
 
@@ -88,6 +126,11 @@ struct ArenaEditorView: View {
                     legend(HuntColor.warning, "Out")
                     legend(HuntColor.seeker, "Spawn")
                     Spacer()
+                    if !store.draftBoundary.isEmpty || store.draftBoundaryCircle != nil || store.editor.hasPendingPlayCircleCenter {
+                        Button("Clear play area", action: store.clearPlayArea)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(HuntColor.warning)
+                    }
                     Button("Undo", action: store.undoDrop)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(HuntColor.signal)
@@ -102,13 +145,21 @@ struct ArenaEditorView: View {
             .background(HuntColor.ink)
         }
         .background(HuntColor.ink)
-        .onChange(of: store.tool) { _, _ in
-            store.editor.notice = nil
-        }
         .sheet(isPresented: $showLayers) {
             ZoneLayersSheet { showLayers = false }
                 .presentationDetents([.medium, .large])
         }
+    }
+
+    private var previewCircleRadiusMeters: Double? {
+        guard store.tool == .playCircle,
+              store.editor.hasPendingPlayCircleCenter,
+              let center = store.draftCircleCenter,
+              let crosshair = store.draftCrosshair else { return nil }
+        return ArenaGeometry.meters(
+            from: GeoPoint(latitude: center.latitude, longitude: center.longitude),
+            to: GeoPoint(latitude: crosshair.latitude, longitude: crosshair.longitude)
+        )
     }
 
     private var editorRegion: MKCoordinateRegion {
@@ -123,6 +174,15 @@ struct ArenaEditorView: View {
     }
 
     private var statusLine: String {
+        if store.tool == .playCircle && store.editor.hasPendingPlayCircleCenter {
+            return "Center set. Pan outward and drop a point to set the radius."
+        }
+        if store.tool == .playCircle, let circle = store.draftBoundaryCircle {
+            return "Circle play area (\(Int(circle.radiusMeters.rounded())) m radius). Drop to redraw, or clear to switch to polygon."
+        }
+        if store.tool == .playCircle {
+            return "Drop the center of your circle play area."
+        }
         if store.editor.hasPendingSafeCenter {
             return "Safe center set. Drop a second point to set the radius."
         }
@@ -134,6 +194,9 @@ struct ArenaEditorView: View {
         }
         if pendingZonePointsCount == 2 {
             return "Line set. The next point closes the shape."
+        }
+        if store.tool == .playArea && store.draftBoundaryCircle != nil {
+            return "This arena uses a circle play area. Clear it first to draw a polygon."
         }
         if store.tool == .playArea && store.draftBoundary.count == 1 {
             return "First point set. Drop the other end of the line."
@@ -166,7 +229,7 @@ struct ArenaEditorView: View {
 
     @ViewBuilder
     private var vertexTools: some View {
-        if store.tool == .playArea && store.editor.boundary.vertices.count >= 3 {
+        if store.tool == .playArea && store.editor.boundaryCircle == nil && store.editor.boundary.vertices.count >= 3 {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(store.editor.boundary.vertices.indices, id: \.self) { index in
@@ -200,6 +263,16 @@ struct ArenaEditorView: View {
         HStack(spacing: 4) {
             Circle().fill(color).frame(width: 8, height: 8)
             Text(title).font(.caption).foregroundStyle(HuntColor.muted)
+        }
+    }
+
+    private func editorTool(from tool: ArenaTool) -> EditorTool {
+        switch tool {
+        case .playArea: .playArea
+        case .playCircle: .playCircle
+        case .safe: .safeCircle
+        case .outOfBounds: .outOfBounds
+        case .spawn: .seekerSpawn
         }
     }
 }

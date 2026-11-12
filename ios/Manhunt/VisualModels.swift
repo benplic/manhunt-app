@@ -82,12 +82,23 @@ struct VisualPlayer: Identifiable, Hashable {
 }
 
 enum ArenaTool: String, CaseIterable, Identifiable {
-    case playArea = "Play area"
+    case playArea = "Polygon"
+    case playCircle = "Circle"
     case safe = "Safe"
     case outOfBounds = "Out"
     case spawn = "Spawn"
 
     var id: String { rawValue }
+
+    var symbolName: String {
+        switch self {
+        case .playArea: "pentagon"
+        case .playCircle: "circle.dashed"
+        case .safe: "shield"
+        case .outOfBounds: "nosign"
+        case .spawn: "flag"
+        }
+    }
 }
 
 enum LiveSituation: String, CaseIterable, Identifiable {

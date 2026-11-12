@@ -23,6 +23,7 @@ struct LiveGameView: View {
         return ZStack(alignment: .top) {
             HuntMap(
                 boundary: store.mapArena.boundary,
+                boundaryCircle: store.mapArena.boundaryCircle,
                 zones: zones,
                 people: store.livePeople,
                 showHiders: true,

@@ -233,5 +233,6 @@ extension ArenaZone {
 enum ArenaIssue: Equatable {
     case selfIntersection(String)
     case playAreaTooSmall
+    case playAreaRadiusInvalid
     case outsidePlayArea(String)
 }

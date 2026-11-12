@@ -178,4 +178,78 @@ final class LiveHudAndPresetsTests: XCTestCase {
             "15 min · 0:30 head start · 0:40 pings · Zone shrinks"
         )
     }
+
+    func testCircleRingMatchesServerGoldenVertices() {
+        let center = GeoPoint(latitude: 40.6616, longitude: -73.9688)
+        let ring = ArenaEditorModel.circleRing(center: center, radiusMeters: 200.0)
+        XCTAssertEqual(ring.count, 64)
+        XCTAssertEqual(ring[0].latitude, 40.663396622350, accuracy: 1e-10)
+        XCTAssertEqual(ring[0].longitude, -73.968800000000, accuracy: 1e-10)
+        XCTAssertEqual(ring[16].latitude, 40.661600000000, accuracy: 1e-10)
+        XCTAssertEqual(ring[16].longitude, -73.966431570597, accuracy: 1e-10)
+        XCTAssertEqual(ring[32].latitude, 40.659803377650, accuracy: 1e-10)
+        XCTAssertEqual(ring[32].longitude, -73.968800000000, accuracy: 1e-10)
+        XCTAssertEqual(ring[48].latitude, 40.661600000000, accuracy: 1e-10)
+        XCTAssertEqual(ring[48].longitude, -73.971168429403, accuracy: 1e-10)
+    }
+
+    func testCirclePlayAreaToolSetsBoundaryRefusesPolygonDropAndClearsWithUndo() {
+        let editor = ArenaEditorModel()
+        editor.tool = .playCircle
+        let center = Fixtures.meters(x: 200, y: 200)
+        let edge = Fixtures.meters(x: 200, y: 400)
+        editor.addMapPoint(center)
+        XCTAssertTrue(editor.hasPendingPlayCircleCenter)
+        XCTAssertNil(editor.boundaryCircle)
+
+        editor.addMapPoint(edge)
+        XCTAssertFalse(editor.hasPendingPlayCircleCenter)
+        XCTAssertEqual(editor.boundary.vertices.count, 64)
+        XCTAssertEqual(editor.boundaryCircle?.center, center)
+        XCTAssertEqual(editor.boundaryCircle?.radiusMeters ?? 0, 200, accuracy: 0.5)
+        XCTAssertTrue(editor.issues.isEmpty)
+
+        // Switching to polygon and dropping must NOT silently convert or mutate the circle.
+        editor.tool = .playArea
+        editor.addMapPoint(Fixtures.meters(x: 300, y: 300))
+        XCTAssertNotNil(editor.boundaryCircle)
+        XCTAssertEqual(editor.boundary.vertices.count, 64)
+        XCTAssertNotNil(editor.notice)
+
+        // Clear and undo.
+        editor.clearPlayArea()
+        XCTAssertNil(editor.boundaryCircle)
+        XCTAssertTrue(editor.boundary.vertices.isEmpty)
+        editor.undo()
+        XCTAssertNotNil(editor.boundaryCircle)
+        XCTAssertEqual(editor.boundary.vertices.count, 64)
+
+        // Out-of-range circle radius fails validation.
+        let small = ArenaEditorModel()
+        small.tool = .playCircle
+        small.addMapPoint(Fixtures.meters(x: 0, y: 0))
+        small.addMapPoint(Fixtures.meters(x: 0, y: 10))
+        XCTAssertTrue(small.issues.contains(.playAreaRadiusInvalid))
+    }
+
+    @MainActor
+    func testAppStoreMapsPlayCircleToolAndSavesBoundaryCircle() async {
+        let fake = FakeGameService(arenas: [])
+        let store = AppStore(service: fake)
+        store.beginNewArena()
+        store.editor.name = "Circle Meadow"
+        store.tool = .playCircle
+        store.drop(at: VisualPoint(latitude: 40.6616, longitude: -73.9688))
+        XCTAssertNotNil(store.draftCircleCenter)
+        store.drop(at: VisualPoint(latitude: 40.6634, longitude: -73.9688))
+        XCTAssertNotNil(store.draftBoundaryCircle)
+        XCTAssertEqual(store.draftBoundary.count, 64)
+        store.saveArena()
+        let deadline = Date().addingTimeInterval(3)
+        while fake.storedArenas.isEmpty && Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+        XCTAssertNotNil(fake.storedArenas.last?.boundaryCircle)
+        XCTAssertEqual(fake.storedArenas.last?.boundary.vertices.count, 64)
+    }
 }

@@ -4,6 +4,7 @@ import SwiftUI
 /// Shared map chrome for the live game and the arena editor.
 struct HuntMap: View {
     var boundary: [VisualPoint]
+    var boundaryCircle: CircleBoundary? = nil
     var zones: [VisualZone]
     var people: [VisualPlayer]
     var showHiders: Bool
@@ -12,6 +13,7 @@ struct HuntMap: View {
     var region: MKCoordinateRegion
     var pendingVertices: [VisualPoint] = []
     var pendingCircleCenter: VisualPoint? = nil
+    var pendingCircleRadiusMeters: Double? = nil
     var highlightedEdge: (VisualPoint, VisualPoint)? = nil
     var homeCoordinate: CLLocationCoordinate2D? = nil
     /// Bumped once after the location sheet is answered so the camera leaves the fallback.
@@ -25,7 +27,17 @@ struct HuntMap: View {
 
     var body: some View {
         Map(position: $position) {
-                if boundary.count >= 3 {
+                if let circle = boundaryCircle {
+                    MapCircle(
+                        center: CLLocationCoordinate2D(
+                            latitude: circle.center.latitude,
+                            longitude: circle.center.longitude
+                        ),
+                        radius: circle.radiusMeters
+                    )
+                    .foregroundStyle(HuntColor.signal.opacity(0.18))
+                    .stroke(HuntColor.signal, lineWidth: 2)
+                } else if boundary.count >= 3 {
                     MapPolygon(coordinates: boundary.map(\.coordinate))
                         .foregroundStyle(HuntColor.signal.opacity(0.18))
                         .stroke(HuntColor.signal, lineWidth: 2)
@@ -46,6 +58,11 @@ struct HuntMap: View {
                     }
                 }
                 if let center = pendingCircleCenter {
+                    if let radius = pendingCircleRadiusMeters, radius > 1 {
+                        MapCircle(center: center.coordinate, radius: radius)
+                            .foregroundStyle(HuntColor.signal.opacity(0.1))
+                            .stroke(HuntColor.paper, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                    }
                     Annotation("Center", coordinate: center.coordinate) {
                         Circle()
                             .stroke(HuntColor.safe, lineWidth: 3)
