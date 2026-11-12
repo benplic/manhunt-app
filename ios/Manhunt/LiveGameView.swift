@@ -45,10 +45,6 @@ struct LiveGameView: View {
                         .tracking(1.4)
                     Text("Seekers wait here.")
                         .font(HuntFont.title(28))
-                    if let remaining = store.match?.snapshot.phaseRemainingS {
-                        Text("Hiders still have \(clock(remaining)).")
-                            .foregroundStyle(HuntColor.muted)
-                    }
                 }
                 .foregroundStyle(HuntColor.paper)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -221,7 +217,14 @@ struct LiveGameView: View {
                 }
                 Spacer()
             }
-            if !youAreHider && store.situation != .headStart {
+            switch DockChrome.state(
+                phase: store.match?.snapshot.phase ?? .active,
+                role: store.viewingRole,
+                remainingS: store.match?.snapshot.phaseRemainingS
+            ) {
+            case let .headStartWaiting(title, subtitle):
+                waitingCard(title: title, subtitle: subtitle)
+            case .activeTagging:
                 if store.match?.snapshot.tagMethod == "uwb" {
                     uwbTags
                 }
@@ -232,8 +235,7 @@ struct LiveGameView: View {
                         .font(.caption)
                         .foregroundStyle(HuntColor.warning)
                 }
-            }
-            if youAreHider {
+            case .activeHider:
                 if store.match?.snapshot.phase == .active {
                     let wait = store.match?.snapshot.you.tauntCooldownS ?? 0
                     Button(action: store.taunt) {
@@ -291,6 +293,27 @@ struct LiveGameView: View {
         .padding(14)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .colorScheme(.dark)
+    }
+
+    private func waitingCard(title: String, subtitle: String) -> some View {
+        VStack(spacing: 4) {
+            Text(title)
+                .font(.headline.weight(.bold))
+                .foregroundStyle(HuntColor.paper)
+            Text(subtitle)
+                .font(.subheadline.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(HuntColor.muted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .padding(.horizontal, 12)
+        .background(HuntColor.ink.opacity(0.65), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(HuntColor.line, lineWidth: 1)
+        )
+        .accessibilityIdentifier("head-start-waiting")
     }
 
     private var scanTagButton: some View {

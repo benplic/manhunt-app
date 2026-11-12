@@ -341,4 +341,21 @@ final class LiveHudAndPresetsTests: XCTestCase {
         store.clearExpiredLiveUpdate(now: t0.addingTimeInterval(12.5))
         XCTAssertNil(store.liveUpdate)
     }
+
+    func testDockChromeShowsWaitingCardDuringHeadStartEvenWhenOutOfBounds() {
+        let seekerWaiting = DockChrome.state(phase: .headStart, role: .seeker, remainingS: 124)
+        XCTAssertEqual(
+            seekerWaiting,
+            .headStartWaiting(title: "Hiders are hiding", subtitle: "You're out in 2:04")
+        )
+
+        let hiderWaiting = DockChrome.state(phase: .headStart, role: .hider, remainingS: 45)
+        XCTAssertEqual(
+            hiderWaiting,
+            .headStartWaiting(title: "Hide!", subtitle: "Seekers are released in 0:45")
+        )
+
+        XCTAssertEqual(DockChrome.state(phase: .active, role: .seeker, remainingS: nil), .activeTagging)
+        XCTAssertEqual(DockChrome.state(phase: .active, role: .hider, remainingS: nil), .activeHider)
+    }
 }
