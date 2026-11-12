@@ -18,8 +18,18 @@ from app.db.models import (
     GameRow,
     User,
 )
-from app.engine.arena import Arena, arena_from_dict, arena_to_dict, validate_arena
-from app.engine.geo import GeoPoint
+from app.engine.arena import (
+    PLAY_CIRCLE_STEPS,
+    Arena,
+    ArenaZone,
+    CircleShape,
+    PolygonShape,
+    ZoneKind,
+    arena_from_dict,
+    arena_to_dict,
+    validate_arena,
+)
+from app.engine.geo import GeoPoint, circle_sample_ring, offset_m
 from app.engine.modules.base import TagClaim
 from app.engine.qr import parse_qr_token
 from app.engine.recovery import rebuild_session
@@ -43,17 +53,45 @@ _SAMPLE_BOTS = (
 
 
 def _sample_arena() -> dict:
-    # Same outline as the phone's Riverside Green sample, so PARK42 is a park
-    # both phones can stand in, not a square at latitude 0.
+    # Circle centered on Riverside Green in Prospect Park so PARK42 exercises
+    # zone shrink, spawn lock, safe zones, and OOB hazards without needing a phone at the park.
+    center = GeoPoint(lat=40.6617, lon=-73.9690)
+    radius_m = 210.0
+    spawn = [
+        offset_m(center, -7, -18),
+        offset_m(center, -7, 18),
+        offset_m(center, -43, 18),
+        offset_m(center, -43, -18),
+    ]
+    pond = [
+        offset_m(center, 22, 113),
+        offset_m(center, 22, 147),
+        offset_m(center, -22, 147),
+        offset_m(center, -22, 113),
+    ]
     arena = Arena(
         name="Sample park",
-        boundary=[
-            GeoPoint(lat=40.66355, lon=-73.96995),
-            GeoPoint(lat=40.66320, lon=-73.96785),
-            GeoPoint(lat=40.66155, lon=-73.96735),
-            GeoPoint(lat=40.66025, lon=-73.96835),
-            GeoPoint(lat=40.66015, lon=-73.97015),
-            GeoPoint(lat=40.66185, lon=-73.97075),
+        boundary=circle_sample_ring(center, radius_m, steps=PLAY_CIRCLE_STEPS),
+        boundary_circle=CircleShape(center=center, radius_m=radius_m),
+        zones=[
+            ArenaZone(
+                id=UUID("00000000-0000-0000-0000-00000000d001"),
+                name="Seeker Base",
+                kind=ZoneKind.SEEKER_SPAWN,
+                shape=PolygonShape(vertices=spawn),
+            ),
+            ArenaZone(
+                id=UUID("00000000-0000-0000-0000-00000000d002"),
+                name="North Pavilion",
+                kind=ZoneKind.SAFE,
+                shape=CircleShape(center=offset_m(center, 65, -25), radius_m=24.0),
+            ),
+            ArenaZone(
+                id=UUID("00000000-0000-0000-0000-00000000d003"),
+                name="East Pond",
+                kind=ZoneKind.OUT_OF_BOUNDS,
+                shape=PolygonShape(vertices=pond),
+            ),
         ],
     )
     return arena_to_dict(arena)
@@ -529,7 +567,17 @@ class GameService:
         """PARK42: the host, five stable bots, classic rules, start after 30 lobby seconds."""
         bots = await self._sample_bots(session)
         seed = random.SystemRandom().randint(1, 2**31 - 1)
-        preset = classic_preset()
+        preset = classic_preset(
+            {
+                "head_start": {"enabled": True, "duration": 60, "seeker_lock": "spawn_zone"},
+                "zone_shrink": {
+                    "enabled": True,
+                    "every": 1,
+                    "shrink_to": 75,
+                    "min_radius_m": 60,
+                },
+            }
+        )
         row = GameRow(
             id=uuid4(),
             join_code=SAMPLE_CODE,
