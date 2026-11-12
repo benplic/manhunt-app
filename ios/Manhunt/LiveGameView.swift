@@ -154,7 +154,7 @@ struct LiveGameView: View {
 
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 mapChip("Home", action: store.goHome)
                     .accessibilityLabel("Home")
                 mapChip("Leaderboard") { showBoard = true }
@@ -162,29 +162,24 @@ struct LiveGameView: View {
                     showLog = true
                     Task { await store.loadTimeline() }
                 }
+                RolePill(role: store.viewingRole)
                 Spacer(minLength: 0)
-            }
-            HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text(store.paused ? "Paused" : store.situation.rawValue)
-                    .font(.headline)
-                Text(store.viewingRole == .hider ? "You are hiding" : "You are seeking")
-                    .font(.caption)
-                    .foregroundStyle(HuntColor.muted)
-            }
-            Spacer()
-            if store.isHost {
-                Button {
-                    showHost = true
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .frame(width: 40, height: 40)
-                        .background(.black.opacity(0.55), in: Circle())
+                if store.isHost {
+                    Button {
+                        showHost = true
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .frame(width: 36, height: 36)
+                            .background(.black.opacity(0.55), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Host controls")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Host controls")
             }
-            }
+            LiveHUD(
+                clock: PhaseClock(snapshot: store.match?.snapshot, paused: store.paused),
+                situation: store.situation
+            )
         }
         .foregroundStyle(HuntColor.paper)
     }
@@ -192,10 +187,11 @@ struct LiveGameView: View {
     private func mapChip(_ title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.caption.weight(.bold))
+                .font(.caption2.weight(.bold))
                 .lineLimit(1)
-                .padding(.horizontal, 10)
-                .frame(height: 36)
+                .minimumScaleFactor(0.85)
+                .padding(.horizontal, 8)
+                .frame(height: 32)
                 .background(.black.opacity(0.55), in: Capsule())
         }
         .buttonStyle(.plain)

@@ -252,4 +252,67 @@ final class LiveHudAndPresetsTests: XCTestCase {
         XCTAssertNotNil(fake.storedArenas.last?.boundaryCircle)
         XCTAssertEqual(fake.storedArenas.last?.boundary.vertices.count, 64)
     }
+
+    func testPhaseClockProgressHeadStartActiveAndDistances() {
+        let hsView = PlayerViewDTO(
+            gameId: UUID(),
+            joinCode: "TACO42",
+            phase: .headStart,
+            phaseRemainingS: 45,
+            gameElapsedS: 15,
+            timeLimitRemainingS: 1785,
+            timers: TimersDTO(
+                headStartS: 60,
+                timeLimitS: 1800,
+                revealIntervalS: 60,
+                nextRevealInS: 45,
+                zone: ZoneTimerDTO(radiusM: 420, nextRadiusM: 315, shrinksInS: 345)
+            ),
+            you: YouDTO(
+                playerId: UUID(),
+                role: .seeker,
+                status: .active,
+                isHost: true,
+                bounds: BoundsDTO(phase: "inside", remainingS: nil),
+                safeZone: nil,
+                points: 100
+            ),
+            players: [],
+            reveals: [],
+            banners: [],
+            result: nil
+        )
+        let usClock = PhaseClock(snapshot: hsView, paused: false, locale: Locale(identifier: "en_US"))
+        XCTAssertEqual(usClock.primaryLabel, "Head start")
+        XCTAssertEqual(usClock.primaryClock, "0:45")
+        XCTAssertEqual(usClock.primaryProgress, 0.25, accuracy: 0.001)
+        XCTAssertEqual(usClock.pingClock, "0:45")
+        XCTAssertEqual(usClock.pingProgress, 0.25, accuracy: 0.001)
+        XCTAssertEqual(usClock.zoneLine, "Zone 0.26 mi · shrinks in 5:45")
+
+        let metricClock = PhaseClock(snapshot: hsView, paused: false, locale: Locale(identifier: "en_GB"))
+        XCTAssertEqual(metricClock.zoneLine, "Zone 420 m · shrinks in 5:45")
+
+        var activeView = hsView
+        activeView.phase = .active
+        activeView.phaseRemainingS = nil
+        activeView.timeLimitRemainingS = 900
+        activeView.timers = TimersDTO(
+            headStartS: 60,
+            timeLimitS: 1800,
+            revealIntervalS: 60,
+            nextRevealInS: 12,
+            zone: ZoneTimerDTO(radiusM: 310, nextRadiusM: 259, shrinksInS: 42)
+        )
+        let activeUS = PhaseClock(snapshot: activeView, paused: false, locale: Locale(identifier: "en_US"))
+        XCTAssertEqual(activeUS.primaryLabel, "Time left")
+        XCTAssertEqual(activeUS.primaryClock, "15:00")
+        XCTAssertEqual(activeUS.primaryProgress, 0.5, accuracy: 0.001)
+        XCTAssertEqual(activeUS.pingClock, "0:12")
+        XCTAssertEqual(activeUS.pingProgress, 0.8, accuracy: 0.001)
+        XCTAssertEqual(activeUS.zoneLine, "Zone 0.19 mi → 850 ft in 0:42")
+
+        let pausedClock = PhaseClock(snapshot: activeView, paused: true, locale: Locale(identifier: "en_US"))
+        XCTAssertEqual(pausedClock.primaryLabel, "Paused")
+    }
 }
