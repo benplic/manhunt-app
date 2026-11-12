@@ -91,17 +91,15 @@ struct LiveGameView: View {
                     .background(.black.opacity(0.72), in: Capsule())
                     .foregroundStyle(HuntColor.paper)
                 } else if HeadStartChrome.showsFloatingNotice(chrome),
+                          let update = store.liveUpdate {
+                    LiveUpdatePill(triggerKey: update.id.uuidString, text: update.text, tone: update.tone)
+                } else if HeadStartChrome.showsFloatingNotice(chrome),
                           store.match?.snapshot.banners.isEmpty != false,
                           store.situation != .reconnecting,
                           store.situation != .outOfBounds,
                           !store.paused,
                           let note = store.note {
-                    Text(note)
-                        .font(.footnote.weight(.semibold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(.black.opacity(0.72), in: Capsule())
-                        .foregroundStyle(HuntColor.paper)
+                    LiveUpdatePill(triggerKey: "note:\(note)", text: note, tone: "info")
                 }
                 Spacer()
             }

@@ -32,6 +32,13 @@ struct MatchHandle {
     var qrToken: String?
 }
 
+struct LiveUpdate: Equatable {
+    var id: UUID
+    var text: String
+    var tone: String
+    var receivedAt: Date
+}
+
 @MainActor
 @Observable
 final class AppStore {
@@ -72,9 +79,11 @@ final class AppStore {
     var locationAccuracy: LocationReporter.Accuracy = .notDetermined
     var pasteToken = ""
     var tagMessage: String?
+    var liveUpdate: LiveUpdate?
     var timeline: [TimelineEventDTO] = []
     var uwbPeers: [UWBPeer] = []
     var uwbDistance: [UUID: Double] = [:]
+    private var liveUpdateExpiryTask: Task<Void, Never>?
     private var presetReturn: AppScreen = .home
     private var sentLowBattery = false
     private var lastSentLocation: CLLocation?
@@ -141,12 +150,9 @@ final class AppStore {
         live?.onEvent = { [weak self] banner in
             Task { @MainActor in
                 guard let self else { return }
-                // The locked map already says to wait. Keeping this line makes it
-                // pop up again when head start ends.
-                if banner.title == "started" { return }
                 // A toast from a hunt that already ended must not land on Home.
                 guard self.match != nil, self.screen == .live || self.screen == .lobby else { return }
-                self.note = banner.detail
+                self.recordLiveEvent(banner)
             }
         }
         live?.onReconnect = { [weak self] reconnecting in
@@ -398,6 +404,34 @@ final class AppStore {
         sendFix(from: fix, isFinal: true)
     }
 
+    func recordLiveEvent(_ banner: BannerDTO, now: Date = Date()) {
+        let ignored: Set<String> = ["started", "player_joined", "location"]
+        let trimmed = banner.detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ignored.contains(banner.title), !trimmed.isEmpty else { return }
+        let update = LiveUpdate(
+            id: banner.bannerId,
+            text: trimmed,
+            tone: banner.tone,
+            receivedAt: now
+        )
+        liveUpdate = update
+        liveUpdateExpiryTask?.cancel()
+        liveUpdateExpiryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(12))
+            guard !Task.isCancelled, let self else { return }
+            if self.liveUpdate?.id == update.id {
+                self.liveUpdate = nil
+            }
+        }
+    }
+
+    func clearExpiredLiveUpdate(now: Date = Date()) {
+        guard let liveUpdate else { return }
+        if now.timeIntervalSince(liveUpdate.receivedAt) >= 12 {
+            self.liveUpdate = nil
+        }
+    }
+
     func signOut() {
         stopUWB()
         live?.disconnect()
@@ -410,6 +444,8 @@ final class AppStore {
         joinDraft = ""
         joinMessage = nil
         note = nil
+        liveUpdate = nil
+        liveUpdateExpiryTask?.cancel()
     }
 
     /// Leave the current lobby/hunt (POST /leave) then return home.
@@ -425,6 +461,8 @@ final class AppStore {
         match = nil
         screen = .home
         note = nil
+        liveUpdate = nil
+        liveUpdateExpiryTask?.cancel()
         guard let gameID else { return }
         Task {
             try? await service.leave(gameID: gameID)
@@ -1244,6 +1282,8 @@ final class AppStore {
             location.stop()
             live?.disconnect()
             note = nil
+            liveUpdate = nil
+            liveUpdateExpiryTask?.cancel()
             screen = .results
             Task { await loadTimeline() }
         case .headStart:

@@ -315,4 +315,30 @@ final class LiveHudAndPresetsTests: XCTestCase {
         let pausedClock = PhaseClock(snapshot: activeView, paused: true, locale: Locale(identifier: "en_US"))
         XCTAssertEqual(pausedClock.primaryLabel, "Paused")
     }
+
+    @MainActor
+    func testLiveUpdateFiltersNoiseAndExpiresAfterTwelveSeconds() {
+        let store = AppStore.makePreview()
+        let t0 = Date(timeIntervalSince1970: 1_000)
+
+        store.recordLiveEvent(BannerDTO(bannerId: UUID(), tone: "info", title: "started", detail: "The hunt is on.", playerId: nil), now: t0)
+        store.recordLiveEvent(BannerDTO(bannerId: UUID(), tone: "info", title: "player_joined", detail: "Riley joined.", playerId: nil), now: t0)
+        store.recordLiveEvent(BannerDTO(bannerId: UUID(), tone: "info", title: "location", detail: "", playerId: nil), now: t0)
+        XCTAssertNil(store.liveUpdate)
+
+        let warnID = UUID()
+        store.recordLiveEvent(
+            BannerDTO(bannerId: warnID, tone: "warning", title: "zone_warning", detail: "Zone shrinks to 250 m in 1 min.", playerId: nil),
+            now: t0
+        )
+        XCTAssertEqual(store.liveUpdate?.id, warnID)
+        XCTAssertEqual(store.liveUpdate?.text, "Zone shrinks to 250 m in 1 min.")
+        XCTAssertEqual(store.liveUpdate?.tone, "warning")
+
+        store.clearExpiredLiveUpdate(now: t0.addingTimeInterval(11))
+        XCTAssertNotNil(store.liveUpdate)
+
+        store.clearExpiredLiveUpdate(now: t0.addingTimeInterval(12.5))
+        XCTAssertNil(store.liveUpdate)
+    }
 }
