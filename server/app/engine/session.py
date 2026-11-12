@@ -45,6 +45,7 @@ class GameSession:
             arena=arena,
             preset=preset,
             seed=seed,
+            initial_radius_m=arena.boundary_circle.radius_m if arena.boundary_circle else None,
         )
         self._pending: list[GameEvent] = []
         self.replaying = False

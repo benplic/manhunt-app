@@ -132,3 +132,5 @@ class GameState:
     # Last uwb_peers payload sent to each socket. In memory only, so a restart
     # makes phones publish discovery tokens again.
     uwb_peer_signature: dict[UUID, tuple[str, ...]] = field(default_factory=dict)
+    initial_radius_m: float | None = None
+    last_zone_warned_step: int = 0

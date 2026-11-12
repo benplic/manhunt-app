@@ -49,6 +49,8 @@ def rebuild_session(
         _apply(session, item)
         last_elapsed = elapsed
     session.replaying = False
+    # TODO: replay only ticks up to the last logged input, so shrink steps without
+    # a subsequent input rely on the next live tick to catch up.
     _ = last_elapsed
     return session
 

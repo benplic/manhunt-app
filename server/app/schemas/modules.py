@@ -130,6 +130,18 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "margin_m": _int("Edge margin", 0, 30, 5, suffix="m"),
         },
     },
+    "zone_shrink": {
+        "version": 1,
+        "title": "Zone shrink",
+        "blurb": "Shrinks a circle play area on a timer. Disabled for polygon arenas.",
+        "field_order": ["enabled", "every", "shrink_to", "min_radius_m"],
+        "fields": {
+            "enabled": _bool("Enabled", False),
+            "every": _int("Every", 1, 30, 5, step=1, suffix="min"),
+            "shrink_to": _int("Keep per shrink", 50, 95, 75, step=5, suffix="%"),
+            "min_radius_m": _int("Minimum radius", 30, 500, 50, step=10, suffix="m"),
+        },
+    },
     "signal_loss": {
         "version": 1,
         "title": "Going dark",

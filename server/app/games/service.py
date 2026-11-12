@@ -99,6 +99,23 @@ class GameService:
                 status_code=422,
                 details={"issues": [i.code for i in issues]},
             )
+        zone_shrink = preset["modules"].get("zone_shrink", {})
+        if bool(zone_shrink.get("enabled", False)):
+            if arena.boundary_circle is None:
+                raise ApiError(
+                    ErrorCode.VALIDATION_FAILED,
+                    "Zone shrink requires a circle play area.",
+                    status_code=422,
+                    details={"field": "zone_shrink.enabled"},
+                )
+            min_r = float(zone_shrink.get("min_radius_m", 50))
+            if arena.boundary_circle.radius_m <= min_r:
+                raise ApiError(
+                    ErrorCode.VALIDATION_FAILED,
+                    "Play area radius must exceed the shrink minimum radius.",
+                    status_code=422,
+                    details={"field": "zone_shrink.min_radius_m"},
+                )
         join_code = await self._unique_code(session)
         seed = random.SystemRandom().randint(1, 2**31 - 1)
         row = GameRow(

@@ -5,6 +5,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from app.engine.arena import ZoneKind, arena_to_dict
+from app.engine.modules.zone_shrink import zone_shrink_schedule
 from app.engine.session import GameSession
 from app.engine.state import PlayerState
 
@@ -186,11 +187,18 @@ def _build_timers(session: GameSession) -> dict:
                 else state.last_reveal_at_s + reveal_interval_s
             )
             next_reveal_in_s = max(0, next_at - state.game_elapsed_s)
+    zone_timer = None
+    if (schedule := zone_shrink_schedule(session)) is not None:
+        zone_timer = {
+            "radius_m": schedule["current_radius_m"],
+            "next_radius_m": schedule["next_radius_m"],
+            "shrinks_in_s": schedule["shrinks_in_s"],
+        }
     return {
         "head_start_s": head_start_s,
         "time_limit_s": time_limit_s,
         "reveal_interval_s": reveal_interval_s,
         "next_reveal_in_s": next_reveal_in_s,
-        "zone": None,
+        "zone": zone_timer,
     }
 
