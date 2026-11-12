@@ -35,6 +35,7 @@ struct VisualArena: Identifiable, Hashable {
     var place: String
     var boundary: [VisualPoint]
     var zones: [VisualZone]
+    var boundaryCircle: CircleBoundary? = nil
 
     var region: MKCoordinateRegion {
         let points = boundary.isEmpty ? [VisualPoint(latitude: 40.6616, longitude: -73.9688)] : boundary

@@ -51,23 +51,43 @@ struct ArenaZone: Identifiable, Hashable, Sendable, Codable {
     var shape: ZoneShape
 }
 
+struct CircleBoundary: Codable, Hashable, Sendable {
+    var center: GeoPoint
+    var radiusMeters: Double
+
+    enum CodingKeys: String, CodingKey {
+        case center
+        case radiusMeters = "radius_m"
+    }
+}
+
 struct Arena: Identifiable, Hashable, Sendable, Codable {
     var id: UUID
     var name: String
     var boundary: Polygon
     var zones: [ArenaZone]
     var version: Int?
+    var boundaryCircle: CircleBoundary?
 
     enum CodingKeys: String, CodingKey {
         case id, name, boundary, zones, version
+        case boundaryCircle = "boundary_circle"
     }
 
-    init(id: UUID, name: String, boundary: Polygon, zones: [ArenaZone], version: Int? = nil) {
+    init(
+        id: UUID,
+        name: String,
+        boundary: Polygon,
+        zones: [ArenaZone],
+        version: Int? = nil,
+        boundaryCircle: CircleBoundary? = nil
+    ) {
         self.id = id
         self.name = name
         self.boundary = boundary
         self.zones = zones
         self.version = version
+        self.boundaryCircle = boundaryCircle
     }
 
     init(from decoder: Decoder) throws {
@@ -82,6 +102,7 @@ struct Arena: Identifiable, Hashable, Sendable, Codable {
         }
         zones = try container.decodeIfPresent([ArenaZone].self, forKey: .zones) ?? []
         version = try container.decodeIfPresent(Int.self, forKey: .version)
+        boundaryCircle = try container.decodeIfPresent(CircleBoundary.self, forKey: .boundaryCircle)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -91,6 +112,7 @@ struct Arena: Identifiable, Hashable, Sendable, Codable {
         try container.encode(boundary.vertices, forKey: .boundary)
         try container.encode(zones, forKey: .zones)
         try container.encodeIfPresent(version, forKey: .version)
+        try container.encodeIfPresent(boundaryCircle, forKey: .boundaryCircle)
     }
 
     /// Equator-flat 200 m square used by tests and the fake service.
@@ -161,7 +183,8 @@ struct Arena: Identifiable, Hashable, Sendable, Codable {
             name: name,
             place: place,
             boundary: boundary.vertices.map { VisualPoint(latitude: $0.latitude, longitude: $0.longitude) },
-            zones: zones.map { $0.asVisual() }
+            zones: zones.map { $0.asVisual() },
+            boundaryCircle: boundaryCircle
         )
     }
 }
