@@ -56,6 +56,7 @@ struct LiveHUD: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+        .fixedSize(horizontal: false, vertical: true)
         .background(.black.opacity(0.76), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)

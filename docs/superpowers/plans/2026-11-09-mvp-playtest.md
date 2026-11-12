@@ -21,5 +21,7 @@ Against the home server, over cellular, confirm:
 - [ ] A seeker out-of-bounds pin visible to hiders
 - [ ] A QR tag
 - [ ] A going-dark alert when a phone is silenced
+- [ ] Flashlight button toggles the device torch on hardware and turns off when leaving or backgrounding
+- [ ] Circle play-area zone shrink updates the boundary on-device and pushes out-of-bounds alerts
 
 Paste the tunnel URL into the app's Server URL field. Keep `caffeinate -dims` running on the Mac.
