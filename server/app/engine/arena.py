@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -15,6 +16,11 @@ from app.engine.geo import (
     polygon_inside_play_area,
     self_intersects,
 )
+
+PLAY_CIRCLE_STEPS = 64
+PLAY_CIRCLE_MIN_M = 30.0
+PLAY_CIRCLE_MAX_M = 2000.0
+
 
 
 class ZoneKind(StrEnum):
@@ -50,6 +56,7 @@ class Arena:
     boundary: list[GeoPoint]
     zones: list[ArenaZone] = field(default_factory=list)
     id: UUID | None = None
+    boundary_circle: CircleShape | None = None
 
 
 @dataclass(frozen=True)
@@ -85,11 +92,30 @@ def arena_from_dict(data: dict[str, Any]) -> Arena:
             )
         )
     arena_id = data.get("id")
+    raw_circle = data.get("boundary_circle")
+    boundary_circle: CircleShape | None = None
+    if isinstance(raw_circle, dict) and "center" in raw_circle and "radius_m" in raw_circle:
+        boundary_circle = CircleShape(
+            center=point_from_dict(raw_circle["center"]),
+            radius_m=float(raw_circle["radius_m"]),
+        )
+    if boundary_circle is not None:
+        if math.isfinite(boundary_circle.radius_m) and boundary_circle.radius_m > 0:
+            boundary = circle_sample_ring(
+                boundary_circle.center,
+                boundary_circle.radius_m,
+                steps=PLAY_CIRCLE_STEPS,
+            )
+        else:
+            boundary = []
+    else:
+        boundary = [point_from_dict(v) for v in data.get("boundary", [])]
     return Arena(
         id=UUID(str(arena_id)) if arena_id else None,
         name=str(data.get("name", "")),
-        boundary=[point_from_dict(v) for v in data.get("boundary", [])],
+        boundary=boundary,
         zones=zones,
+        boundary_circle=boundary_circle,
     )
 
 
@@ -120,6 +146,14 @@ def arena_to_dict(arena: Arena) -> dict[str, Any]:
         "boundary": [{"lat": v.lat, "lon": v.lon} for v in arena.boundary],
         "zones": zones,
     }
+    if arena.boundary_circle is not None:
+        payload["boundary_circle"] = {
+            "center": {
+                "lat": arena.boundary_circle.center.lat,
+                "lon": arena.boundary_circle.center.lon,
+            },
+            "radius_m": arena.boundary_circle.radius_m,
+        }
     if arena.id:
         payload["id"] = str(arena.id)
     return payload
@@ -165,11 +199,28 @@ def clip_arena(arena: Arena) -> Arena:
         name=arena.name,
         boundary=arena.boundary,
         zones=clipped_zones,
+        boundary_circle=arena.boundary_circle,
     )
 
 
 def validate_arena(arena: Arena) -> list[ArenaIssue]:
     issues: list[ArenaIssue] = []
+    if arena.boundary_circle is not None:
+        center = arena.boundary_circle.center
+        radius = arena.boundary_circle.radius_m
+        if (
+            not math.isfinite(center.lat)
+            or not math.isfinite(center.lon)
+            or center.lat < -90
+            or center.lat > 90
+            or center.lon < -180
+            or center.lon > 180
+            or not math.isfinite(radius)
+            or radius < PLAY_CIRCLE_MIN_M
+            or radius > PLAY_CIRCLE_MAX_M
+        ):
+            issues.append(ArenaIssue("play_area_radius_invalid", "Play area"))
+            return issues
     if len(arena.boundary) < 3:
         issues.append(ArenaIssue("play_area_too_small", "Play area"))
         return issues

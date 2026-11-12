@@ -86,6 +86,50 @@ def test_invalid_arena_rejected(client: TestClient) -> None:
     assert response.json()["error"]["code"] == "ARENA_INVALID"
 
 
+def test_circle_arena_crud_roundtrip_and_radius_validation(client: TestClient) -> None:
+    host = _auth(client)
+    headers = _headers(host["access_token"])
+    bad = client.post(
+        "/v1/arenas",
+        json={
+            "name": "Too small",
+            "boundary": [],
+            "boundary_circle": {"center": {"lat": 40.6616, "lon": -73.9688}, "radius_m": 10},
+            "zones": [],
+        },
+        headers=headers,
+    )
+    assert bad.status_code == 422
+    assert bad.json()["error"]["code"] == "ARENA_INVALID"
+
+    created = client.post(
+        "/v1/arenas",
+        json={
+            "name": "Meadow Circle",
+            "boundary": [
+                {"lat": 0.0, "lon": 0.0},
+                {"lat": 0.1, "lon": 0.0},
+                {"lat": 0.0, "lon": 0.1},
+            ],
+            "boundary_circle": {"center": {"lat": 40.6616, "lon": -73.9688}, "radius_m": 200},
+            "zones": [],
+        },
+        headers=headers,
+    )
+    assert created.status_code == 200, created.text
+    body = created.json()
+    assert body["boundary_circle"] == {
+        "center": {"lat": 40.6616, "lon": -73.9688},
+        "radius_m": 200.0,
+    }
+    assert len(body["boundary"]) == 64
+    fetched = client.get(f"/v1/arenas/{body['id']}", headers=headers)
+    assert fetched.status_code == 200
+    assert fetched.json()["boundary_circle"] == body["boundary_circle"]
+    assert len(fetched.json()["boundary"]) == 64
+
+
+
 def test_join_unknown_code(client: TestClient) -> None:
     user = _auth(client)
     response = client.post(
