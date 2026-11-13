@@ -218,6 +218,23 @@ class BotDriver:
                     demo.human_targets.pop(player.player_id, None)
                     next_pt = target
                 session.set_synthetic_location(player.player_id, _reading(next_pt, session))
+            elif (
+                session.state.phase == "head_start"
+                and player.role == "seeker"
+                and player.status == "active"
+                and (spawn := _spawn_zone(arena)) is not None
+                and (
+                    not _in_zone(current, spawn)
+                    or any(
+                        zone.kind == ZoneKind.OUT_OF_BOUNDS and _in_zone(current, zone)
+                        for zone in arena.zones
+                    )
+                )
+            ):
+                # The countdown will not run until this seeker is in spawn.
+                # Walk an idle demo human there; a manual target above still wins.
+                next_pt = _step_toward(current, _zone_center(spawn), demo.walk_speed_mps)
+                session.set_synthetic_location(player.player_id, _reading(next_pt, session))
             elif player.status != "signal_lost":
                 session.set_synthetic_location(player.player_id, _reading(current, session))
 

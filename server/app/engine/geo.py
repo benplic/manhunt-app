@@ -121,14 +121,42 @@ def distance_outside_to_interior_edge(point: GeoPoint, vertices: list[GeoPoint])
     return float(Point(_xy(point, lat0)).distance(poly.boundary))
 
 
+def local_xy(point: GeoPoint, origin: GeoPoint) -> tuple[float, float]:
+    """East/north meters from one origin. Both rings of a comparison must share it.
+
+    `_xy` scales absolute longitude by cos(latitude). Using each ring's own
+    first vertex as that latitude shifts a polygon by tens of meters when the
+    longitude is far from 0, so a zone clipped onto the boundary looks outside.
+    """
+    scale = math.cos(math.radians(origin.lat))
+    east = (point.lon - origin.lon) * METERS_PER_DEGREE * scale
+    north = (point.lat - origin.lat) * METERS_PER_DEGREE
+    return east, north
+
+
+def geo_from_local(x: float, y: float, origin: GeoPoint) -> GeoPoint:
+    scale = max(math.cos(math.radians(origin.lat)), 1e-9)
+    return GeoPoint(
+        lat=origin.lat + y / METERS_PER_DEGREE,
+        lon=origin.lon + x / (METERS_PER_DEGREE * scale),
+    )
+
+
 def polygon_inside_play_area(zone: list[GeoPoint], play: list[GeoPoint]) -> bool:
     if len(zone) < 3 or len(play) < 3:
         return False
-    play_poly = _to_shapely(play)
-    zone_poly = _to_shapely(zone)
-    if zone_poly.is_empty:
+    origin = play[0]
+    play_poly = ShapelyPolygon([local_xy(point, origin) for point in play])
+    zone_poly = ShapelyPolygon([local_xy(point, origin) for point in zone])
+    if zone_poly.is_empty or play_poly.is_empty:
         return False
-    return bool(play_poly.covers(zone_poly))
+    if not play_poly.is_valid:
+        play_poly = play_poly.buffer(0)
+    if not zone_poly.is_valid:
+        zone_poly = zone_poly.buffer(0)
+    # A clip vertex sits on the boundary. A few centimeters of round-trip
+    # error must not fail a zone that was just cut to the play area.
+    return bool(play_poly.buffer(0.05).covers(zone_poly))
 
 
 def _from_xy_with_origin(x: float, y: float, lat0: float, origin_lon: float) -> GeoPoint:

@@ -254,7 +254,9 @@ struct LiveGameView: View {
             switch DockChrome.state(
                 phase: store.match?.snapshot.phase ?? .active,
                 role: store.viewingRole,
-                remainingS: store.match?.snapshot.phaseRemainingS
+                remainingS: store.match?.snapshot.phaseRemainingS,
+                spawnHolding: store.match?.snapshot.spawnLock?.holding == true,
+                seekerOutsideSpawn: store.match?.snapshot.spawnLock?.outside == true
             ) {
             case let .headStartWaiting(title, subtitle):
                 waitingCard(title: title, subtitle: subtitle)

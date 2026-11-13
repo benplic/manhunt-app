@@ -323,6 +323,16 @@ class GameSession:
                     if module.module_id == "signal_loss":
                         module.on_tick(self)
             return
+        from app.engine.modules.head_start import spawn_clock_held
+
+        if spawn_clock_held(self):
+            # Head start has not begun (or a seeker stepped out). The match
+            # clock stays put. Spawn banners, out-of-bounds, and going-dark still run.
+            for module in self.modules:
+                if module.module_id in {"head_start", "zone_policy", "signal_loss"}:
+                    module.on_tick(self)
+            self._check_win()
+            return
         self.state.game_elapsed_s += 1
         for module in self.modules:
             module.on_tick(self)

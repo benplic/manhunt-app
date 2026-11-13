@@ -172,6 +172,142 @@ def test_contained_circle_stays_a_circle_and_overhang_becomes_a_polygon() -> Non
     assert all(contains(p, play) for p in clipped_over.shape.vertices)
 
 
+def test_safe_zone_inside_a_park_latitude_play_area_validates() -> None:
+    """A zone that sits inside the play area must not be reported as outside.
+
+    Comparing rings with two latitude origins shifts a polygon by tens of meters
+    at a real longitude, which used to block saving a clipped safe zone.
+    """
+    from uuid import uuid4
+
+    from app.engine.arena import (
+        Arena,
+        ArenaZone,
+        CircleShape,
+        PolygonShape,
+        ZoneKind,
+        clip_arena,
+        validate_arena,
+    )
+    from app.engine.geo import GeoPoint, contains, offset_m
+
+    origin = GeoPoint(lat=40.6617, lon=-73.9690)
+
+    def at(north: float, east: float) -> GeoPoint:
+        return offset_m(origin, north, east)
+
+    play = [at(0, 0), at(0, 200), at(200, 200), at(200, 0)]
+    northern = Arena(
+        name="Park",
+        boundary=play,
+        zones=[
+            ArenaZone(
+                id=uuid4(),
+                name="Safe zone",
+                kind=ZoneKind.SAFE,
+                shape=PolygonShape(
+                    vertices=[at(150, 40), at(150, 80), at(180, 80), at(180, 40)]
+                ),
+            )
+        ],
+    )
+    assert validate_arena(northern) == []
+
+    overhang = Arena(
+        name="Park",
+        boundary=play,
+        zones=[
+            ArenaZone(
+                id=uuid4(),
+                name="Safe zone",
+                kind=ZoneKind.SAFE,
+                shape=CircleShape(center=at(180, 100), radius_m=40),
+            )
+        ],
+    )
+    clipped = clip_arena(overhang)
+    assert clipped.zones
+    assert validate_arena(clipped) == []
+    shape = clipped.zones[0].shape
+    assert isinstance(shape, PolygonShape)
+    assert all(contains(point, play) for point in shape.vertices)
+
+
+def test_spawn_and_safe_may_overlap_but_out_zones_clip_both() -> None:
+    from uuid import uuid4
+
+    from app.engine.arena import (
+        Arena,
+        ArenaZone,
+        CircleShape,
+        PolygonShape,
+        ZoneKind,
+        clip_arena,
+    )
+    from app.engine.geo import GeoPoint, contains, distance_m, offset_m
+
+    origin = GeoPoint(lat=40.6617, lon=-73.9690)
+
+    def at(north: float, east: float) -> GeoPoint:
+        return offset_m(origin, north, east)
+
+    play = [at(0, 0), at(0, 300), at(300, 300), at(300, 0)]
+    spawn = ArenaZone(
+        id=uuid4(),
+        name="Seeker spawn",
+        kind=ZoneKind.SEEKER_SPAWN,
+        shape=PolygonShape(vertices=[at(20, 20), at(20, 100), at(100, 100), at(100, 20)]),
+    )
+    safe = ArenaZone(
+        id=uuid4(),
+        name="Safe zone",
+        kind=ZoneKind.SAFE,
+        shape=CircleShape(center=at(60, 60), radius_m=30),
+    )
+    out = ArenaZone(
+        id=uuid4(),
+        name="Out of bounds",
+        kind=ZoneKind.OUT_OF_BOUNDS,
+        shape=PolygonShape(vertices=[at(0, 0), at(0, 40), at(40, 40), at(40, 0)]),
+    )
+    far_safe = ArenaZone(
+        id=uuid4(),
+        name="Bench",
+        kind=ZoneKind.SAFE,
+        shape=CircleShape(center=at(200, 200), radius_m=12),
+    )
+    clipped = clip_arena(
+        Arena(name="Park", boundary=play, zones=[spawn, safe, out, far_safe])
+    )
+    kinds = {zone.kind for zone in clipped.zones}
+    assert ZoneKind.SEEKER_SPAWN in kinds
+    assert ZoneKind.OUT_OF_BOUNDS in kinds
+    assert sum(1 for zone in clipped.zones if zone.kind == ZoneKind.SAFE) == 2
+
+    clipped_spawn = next(zone for zone in clipped.zones if zone.kind == ZoneKind.SEEKER_SPAWN)
+    assert isinstance(clipped_spawn.shape, PolygonShape)
+    # The out-zone bite is gone; the rest of the spawn remains.
+    assert not contains(at(25, 25), clipped_spawn.shape.vertices)
+    assert contains(at(80, 80), clipped_spawn.shape.vertices)
+
+    clipped_safe = next(zone for zone in clipped.zones if zone.name == "Safe zone")
+    assert isinstance(clipped_safe.shape, PolygonShape)
+    assert not contains(at(39, 39), clipped_safe.shape.vertices)
+    assert distance_m(at(60, 85), at(60, 60)) < 30
+    assert contains(at(60, 85), clipped_safe.shape.vertices)
+
+    bench = next(zone for zone in clipped.zones if zone.name == "Bench")
+    assert isinstance(bench.shape, CircleShape)
+
+    # Spawn overlapping only a safe zone is left intact.
+    overlap = clip_arena(Arena(name="Park", boundary=play, zones=[spawn, safe]))
+    kept_spawn = next(zone for zone in overlap.zones if zone.kind == ZoneKind.SEEKER_SPAWN)
+    assert isinstance(kept_spawn.shape, PolygonShape)
+    assert contains(at(25, 25), kept_spawn.shape.vertices)
+    kept_safe = next(zone for zone in overlap.zones if zone.kind == ZoneKind.SAFE)
+    assert isinstance(kept_safe.shape, CircleShape)
+
+
 def test_arena_dataclass_roundtrip_name() -> None:
     arena = square()
     assert arena.name == "Square"

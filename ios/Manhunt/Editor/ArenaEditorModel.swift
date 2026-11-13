@@ -231,6 +231,7 @@ final class ArenaEditorModel {
                 warnings.append("That zone is completely outside the play area, so it was not added.")
             }
         }
+        preparedZones = cutPreparedZones(preparedZones, warnings: &warnings)
         let arena = Arena(
             id: UUID(),
             name: name,
@@ -298,7 +299,7 @@ final class ArenaEditorModel {
                     kind: .safe,
                     shape: .circle(center: center, radiusMeters: radius)
                 )
-                if finalizeZone(&zone) {
+                if finalizeZone(&zone), acceptAgainstOutZones(&zone) {
                     zones.append(zone)
                 }
                 pendingCircleCenter = nil
@@ -348,9 +349,12 @@ final class ArenaEditorModel {
                     kind: kind,
                     shape: .polygon(Polygon(vertices: vertices))
                 )
-                if finalizeZone(&zone) {
+                if finalizeZone(&zone), acceptAgainstOutZones(&zone) {
                     zones.append(zone)
                     activeZoneID = zone.id
+                    if zone.kind == .outOfBounds {
+                        clipSpawnAndSafeToOutZones()
+                    }
                 }
                 pendingZoneVertices = []
             }
@@ -416,15 +420,101 @@ final class ArenaEditorModel {
         }
         zones = kept
         notice = message
+        clipSpawnAndSafeToOutZones()
+    }
+
+    /// Out zones cut spawn and safe. Spawn and safe may still cover each other.
+    /// Returns false when the zone is entirely inside an out zone.
+    private func acceptAgainstOutZones(_ zone: inout ArenaZone) -> Bool {
+        guard zone.kind == .safe || zone.kind == .seekerSpawn else { return true }
+        let obstacles = zones.filter { $0.kind == .outOfBounds }
+        guard let cut = ZoneClip.subtract(zone, obstacles: obstacles) else {
+            notice = "That zone is completely inside an out zone, so it was not added."
+            return false
+        }
+        if shapesDiffer(zone, cut) {
+            notice = "Part of \(cut.name) is inside an out zone, so that part was removed."
+        }
+        zone = cut
+        return true
+    }
+
+    private func clipSpawnAndSafeToOutZones() {
+        let obstacles = zones.filter { $0.kind == .outOfBounds }
+        guard !obstacles.isEmpty else { return }
+        var kept: [ArenaZone] = []
+        var message: String?
+        for zone in zones {
+            guard zone.kind == .safe || zone.kind == .seekerSpawn else {
+                kept.append(zone)
+                continue
+            }
+            guard let cut = ZoneClip.subtract(zone, obstacles: obstacles) else {
+                message = "That zone is completely inside an out zone, so it was not added."
+                if activeZoneID == zone.id {
+                    activeZoneID = nil
+                }
+                continue
+            }
+            if shapesDiffer(zone, cut) {
+                message = "Part of \(cut.name) is inside an out zone, so that part was removed."
+            }
+            kept.append(cut)
+        }
+        zones = kept
+        if let message {
+            notice = message
+        }
+    }
+
+    private func cutPreparedZones(_ zones: [ArenaZone], warnings: inout [String]) -> [ArenaZone] {
+        let obstacles = zones.filter { $0.kind == .outOfBounds }
+        guard !obstacles.isEmpty else { return zones }
+        var kept: [ArenaZone] = []
+        for zone in zones {
+            guard zone.kind == .safe || zone.kind == .seekerSpawn else {
+                kept.append(zone)
+                continue
+            }
+            guard let cut = ZoneClip.subtract(zone, obstacles: obstacles) else {
+                warnings.append("That zone is completely inside an out zone, so it was not added.")
+                continue
+            }
+            if shapesDiffer(zone, cut) {
+                warnings.append("Part of \(cut.name) is inside an out zone, so that part was removed.")
+            }
+            kept.append(cut)
+        }
+        return kept
+    }
+
+    private func shapesDiffer(_ lhs: ArenaZone, _ rhs: ArenaZone) -> Bool {
+        switch (lhs.shape, rhs.shape) {
+        case let (.circle(center, radius), .circle(otherCenter, otherRadius)):
+            return abs(center.latitude - otherCenter.latitude) > 1e-12
+                || abs(center.longitude - otherCenter.longitude) > 1e-12
+                || abs(radius - otherRadius) > 0.01
+        case let (.polygon(polygon), .polygon(other)):
+            guard polygon.vertices.count == other.vertices.count else { return true }
+            return zip(polygon.vertices, other.vertices).contains { left, right in
+                abs(left.latitude - right.latitude) > 1e-12
+                    || abs(left.longitude - right.longitude) > 1e-12
+            }
+        default:
+            return true
+        }
     }
 
     private func reclipZone(at index: Int) {
         guard zones.indices.contains(index) else { return }
         var zone = zones[index]
         let id = zone.id
-        if finalizeZone(&zone) {
+        if finalizeZone(&zone), acceptAgainstOutZones(&zone) {
             guard zones.indices.contains(index), zones[index].id == id else { return }
             zones[index] = zone
+            if zone.kind == .outOfBounds {
+                clipSpawnAndSafeToOutZones()
+            }
         } else if zones.indices.contains(index), zones[index].id == id {
             zones.remove(at: index)
             if activeZoneID == id {

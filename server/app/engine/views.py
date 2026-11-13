@@ -5,6 +5,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from app.engine.arena import ZoneKind, arena_to_dict
+from app.engine.modules.head_start import spawn_clock_held
 from app.engine.modules.zone_shrink import zone_shrink_schedule
 from app.engine.session import GameSession
 from app.engine.state import PlayerState
@@ -203,7 +204,11 @@ def _spawn_lock(session: GameSession, viewer_id: UUID) -> tuple[str | None, dict
         for zone in arena_to_dict(state.arena)["zones"]
         if zone["kind"] == ZoneKind.SEEKER_SPAWN
     ]
-    return seeker_lock, {"outside": outside, "zones": zones}
+    return seeker_lock, {
+        "outside": outside,
+        "zones": zones,
+        "holding": spawn_clock_held(session),
+    }
 
 
 def _build_timers(session: GameSession) -> dict:

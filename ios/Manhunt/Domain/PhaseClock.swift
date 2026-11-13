@@ -38,7 +38,13 @@ struct PhaseClock: Equatable {
             let remaining = snapshot.phaseRemainingS ?? 0
             let total = max(1, timers?.headStartS ?? max(1, remaining))
             primaryClock = Self.clock(remaining)
-            primaryProgress = Self.clampProgress(1.0 - Double(remaining) / Double(total))
+            if snapshot.spawnLock?.holding == true, !paused {
+                // The number on screen is the countdown that has not started.
+                primaryLabel = "Waiting"
+                primaryProgress = 0
+            } else {
+                primaryProgress = Self.clampProgress(1.0 - Double(remaining) / Double(total))
+            }
         } else {
             let remaining = snapshot.timeLimitRemainingS ?? 0
             let total = max(1, timers?.timeLimitS ?? max(1, remaining))

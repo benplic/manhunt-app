@@ -563,6 +563,110 @@ final class GameRulesTests: XCTestCase {
         XCTAssertTrue(polygon.vertices.allSatisfy { $0.longitude * 111_320 < 21 })
     }
 
+    func testOutZoneClipsSpawnAndSafeWhileThoseTwoMayOverlap() {
+        let out = ArenaZone(
+            id: UUID(),
+            name: "Out of bounds",
+            kind: .outOfBounds,
+            shape: .polygon(Polygon(vertices: [
+                Fixtures.meters(x: 0, y: 0),
+                Fixtures.meters(x: 40, y: 0),
+                Fixtures.meters(x: 40, y: 40),
+                Fixtures.meters(x: 0, y: 40),
+            ]))
+        )
+        let spawn = ArenaZone(
+            id: UUID(),
+            name: "Seeker spawn",
+            kind: .seekerSpawn,
+            shape: .polygon(Polygon(vertices: [
+                Fixtures.meters(x: 20, y: 20),
+                Fixtures.meters(x: 100, y: 20),
+                Fixtures.meters(x: 100, y: 100),
+                Fixtures.meters(x: 20, y: 100),
+            ]))
+        )
+        let safe = ArenaZone(
+            id: UUID(),
+            name: "Safe zone",
+            kind: .safe,
+            shape: .circle(center: Fixtures.meters(x: 60, y: 60), radiusMeters: 30)
+        )
+        let cutSpawn = ZoneClip.subtract(spawn, obstacles: [out, safe])
+        guard case let .polygon(spawnPolygon)? = cutSpawn?.shape else {
+            return XCTFail("Expected the spawn to stay a polygon")
+        }
+        XCTAssertFalse(ArenaGeometry.contains(Fixtures.meters(x: 25, y: 25), in: spawnPolygon))
+        XCTAssertTrue(ArenaGeometry.contains(Fixtures.meters(x: 80, y: 80), in: spawnPolygon))
+        let again = ZoneClip.subtract(cutSpawn!, obstacles: [out])
+        guard case let .polygon(againPolygon)? = again?.shape else {
+            return XCTFail("Expected a second cut to keep the spawn")
+        }
+        XCTAssertEqual(againPolygon.vertices.count, spawnPolygon.vertices.count)
+
+        let cutSafe = ZoneClip.subtract(safe, obstacles: [out])
+        guard case let .polygon(safePolygon)? = cutSafe?.shape else {
+            return XCTFail("Expected the overlapping safe circle to become a polygon")
+        }
+        XCTAssertFalse(ArenaGeometry.contains(Fixtures.meters(x: 39, y: 39), in: safePolygon))
+        XCTAssertTrue(ArenaGeometry.contains(Fixtures.meters(x: 60, y: 85), in: safePolygon))
+
+        let editor = ArenaEditorModel()
+        editor.boundary = Polygon(vertices: [
+            Fixtures.meters(x: 0, y: 0),
+            Fixtures.meters(x: 300, y: 0),
+            Fixtures.meters(x: 300, y: 300),
+            Fixtures.meters(x: 0, y: 300),
+        ])
+        editor.tool = .outOfBounds
+        editor.addMapPoint(Fixtures.meters(x: 0, y: 0))
+        editor.addMapPoint(Fixtures.meters(x: 50, y: 0))
+        editor.addMapPoint(Fixtures.meters(x: 0, y: 50))
+        editor.tool = .seekerSpawn
+        editor.beginNewShape()
+        editor.addMapPoint(Fixtures.meters(x: 10, y: 10))
+        editor.addMapPoint(Fixtures.meters(x: 80, y: 10))
+        editor.addMapPoint(Fixtures.meters(x: 10, y: 80))
+        XCTAssertEqual(editor.zones.count, 2)
+        XCTAssertTrue(editor.notice?.contains("out zone") == true)
+        guard case let .polygon(editedSpawn) = editor.zones.last?.shape else {
+            return XCTFail("Expected a clipped spawn")
+        }
+        XCTAssertFalse(ArenaGeometry.contains(Fixtures.meters(x: 12, y: 12), in: editedSpawn))
+        XCTAssertTrue(ArenaGeometry.contains(Fixtures.meters(x: 40, y: 15), in: editedSpawn))
+
+        editor.tool = .safeCircle
+        editor.addMapPoint(Fixtures.meters(x: 200, y: 200))
+        editor.addMapPoint(Fixtures.meters(x: 212, y: 200))
+        XCTAssertEqual(editor.zones.filter { $0.kind == .safe }.count, 1)
+        guard case .circle = editor.zones.first(where: { $0.kind == .safe })?.shape else {
+            return XCTFail("A safe circle clear of the out zone stays a circle")
+        }
+        let prepared = editor.preparedForSave()
+        XCTAssertEqual(prepared.blocking, [])
+    }
+
+    func testClippedSafeZoneInsideThePlayAreaDoesNotBlockSave() {
+        let editor = ArenaEditorModel()
+        for point in [
+            Fixtures.meters(x: 0, y: 0),
+            Fixtures.meters(x: 200, y: 0),
+            Fixtures.meters(x: 200, y: 200),
+            Fixtures.meters(x: 0, y: 200),
+        ] {
+            editor.addMapPoint(point)
+        }
+        editor.tool = .safeCircle
+        editor.addMapPoint(Fixtures.meters(x: 100, y: 180))
+        editor.addMapPoint(Fixtures.meters(x: 100, y: 220))
+        let prepared = editor.preparedForSave()
+        XCTAssertEqual(prepared.arena.zones.count, 1)
+        XCTAssertFalse(prepared.blocking.contains { issue in
+            if case .outsidePlayArea = issue { return true }
+            return false
+        })
+    }
+
     func testMovingTheBoundaryReclipsAnExistingZone() {
         let editor = ArenaEditorModel()
         editor.boundary = Polygon(vertices: [

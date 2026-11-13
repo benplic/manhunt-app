@@ -227,6 +227,35 @@ struct HintDTO: Codable, Equatable {
 struct SpawnLockDTO: Codable, Equatable {
     var outside: Bool
     var zones: [ArenaZone]
+    /// True while the head-start countdown is waiting for every seeker to be in spawn.
+    var holding: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case outside
+        case zones
+        case holding
+    }
+
+    init(outside: Bool, zones: [ArenaZone], holding: Bool = false) {
+        self.outside = outside
+        self.zones = zones
+        self.holding = holding
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        outside = try container.decode(Bool.self, forKey: .outside)
+        zones = try container.decode([ArenaZone].self, forKey: .zones)
+        // Older views omit the flag. Missing means the countdown is running.
+        holding = try container.decodeIfPresent(Bool.self, forKey: .holding) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(outside, forKey: .outside)
+        try container.encode(zones, forKey: .zones)
+        try container.encode(holding, forKey: .holding)
+    }
 }
 
 struct BoundsDTO: Codable {
