@@ -65,18 +65,34 @@ def test_demo_game_exercises_zone_shrink_and_safe_zone_with_human_hider(
     joined = client.post("/v1/games/join", headers=headers, json={"join_code": "PARK42"})
     gid = joined.json()["id"]
 
-    # Host plays as hider and enters active phase.
+    # Host plays as hider. PARK42 draws one seeker, so the host may be that
+    # seeker. Keep a bot on seeker or start() refuses the lobby.
     client.post(
         f"/v1/games/{gid}/demo",
         headers=headers,
         json={"action": "switch_team", "role": "hider"},
     )
-    client.post(f"/v1/games/{gid}/demo", headers=headers, json={"action": "end_phase"})
-    active = client.post(
+    host_id = auth["user"]["id"]
+    view = client.get(f"/v1/games/{gid}", headers=headers).json()
+    if not any(p["role"] == "seeker" for p in view["players"]):
+        bot_id = next(p["player_id"] for p in view["players"] if p["player_id"] != host_id)
+        assigned = client.post(
+            f"/v1/games/{gid}/roles",
+            headers=headers,
+            json={"mode": "manual", "assignments": {bot_id: "seeker", host_id: "hider"}},
+        )
+        assert assigned.status_code == 200
+
+    started = client.post(f"/v1/games/{gid}/demo", headers=headers, json={"action": "end_phase"})
+    assert started.status_code == 200
+    assert started.json()["phase"] == "head_start"
+    active_response = client.post(
         f"/v1/games/{gid}/demo",
         headers=headers,
         json={"action": "end_phase"},
-    ).json()
+    )
+    assert active_response.status_code == 200
+    active = active_response.json()
     assert active["phase"] == "active"
 
     # Walk host toward North Pavilion safe zone and skip 70s so zone_shrink fires.
