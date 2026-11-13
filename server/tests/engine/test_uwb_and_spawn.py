@@ -114,10 +114,15 @@ def test_undo_tag_restores_the_hider() -> None:
         expires_at=clock.now() + timedelta(seconds=30),
         key=session.qr_signing_key,
     )
+    pre_points = session.state.players[seeker].points
+    pre_earned = session.state.players[seeker].points_earned
     session.claim_tag(TagClaim(seeker, hider, qr_token=token))
+    assert session.state.players[seeker].points_earned == pre_earned + 25
     session.undo_tag()
     assert session.state.players[hider].status == "active"
     assert session.state.phase == "active"
+    assert session.state.players[seeker].points == pre_points
+    assert session.state.players[seeker].points_earned == pre_earned
 
 
 def test_spawn_zone_lock_banners_a_seeker_who_leaves() -> None:

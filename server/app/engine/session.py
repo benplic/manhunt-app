@@ -263,6 +263,7 @@ class GameSession:
             "hider_status": hider.status,
             "hider_role": hider.role,
             "seeker_points": seeker.points,
+            "seeker_points_earned": seeker.points_earned,
         }
         for module in self.modules:
             if isinstance(module, TagPolicyModule):
@@ -303,6 +304,9 @@ class GameSession:
         hider.status = str(last["hider_status"])
         hider.role = str(last["hider_role"])
         seeker.points = int(last["seeker_points"])
+        seeker.points_earned = int(
+            last.get("seeker_points_earned", last["seeker_points"])
+        )
         self.state.last_tag = None
         if self.state.phase == "ended":
             self.state.phase = "active"
