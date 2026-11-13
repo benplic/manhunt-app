@@ -104,6 +104,47 @@ def test_stale_uwb_ranges_are_not_in_range() -> None:
     assert exc.value.code == ErrorCode.NOT_IN_RANGE
 
 
+def test_undo_tag_reverses_others_tagged_award() -> None:
+    from uuid import uuid4
+
+    from tests.engine.helpers import make_session, run_for
+
+    session, clock = make_session(
+        overrides={
+            "head_start": {"enabled": True, "duration": 1},
+            "signal_loss": {"silence": 60},
+        }
+    )
+    tagged = uuid4()
+    survivor = uuid4()
+    seeker = uuid4()
+    session.add_player(tagged, "Tagged", is_host=True)
+    session.add_player(survivor, "Survivor", is_host=False)
+    session.add_player(seeker, "Seeker", is_host=False)
+    session.set_role(tagged, "hider")
+    session.set_role(survivor, "hider")
+    session.set_role(seeker, "seeker")
+    session.start()
+    run_for(session, clock, 1)
+    session.record_location(tagged, reading(meters(100, 100), clock))
+    session.record_location(survivor, reading(meters(120, 100), clock))
+    session.record_location(seeker, reading(meters(100, 101), clock))
+    token = make_qr_token(
+        game_id=session.state.game_id,
+        hider_id=tagged,
+        expires_at=clock.now() + timedelta(seconds=30),
+        key=session.qr_signing_key,
+    )
+    pre_points = session.state.players[survivor].points
+    pre_earned = session.state.players[survivor].points_earned
+    session.claim_tag(TagClaim(seeker, tagged, qr_token=token))
+    assert session.state.players[survivor].points == pre_points + 15
+    assert session.state.players[survivor].points_earned == pre_earned + 15
+    session.undo_tag()
+    assert session.state.players[survivor].points == pre_points
+    assert session.state.players[survivor].points_earned == pre_earned
+
+
 def test_undo_tag_restores_the_hider() -> None:
     session, clock, hider, seeker = two_player_hunt()
     session.record_location(hider, reading(meters(100, 100), clock))

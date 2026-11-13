@@ -257,6 +257,17 @@ class GameSession:
         require_tag_ok(self, claim)
         hider = self.state.players[claim.hider_id]
         seeker = self.state.players[claim.seeker_id]
+        other_hiders: dict[str, dict[str, int]] = {}
+        for player_id, player in self.state.players.items():
+            if (
+                player_id != claim.hider_id
+                and player.role == "hider"
+                and player.status == "active"
+            ):
+                other_hiders[str(player_id)] = {
+                    "points": player.points,
+                    "points_earned": player.points_earned,
+                }
         self.state.last_tag = {
             "hider_id": str(hider.player_id),
             "seeker_id": str(seeker.player_id),
@@ -264,6 +275,7 @@ class GameSession:
             "hider_role": hider.role,
             "seeker_points": seeker.points,
             "seeker_points_earned": seeker.points_earned,
+            "other_hiders": other_hiders,
         }
         for module in self.modules:
             if isinstance(module, TagPolicyModule):
@@ -307,6 +319,14 @@ class GameSession:
         seeker.points_earned = int(
             last.get("seeker_points_earned", last["seeker_points"])
         )
+        for player_id_str, snap in last.get("other_hiders", {}).items():
+            other = self.state.players.get(UUID(str(player_id_str)))
+            if other is None:
+                continue
+            other.points = int(snap["points"])
+            other.points_earned = int(
+                snap.get("points_earned", snap["points"])
+            )
         self.state.last_tag = None
         if self.state.phase == "ended":
             self.state.phase = "active"

@@ -78,8 +78,7 @@ class TagPolicyModule(BaseModule):
             hider.status = "active"
         else:
             hider.status = "eliminated"
-        bonus = int(s.module_settings("points").get("tag_points", 25))
-        grant_points(seeker, bonus)
+        grant_points(seeker, 25)
         s.emit(
             "tag",
             {"text": f"{seeker.display_name} tagged {hider.display_name}."},
