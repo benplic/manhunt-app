@@ -21,27 +21,76 @@ BANDS = (
 )
 
 
+def _reveal_settings(s: GameSession) -> dict:
+    reveal = s.module_settings("reveal_fuzzy")
+    if "location_mode" in reveal or "hints_enabled" in reveal:
+        return reveal
+    return s.module_settings("hot_cold")
+
+
+def _hints_active(settings: dict) -> bool:
+    mode = str(settings.get("location_mode", "fuzzy"))
+    if mode == "hot_cold":
+        return True
+    if mode == "precise":
+        return False
+    if "location_mode" in settings or "hints_enabled" in settings:
+        return bool(settings.get("hints_enabled", True))
+    return bool(settings.get("enabled", True))
+
+
+def refresh_hints(s: GameSession, *, after_pulse: bool = False) -> None:
+    settings = _reveal_settings(s)
+    if not _hints_active(settings):
+        for player in s.state.players.values():
+            player.hint = None
+            player.hint_at_s = None
+            player.hint_until_s = None
+        return
+
+    hints_persistence = str(settings.get("hints_persistence", "persistent"))
+    interval = int(
+        settings.get(
+            "hints_interval",
+            settings.get("interval", 5),
+        )
+    )
+    jammed = s.state.jammer_until_s is not None
+    now = s.state.game_elapsed_s
+
+    for player in s.state.players.values():
+        if jammed or s.state.phase != "active" or player.role != "seeker":
+            player.hint = None
+            player.hint_at_s = None
+            player.hint_until_s = None
+            continue
+
+        if hints_persistence == "timed":
+            until = player.hint_until_s
+            if until is None or now >= until:
+                player.hint = None
+                player.hint_at_s = None
+                continue
+            if player.hint is None and after_pulse:
+                player.hint = _hint_for(s, player)
+                player.hint_at_s = now
+            continue
+
+        if (
+            player.hint is not None
+            and player.hint_at_s is not None
+            and now - player.hint_at_s < interval
+        ):
+            continue
+        player.hint = _hint_for(s, player)
+        player.hint_at_s = now
+
+
 class HotColdModule(BaseModule):
     module_id: ClassVar[str] = "hot_cold"
 
     def on_tick(self, s: GameSession) -> None:
-        enabled = bool(self.settings.get("enabled", True))
-        interval = int(self.settings.get("interval", 5))
-        jammed = s.state.jammer_until_s is not None
-        for player in s.state.players.values():
-            # A jammer clears the dock on this tick, without waiting for the interval.
-            if not enabled or jammed or s.state.phase != "active" or player.role != "seeker":
-                player.hint = None
-                player.hint_at_s = None
-                continue
-            if (
-                player.hint is not None
-                and player.hint_at_s is not None
-                and s.state.game_elapsed_s - player.hint_at_s < interval
-            ):
-                continue
-            player.hint = _hint_for(s, player)
-            player.hint_at_s = s.state.game_elapsed_s
+        refresh_hints(s)
 
 
 def _hint_for(s: GameSession, seeker: PlayerState) -> dict | None:

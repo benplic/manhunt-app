@@ -13,6 +13,14 @@ if TYPE_CHECKING:
     from app.engine.session import GameSession
 
 
+def grant_points(player, amount: int) -> None:
+    gained = int(amount)
+    if gained <= 0:
+        return
+    player.points += gained
+    player.points_earned += gained
+
+
 class PointsModule(BaseModule):
     module_id: ClassVar[str] = "points"
 
@@ -29,7 +37,7 @@ class PointsModule(BaseModule):
         ]
         for hider in hiders:
             if s.state.game_elapsed_s - hider.last_survival_award_s >= survival_every:
-                hider.points += int(self.settings.get("survival_points", 10))
+                grant_points(hider, int(self.settings.get("survival_points", 10)))
                 hider.last_survival_award_s = s.state.game_elapsed_s
             nearest = _nearest_seeker_m(hider, seekers)
             if nearest is None:
@@ -40,7 +48,7 @@ class PointsModule(BaseModule):
             elif nearest >= escape_m and hider.close_near_since_s is not None:
                 held = s.state.game_elapsed_s - hider.close_near_since_s
                 if held >= close_hold_s:
-                    hider.points += int(self.settings.get("close_call_points", 20))
+                    grant_points(hider, int(self.settings.get("close_call_points", 20)))
                     s.emit(
                         "close_call",
                         {"text": f"{hider.display_name} slipped a close call."},
@@ -60,10 +68,12 @@ class PointsModule(BaseModule):
             p for p in s.state.players.values() if p.role == "hider" and p.status == "active"
         ]
         for hider in remaining:
-            hider.points += bonus
+            grant_points(hider, bonus)
 
 
 def apply_taunt(s: GameSession, player_id) -> None:
+    if not bool(s.module_settings("points").get("taunt_enabled", True)):
+        raise GameRuleError(ErrorCode.WRONG_PHASE, "Taunts are off.")
     player = s.state.players[player_id]
     if player.role != "hider" or player.status != "active":
         raise GameRuleError(ErrorCode.WRONG_ROLE)
@@ -77,7 +87,7 @@ def apply_taunt(s: GameSession, player_id) -> None:
     dist = _nearest_seeker_m(player, seekers) or 200
     # Closer taunts score more. A distant ping is cheap bragging.
     points = max(5, int(40 - dist / 10))
-    player.points += points
+    grant_points(player, points)
     duration = int(s.module_settings("points").get("taunt_s", 8))
     cooldown = int(s.module_settings("points").get("taunt_cooldown", 45))
     player.taunt_until_s = now + duration

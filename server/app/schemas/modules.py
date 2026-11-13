@@ -8,6 +8,32 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.engine.modules.power_ups import CATALOG
+
+_POWER_TITLES = {
+    "ghost": "Ghost",
+    "decoy": "Decoy",
+    "radar": "Radar",
+    "jammer": "Jammer",
+    "shield": "Shield",
+    "scan": "Scan",
+    "tracker": "Tracker",
+    "lockdown": "Lockdown",
+}
+
+
+def _power_ups_fields() -> tuple[list[str], dict[str, Any]]:
+    fields: dict[str, Any] = {"enabled": _bool("Enabled", True)}
+    field_order = ["enabled"]
+    for power_id, base in CATALOG.items():
+        title = _POWER_TITLES[power_id]
+        fields[f"{power_id}_enabled"] = _bool(title, True)
+        fields[f"{power_id}_cost"] = _int(
+            f"{title} cost", 0, 200, int(base["cost"]), step=5, suffix="pts"
+        )
+        field_order.extend([f"{power_id}_enabled", f"{power_id}_cost"])
+    return field_order, fields
+
 
 def _int(
     title: str, lo: int, hi: int, default: int, step: int = 1, suffix: str = ""
@@ -55,10 +81,10 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "version": 1,
         "title": "Roles",
         "blurb": "How hiders and seekers are chosen in the lobby.",
-        "field_order": ["mode", "hider_count"],
+        "field_order": ["mode", "seeker_count"],
         "fields": {
             "mode": _enum("Assignment", ["random", "manual"], "random", ["Random", "Manual"]),
-            "hider_count": _int("Hiders", 1, 20, 2),
+            "seeker_count": _int("Seekers", 1, 20, 1),
         },
     },
     "head_start": {
@@ -79,20 +105,44 @@ SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "reveal_fuzzy": {
         "version": 1,
-        "title": "Fuzzy reveal",
-        "blurb": "Seekers see approximate hider pins on a timer.",
-        "field_order": ["enabled", "interval", "display", "fuzz"],
+        "title": "Reveal",
+        "blurb": "Location pulses and hot/cold hints.",
+        "locked": True,
+        "field_order": [
+            "location_mode",
+            "persistence",
+            "interval",
+            "display",
+            "fuzz",
+            "hints_enabled",
+            "hints_persistence",
+            "hints_interval",
+        ],
         "fields": {
-            "enabled": _bool("Enabled", True),
+            "location_mode": _enum(
+                "Location",
+                ["fuzzy", "precise", "hot_cold"],
+                "fuzzy",
+                ["Fuzzy", "Precise", "Hot/cold"],
+            ),
+            "persistence": _enum(
+                "Location timing", ["timed", "persistent"], "timed", ["Timed", "Persistent"]
+            ),
             "interval": _int("Every", 20, 600, 60, step=10, suffix="s"),
-            "display": _int("Pin stays", 5, 60, 10, step=5, suffix="s"),
+            "display": _int("Stays up", 5, 60, 10, step=5, suffix="s"),
             "fuzz": _int("Fuzz", 0, 100, 30, step=5, suffix="m"),
+            "hints_enabled": _bool("Hints", True),
+            "hints_persistence": _enum(
+                "Hints timing", ["timed", "persistent"], "persistent", ["Timed", "Persistent"]
+            ),
+            "hints_interval": _int("Hints every", 2, 30, 5, suffix="s"),
         },
     },
     "tag_policy": {
         "version": 1,
         "title": "Tag",
         "blurb": "Ultra Wideband confirms the tag. A rotating code is the fallback.",
+        "locked": True,
         "field_order": ["method", "radius_m", "result", "pairing_m"],
         "fields": {
             "method": _enum("Method", ["qr", "uwb"], "qr", ["QR code", "Ultra Wideband"]),
@@ -110,6 +160,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "version": 1,
         "title": "Zones",
         "blurb": "Out of bounds counts down. Safe zones block tags until time runs out.",
+        "locked": True,
         "field_order": [
             "oob_countdown",
             "hider_oob_penalty",
@@ -157,6 +208,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "version": 1,
         "title": "Win",
         "blurb": "How the hunt ends.",
+        "locked": True,
         "field_order": ["condition", "time_limit"],
         "fields": {
             "condition": _enum(
@@ -168,22 +220,14 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "time_limit": _int("Time limit", 5, 180, 30, step=5, suffix="min"),
         },
     },
-    "hot_cold": {
-        "version": 1,
-        "title": "Hot / cold",
-        "blurb": "Distance and direction toward hiders. Not a precise pin.",
-        "field_order": ["enabled", "interval"],
-        "fields": {
-            "enabled": _bool("Hints", True),
-            "interval": _int("Update every", 2, 30, 5, suffix="s"),
-        },
-    },
     "points": {
         "version": 1,
         "title": "Points",
         "blurb": "Scoring, including how often a hider can taunt.",
-        "field_order": ["taunt_cooldown"],
+        "locked": True,
+        "field_order": ["taunt_enabled", "taunt_cooldown"],
         "fields": {
+            "taunt_enabled": _bool("Taunt", True),
             "taunt_cooldown": _int("Taunt cooldown", 10, 180, 45, step=5, suffix="s"),
         },
     },
@@ -191,8 +235,13 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "version": 1,
         "title": "Power-ups",
         "blurb": "Purchases the dock already knows.",
-        "field_order": ["enabled"],
-        "fields": {"enabled": _bool("Enabled", True)},
+        "locked": False,
+        **dict(
+            zip(
+                ("field_order", "fields"),
+                _power_ups_fields(),
+            )
+        ),
     },
     "effects": {
         "version": 1,

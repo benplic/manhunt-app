@@ -29,12 +29,14 @@ def build_view(
                 "status": player.status,
                 "is_host": player.is_host,
                 "points": player.points,
+                "points_earned": player.points_earned,
                 "location": _visible_location(state, viewer, player),
             }
         )
     reveals = []
     for pin in state.reveals:
         if viewer.role == "seeker" or pin.player_id == viewer_id:
+            player = state.players.get(pin.player_id)
             reveals.append(
                 {
                     "reveal_id": str(pin.reveal_id),
@@ -43,6 +45,7 @@ def build_view(
                     "lon": pin.lon,
                     "radius_m": pin.radius_m,
                     "expires_in_s": max(0, pin.expires_at_game_s - state.game_elapsed_s),
+                    "display_name": player.display_name if player is not None else "",
                 }
             )
     you_safe = None
@@ -90,10 +93,12 @@ def build_view(
             },
             "safe_zone": you_safe,
             "points": viewer.points,
+            "points_earned": viewer.points_earned,
             "hint": viewer.hint,
             "effects": [e.type for e in state.effects if e.owner_id == viewer.player_id],
             "cooldowns": cooldowns,
             "taunt_cooldown_s": taunt_cooldown_s,
+            "taunt_enabled": bool(session.module_settings("points").get("taunt_enabled", True)),
         },
         "arena": arena_to_dict(state.arena),
         "players": players,
@@ -109,8 +114,42 @@ def build_view(
             for b in state.banners
         ],
         "result": result,
+        "power_ups": _power_ups_for(session, viewer),
         "demo": _build_demo(session, viewer, demo_controls_enabled=demo_controls_enabled),
     }
+
+
+def _power_ups_for(session: GameSession, viewer: PlayerState) -> list[dict]:
+    from app.engine.modules.power_ups import CATALOG
+
+    settings = session.module_settings("power_ups")
+    if not bool(settings.get("enabled", True)):
+        return []
+    titles = {
+        "ghost": "Ghost",
+        "decoy": "Decoy",
+        "radar": "Radar",
+        "jammer": "Jammer",
+        "shield": "Shield",
+        "scan": "Scan",
+        "tracker": "Tracker",
+        "lockdown": "Lockdown",
+    }
+    rows = []
+    for power_id, base in CATALOG.items():
+        if base["role"] != viewer.role:
+            continue
+        if not bool(settings.get(f"{power_id}_enabled", True)):
+            continue
+        rows.append(
+            {
+                "id": power_id,
+                "title": titles[power_id],
+                "cost": int(settings.get(f"{power_id}_cost", base["cost"])),
+                "role": base["role"],
+            }
+        )
+    return rows
 
 
 def _build_demo(

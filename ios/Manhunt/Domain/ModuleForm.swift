@@ -50,11 +50,14 @@ struct ModuleSchemaDTO: Decodable, Equatable {
     var version: Int
     var title: String?
     var blurb: String?
+    var locked: Bool
     var fieldOrder: [String]
+    /// False when the payload left `field_order` out and the decoder sorted the keys.
+    var fieldOrderWasProvided: Bool
     var fields: [String: SchemaFieldDTO]
 
     enum CodingKeys: String, CodingKey {
-        case version, title, blurb, fields
+        case version, title, blurb, locked, fields
         case fieldOrder = "field_order"
     }
 
@@ -63,20 +66,30 @@ struct ModuleSchemaDTO: Decodable, Equatable {
         version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
         title = try container.decodeIfPresent(String.self, forKey: .title)
         blurb = try container.decodeIfPresent(String.self, forKey: .blurb)
+        locked = try container.decodeIfPresent(Bool.self, forKey: .locked) ?? false
         fields = try container.decodeIfPresent([String: SchemaFieldDTO].self, forKey: .fields) ?? [:]
-        fieldOrder = try container.decodeIfPresent([String].self, forKey: .fieldOrder) ?? fields.keys.sorted()
+        if let listed = try container.decodeIfPresent([String].self, forKey: .fieldOrder) {
+            fieldOrder = listed
+            fieldOrderWasProvided = true
+        } else {
+            fieldOrder = fields.keys.sorted()
+            fieldOrderWasProvided = false
+        }
     }
 }
 
 struct ModulesResponse: Decodable, Equatable {
     var modules: [String: ModuleSchemaDTO]
     var order: [String]
+    /// False when the payload left `order` out. Alphabetical keys are not a host-facing order.
+    var orderWasProvided: Bool
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         modules = try container.decode([String: ModuleSchemaDTO].self, forKey: .modules)
         let listed = try container.decodeIfPresent([String].self, forKey: .order) ?? []
-        order = listed.isEmpty ? modules.keys.sorted() : listed
+        orderWasProvided = !listed.isEmpty
+        order = orderWasProvided ? listed : modules.keys.sorted()
     }
 
     enum CodingKeys: String, CodingKey {
@@ -89,17 +102,60 @@ enum ModuleForm {
     /// Offline copy of `GET /v1/modules`. The server file is the source of truth;
     /// regenerate this JSON when `server/app/schemas/modules.py` changes.
     static func offlineModules() -> [VisualModule] {
+        guard let bundledResponse else { return [] }
+        return modules(from: bundledResponse)
+    }
+
+    /// Display names, blurbs, labels, and field order for a server that omitted them.
+    /// A title the server did send is left alone.
+    private static let bundledResponse: ModulesResponse? = {
         guard let url = Bundle.main.url(forResource: "OfflineModuleSchema", withExtension: "json"),
               let data = try? Data(contentsOf: url),
               let response = try? JSONDecoder().decode(ModulesResponse.self, from: data)
-        else { return [] }
-        return modules(from: response)
-    }
+        else { return nil }
+        return response
+    }()
 
     static func modules(from response: ModulesResponse) -> [VisualModule] {
-        response.order.compactMap { id in
-            guard let schema = response.modules[id] else { return nil }
+        displayOrder(for: response).compactMap { id in
+            guard var schema = response.modules[id] else { return nil }
+            fillDisplayGaps(&schema, id: id)
             return module(id: id, schema: schema)
+        }
+    }
+
+    /// Bundled card order when the payload did not send one. Unknown server modules stay at the end.
+    private static func displayOrder(for response: ModulesResponse) -> [String] {
+        guard !response.orderWasProvided, let bundledResponse else { return response.order }
+        let known = bundledResponse.order.filter { response.modules[$0] != nil }
+        let extras = response.order.filter { id in !known.contains(id) }
+        return known.isEmpty ? response.order : known + extras
+    }
+
+    /// Copy omitted display strings from the bundled schema. `title == type` means the
+    /// decoder had no title and stored the JSON type (`int`, `enum`).
+    private static func fillDisplayGaps(_ schema: inout ModuleSchemaDTO, id: String) {
+        guard let bundled = bundledResponse?.modules[id] else { return }
+        if schema.title == nil { schema.title = bundled.title }
+        if schema.blurb == nil { schema.blurb = bundled.blurb }
+        if !schema.fieldOrderWasProvided {
+            let known = bundled.fieldOrder.filter { schema.fields[$0] != nil }
+            let extras = schema.fieldOrder.filter { key in !known.contains(key) }
+            if !known.isEmpty {
+                schema.fieldOrder = known + extras
+            }
+        }
+        for key in schema.fields.keys {
+            guard var field = schema.fields[key], let bundledField = bundled.fields[key] else { continue }
+            if field.title == field.type {
+                field.title = bundledField.title
+            }
+            if field.labels.count != field.values.count,
+               bundledField.labels.count == bundledField.values.count,
+               bundledField.values == field.values {
+                field.labels = bundledField.labels
+            }
+            schema.fields[key] = field
         }
     }
 
@@ -126,8 +182,9 @@ enum ModuleForm {
     private static func module(id: String, schema: ModuleSchemaDTO) -> VisualModule? {
         // Points and effects have no host-facing fields. An empty card is not a control.
         if schema.fields.isEmpty { return nil }
+        let locked = schema.locked
         let enabledField = schema.fields["enabled"]
-        let tracksEnabled = enabledField?.type == "bool"
+        let tracksEnabled = !locked && enabledField?.type == "bool"
         var rows: [VisualRow] = []
         var seen: Set<String> = []
         for key in schema.fieldOrder where key != "enabled" {
@@ -138,8 +195,9 @@ enum ModuleForm {
             id: id,
             title: schema.title ?? id,
             blurb: schema.blurb ?? "",
-            enabled: enabledField?.defaultBool ?? true,
+            enabled: locked ? true : (enabledField?.defaultBool ?? true),
             tracksEnabled: tracksEnabled,
+            locked: locked,
             rows: rows
         )
     }
@@ -178,5 +236,39 @@ enum ModuleForm {
 
     private static func minValue(_ number: Double, min: Double, max: Double) -> Double {
         Swift.min(max, Swift.max(min, number))
+    }
+}
+
+enum RevealFormVisibility {
+    static func shows(rowID: String, modules: [VisualModule]) -> Bool {
+        guard let reveal = modules.first(where: { $0.id == "reveal_fuzzy" }) else { return true }
+        func choice(_ id: String) -> String? {
+            guard let row = reveal.rows.first(where: { $0.id == id }),
+                  case let .options(_, values) = row.control,
+                  values.indices.contains(row.choice) else { return nil }
+            return values[row.choice]
+        }
+        func flag(_ id: String) -> Bool {
+            reveal.rows.first(where: { $0.id == id })?.flag ?? true
+        }
+        let mode = choice("location_mode") ?? "fuzzy"
+        let hintsActive = mode == "hot_cold" || (mode == "fuzzy" && flag("hints_enabled"))
+        switch rowID {
+        case "persistence", "interval":
+            return mode != "hot_cold"
+        case "display":
+            if mode == "hot_cold" {
+                return choice("hints_persistence") != "persistent"
+            }
+            return choice("persistence") != "persistent"
+        case "fuzz":
+            return mode == "fuzzy"
+        case "hints_enabled":
+            return mode == "fuzzy"
+        case "hints_persistence", "hints_interval":
+            return hintsActive
+        default:
+            return true
+        }
     }
 }

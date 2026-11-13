@@ -65,7 +65,10 @@ def _apply(session: GameSession, item: dict[str, Any]) -> None:
             bool(payload["is_host"]),
         )
     elif kind == "roles_random":
-        session.assign_roles_random(int(payload.get("hider_count", 1)))
+        if "seeker_count" in payload:
+            session.assign_roles_random(int(payload["seeker_count"]))
+        else:
+            session.assign_hiders_random(int(payload.get("hider_count", 1)))
     elif kind == "role_set":
         session.set_role(UUID(str(payload["player_id"])), str(payload["role"]))
     elif kind == "start":

@@ -139,6 +139,37 @@ final class LiveHudAndPresetsTests: XCTestCase {
         XCTAssertNil(RulePreset.matching(modules: custom))
     }
 
+    func testLockedModulesHaveNoMasterSwitchAndRevealHidesFuzzWhenPrecise() {
+        let modules = ModuleForm.offlineModules()
+        for id in ["tag_policy", "win", "points", "zone_policy", "reveal_fuzzy"] {
+            let module = modules.first { $0.id == id }
+            XCTAssertEqual(module?.locked, true, id)
+            XCTAssertEqual(module?.tracksEnabled, false, id)
+        }
+        XCTAssertEqual(modules.first { $0.id == "power_ups" }?.locked, false)
+        XCTAssertNotNil(modules.first { $0.id == "power_ups" }?.rows.first { $0.id == "scan_cost" })
+        var edited = modules
+        if let mIdx = edited.firstIndex(where: { $0.id == "reveal_fuzzy" }),
+           let rIdx = edited[mIdx].rows.firstIndex(where: { $0.id == "location_mode" }),
+           case let .options(_, values) = edited[mIdx].rows[rIdx].control,
+           let precise = values.firstIndex(of: "precise") {
+            edited[mIdx].rows[rIdx].choice = precise
+        }
+        XCTAssertFalse(RevealFormVisibility.shows(rowID: "fuzz", modules: edited))
+        XCTAssertFalse(RevealFormVisibility.shows(rowID: "hints_enabled", modules: edited))
+        XCTAssertTrue(RevealFormVisibility.shows(rowID: "interval", modules: edited))
+        if let mIdx = edited.firstIndex(where: { $0.id == "reveal_fuzzy" }),
+           let rIdx = edited[mIdx].rows.firstIndex(where: { $0.id == "location_mode" }),
+           case let .options(_, values) = edited[mIdx].rows[rIdx].control,
+           let hotCold = values.firstIndex(of: "hot_cold") {
+            edited[mIdx].rows[rIdx].choice = hotCold
+        }
+        XCTAssertFalse(RevealFormVisibility.shows(rowID: "fuzz", modules: edited))
+        XCTAssertFalse(RevealFormVisibility.shows(rowID: "persistence", modules: edited))
+        XCTAssertFalse(RevealFormVisibility.shows(rowID: "hints_enabled", modules: edited))
+        XCTAssertTrue(RevealFormVisibility.shows(rowID: "hints_interval", modules: edited))
+    }
+
     func testPresetOverridesGatesZoneShrinkToCircleArenas() {
         var modules = ModuleForm.offlineModules()
         if let idx = modules.firstIndex(where: { $0.id == "zone_shrink" }) {
@@ -394,7 +425,7 @@ final class LiveHudAndPresetsTests: XCTestCase {
         let store = AppStore(service: FakeGameService(), torch: torch)
         store.signInPreview()
         store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
-        store.randomizeRoles(hiderCount: 1)
+        store.randomizeRoles(seekerCount: 1)
         _ = store.startMatch()
 
         store.toggleFlashlight()
@@ -424,6 +455,82 @@ final class LiveHudAndPresetsTests: XCTestCase {
 
         brokenStore.tapVoicePlaceholder()
         XCTAssertEqual(brokenStore.note, "Voice is coming soon.")
+    }
+
+    func testRevealPaletteIsStableAndNotAZoneColor() {
+        let id = UUID(uuidString: "AB000000-0000-0000-0000-000000000000")!
+        XCTAssertEqual(RevealPalette.index(for: id), RevealPalette.index(for: id))
+        XCTAssertEqual(RevealPalette.index(for: id), 0xAB % 6)
+        let first = RevealPalette.index(for: id)
+        let second = RevealPalette.index(for: UUID())
+        XCTAssertTrue((0..<6).contains(first))
+        XCTAssertTrue((0..<6).contains(second))
+    }
+
+    @MainActor
+    func testLiveZonesDoNotIncludeReveals() {
+        let store = AppStore.makePreview()
+        let revealID = UUID()
+        store.match = MatchHandle(
+            snapshot: PlayerViewDTO(
+                gameId: UUID(),
+                joinCode: "TACO42",
+                phase: .active,
+                phaseRemainingS: nil,
+                gameElapsedS: 10,
+                timeLimitRemainingS: 1000,
+                timers: nil,
+                you: YouDTO(
+                    playerId: UUID(),
+                    role: .seeker,
+                    status: .active,
+                    isHost: true,
+                    bounds: BoundsDTO(phase: "inside", remainingS: nil),
+                    safeZone: nil,
+                    points: 0
+                ),
+                players: [],
+                reveals: [
+                    RevealDTO(
+                        revealId: revealID,
+                        playerId: UUID(),
+                        lat: 40.66,
+                        lon: -73.96,
+                        radiusM: 30,
+                        expiresInS: 8,
+                        displayName: "Riley"
+                    )
+                ],
+                banners: [],
+                result: nil
+            ),
+            qrToken: nil
+        )
+        XCTAssertFalse(store.liveZones.contains { $0.id == revealID.uuidString })
+        XCTAssertEqual(store.liveReveals.first?.name, "Riley")
+        XCTAssertEqual(store.liveReveals.first?.radiusMeters, 30)
+    }
+
+    @MainActor
+    func testPauseIsOnlyTheClockLabel() {
+        XCTAssertEqual(LiveHUDLayout.clockPointSize, 20)
+        XCTAssertFalse(LiveHUDLayout.showsSecondColumn)
+        XCTAssertFalse(PauseChrome.shouldToast(eventTitle: "paused"))
+        XCTAssertTrue(PauseChrome.shouldToast(eventTitle: "resumed"))
+        XCTAssertTrue(PauseChrome.shouldToast(eventTitle: "zone_warning"))
+
+        let store = AppStore.makePreview()
+        store.recordLiveEvent(
+            BannerDTO(
+                bannerId: UUID(),
+                tone: "info",
+                title: "paused",
+                detail: "The host stopped the clock.",
+                playerId: nil
+            ),
+            now: Date(timeIntervalSince1970: 2_000)
+        )
+        XCTAssertNil(store.liveUpdate)
     }
 }
 

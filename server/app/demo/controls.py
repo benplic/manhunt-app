@@ -218,8 +218,11 @@ def _force_reveal(session: GameSession) -> None:
     if session.state.phase not in {"head_start", "active"}:
         raise GameRuleError(ErrorCode.WRONG_PHASE, "Reveal requires a live hunt.")
     reveal_mod = next((m for m in session.modules if isinstance(m, RevealFuzzyModule)), None)
-    if reveal_mod is None or not bool(reveal_mod.settings.get("enabled", True)):
+    if reveal_mod is None:
         raise GameRuleError(ErrorCode.WRONG_PHASE, "Fuzzy reveals are disabled.")
+    mode = str(reveal_mod.settings.get("location_mode", "fuzzy"))
+    if mode == "hot_cold":
+        raise GameRuleError(ErrorCode.WRONG_PHASE, "Hot/cold mode has no pins.")
     interval = max(1, int(reveal_mod.settings.get("interval", 60)))
     session.state.last_reveal_at_s = session.state.game_elapsed_s - interval
     reveal_mod.on_tick(session)
@@ -231,7 +234,9 @@ def _add_points(session: GameSession, actor_id: UUID, amount: int) -> None:
     player = session.state.players.get(actor_id)
     if player is None:
         raise GameRuleError(ErrorCode.NOT_A_MEMBER)
-    player.points += amount
+    from app.engine.modules.points import grant_points
+
+    grant_points(player, amount)
 
 
 def _pick_bot(

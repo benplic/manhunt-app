@@ -15,6 +15,14 @@ struct VisualPoint: Hashable {
     }
 }
 
+struct MapReveal: Identifiable, Hashable {
+    var id: String
+    var name: String
+    var colorIndex: Int
+    var center: VisualPoint
+    var radiusMeters: Double
+}
+
 struct VisualZone: Hashable, Identifiable {
     var id: String
     var name: String
@@ -79,6 +87,7 @@ struct VisualPlayer: Identifiable, Hashable {
     var isHost: Bool
     var point: VisualPoint
     var points: Int
+    var earned: Int
 }
 
 enum ArenaTool: String, CaseIterable, Identifiable {
@@ -118,6 +127,7 @@ struct VisualModule: Identifiable {
     var enabled: Bool
     /// True when the schema has an `enabled` bool. The card toggle writes that field.
     var tracksEnabled: Bool = false
+    var locked: Bool = false
     var rows: [VisualRow]
 }
 
@@ -272,22 +282,22 @@ enum SamplePark {
     )
 
     static let players: [VisualPlayer] = [
-        VisualPlayer(id: "casey", name: "Casey Lee", role: .seeker, isYou: true, isHost: true, point: VisualPoint(latitude: 40.66070, longitude: -73.96940), points: 120),
-        VisualPlayer(id: "riley", name: "Riley Chen", role: .hider, isYou: false, isHost: false, point: VisualPoint(latitude: 40.66240, longitude: -73.96840), points: 85),
-        VisualPlayer(id: "jordan", name: "Jordan Blake", role: .seeker, isYou: false, isHost: false, point: VisualPoint(latitude: 40.66110, longitude: -73.97010), points: 60),
-        VisualPlayer(id: "quinn", name: "Quinn Adler", role: .hider, isYou: false, isHost: false, point: VisualPoint(latitude: 40.66290, longitude: -73.96960), points: 40),
-        VisualPlayer(id: "sam", name: "Sam Patel", role: .hider, isYou: false, isHost: false, point: VisualPoint(latitude: 40.66140, longitude: -73.96790), points: 55),
+        VisualPlayer(id: "casey", name: "Casey Lee", role: .seeker, isYou: true, isHost: true, point: VisualPoint(latitude: 40.66070, longitude: -73.96940), points: 120, earned: 120),
+        VisualPlayer(id: "riley", name: "Riley Chen", role: .hider, isYou: false, isHost: false, point: VisualPoint(latitude: 40.66240, longitude: -73.96840), points: 85, earned: 85),
+        VisualPlayer(id: "jordan", name: "Jordan Blake", role: .seeker, isYou: false, isHost: false, point: VisualPoint(latitude: 40.66110, longitude: -73.97010), points: 60, earned: 60),
+        VisualPlayer(id: "quinn", name: "Quinn Adler", role: .hider, isYou: false, isHost: false, point: VisualPoint(latitude: 40.66290, longitude: -73.96960), points: 40, earned: 40),
+        VisualPlayer(id: "sam", name: "Sam Patel", role: .hider, isYou: false, isHost: false, point: VisualPoint(latitude: 40.66140, longitude: -73.96790), points: 55, earned: 55),
     ]
 
     static let powerUps: [PowerChip] = [
-        PowerChip(id: "ghost", title: "Ghost", detail: "Skip the next reveal", cost: 40, role: .hider),
-        PowerChip(id: "decoy", title: "Decoy", detail: "Next pin is a fake", cost: 60, role: .hider),
-        PowerChip(id: "radar", title: "Radar", detail: "See seekers for 20s", cost: 50, role: .hider),
-        PowerChip(id: "jammer", title: "Jammer", detail: "Mute hot / cold hints", cost: 70, role: .hider),
-        PowerChip(id: "shield", title: "Shield", detail: "Untaggable for 30s", cost: 80, role: .hider),
-        PowerChip(id: "scan", title: "Scan", detail: "Reveal one hider now", cost: 45, role: .seeker),
-        PowerChip(id: "tracker", title: "Tracker", detail: "Hot / cold for 3 min", cost: 55, role: .seeker),
-        PowerChip(id: "lockdown", title: "Lockdown", detail: "Safe zones off", cost: 90, role: .seeker),
+        PowerChip(id: "ghost", title: "Ghost", detail: "Skip the next reveal", cost: 20, role: .hider),
+        PowerChip(id: "decoy", title: "Decoy", detail: "Next pin is a fake", cost: 40, role: .hider),
+        PowerChip(id: "radar", title: "Radar", detail: "See seekers for 20s", cost: 40, role: .hider),
+        PowerChip(id: "jammer", title: "Jammer", detail: "Mute hot / cold hints", cost: 55, role: .hider),
+        PowerChip(id: "shield", title: "Shield", detail: "Untaggable for 30s", cost: 70, role: .hider),
+        PowerChip(id: "scan", title: "Scan", detail: "Reveal one hider now", cost: 25, role: .seeker),
+        PowerChip(id: "tracker", title: "Tracker", detail: "Hot / cold for 3 min", cost: 50, role: .seeker),
+        PowerChip(id: "lockdown", title: "Lockdown", detail: "Safe zones off", cost: 75, role: .seeker),
     ]
 
     static func classicModules() -> [VisualModule] {

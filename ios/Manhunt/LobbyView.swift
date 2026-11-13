@@ -189,8 +189,8 @@ struct LobbyView: View {
                 }
 
                 if store.isHost {
-                    Stepper(value: $store.hiderCount, in: 1...max(1, store.players.count - 1)) {
-                        Text("Hiders \(store.hiderCount)")
+                    Stepper(value: $store.seekerCount, in: 1...max(1, store.players.count - 1)) {
+                        Text("Seekers \(store.seekerCount)")
                             .foregroundStyle(HuntColor.paper)
                     }
                     .padding(.horizontal, 4)
@@ -198,7 +198,7 @@ struct LobbyView: View {
                     HuntButton(title: "Randomize roles", systemImage: "shuffle", tint: HuntColor.paper, action: store.randomizeRoles)
                     HuntButton(title: "Start hunt", systemImage: "flag.checkered", action: store.startLive)
                         .accessibilityIdentifier("start-hunt")
-                    Text("Tap a player to cycle Hider, Seeker, and Open. Randomize uses the hider count above.")
+                    Text("Tap a player to cycle Hider, Seeker, and Open. Randomize uses the seeker count above. Everyone else hides.")
                         .font(.footnote)
                         .foregroundStyle(HuntColor.muted)
                 }

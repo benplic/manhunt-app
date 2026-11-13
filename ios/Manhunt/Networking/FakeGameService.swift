@@ -149,15 +149,15 @@ final class FakeGameService: GameService {
         return game.view()
     }
 
-    func randomizeRoles(gameID: UUID, hiderCount: Int) async throws -> PlayerViewDTO {
-        try randomizeRolesSync(gameID: gameID, hiderCount: hiderCount)
+    func randomizeRoles(gameID: UUID, seekerCount: Int) async throws -> PlayerViewDTO {
+        try randomizeRolesSync(gameID: gameID, seekerCount: seekerCount)
     }
 
-    func randomizeRolesSync(gameID: UUID, hiderCount: Int) throws -> PlayerViewDTO {
+    func randomizeRolesSync(gameID: UUID, seekerCount: Int) throws -> PlayerViewDTO {
         guard var game = games[gameID] else { throw ServiceError(code: .gameNotFound, message: "") }
         let assigned = RoleAssigner.assign(
             playerIDs: game.players.map(\.id),
-            hiderCount: hiderCount,
+            seekerCount: seekerCount,
             using: &rng
         )
         for index in game.players.indices {
@@ -260,6 +260,7 @@ final class FakeGameService: GameService {
             throw ServiceError(code: .wrongPhase, message: "Taunt only during the hunt.")
         }
         game.players[index].points += 12
+        game.players[index].pointsEarned += 12
         game.taunted = true
         games[gameID] = game
         return game.view()
@@ -453,6 +454,7 @@ final class FakeGameService: GameService {
             let amount: Int
             if case let .int(val) = params["amount"] { amount = val } else { amount = 100 }
             game.players[youIndex].points += amount
+            game.players[youIndex].pointsEarned += amount
         case "bot_go_dark":
             let dark: Bool
             if case let .bool(val) = params["dark"] { dark = val } else { dark = true }
@@ -506,7 +508,8 @@ private struct FakePlayer {
     var role: PlayerRole
     var isHost: Bool
     var status: PlayerStatus = .active
-    var points: Int = 100
+    var points: Int = 0
+    var pointsEarned: Int = 0
 }
 
 private struct FakeGame {
@@ -579,7 +582,8 @@ private struct FakeGame {
                 isHost: youAreHost,
                 bounds: BoundsDTO(phase: "inside", remainingS: nil),
                 safeZone: nil,
-                points: you.points
+                points: you.points,
+                pointsEarned: you.pointsEarned
             ),
             players: players.map {
                 PlayerDTO(
@@ -588,6 +592,8 @@ private struct FakeGame {
                     role: $0.role,
                     status: $0.status,
                     isHost: $0.isHost,
+                    points: $0.points,
+                    pointsEarned: $0.pointsEarned,
                     location: nil
                 )
             },

@@ -12,6 +12,7 @@ services:
       interval: 2s
       timeout: 5s
       retries: 20
+    restart: unless-stopped
     volumes:
       - manhunt-pg:/var/lib/postgresql/data
 
@@ -27,6 +28,14 @@ services:
       MANHUNT_TICK_LOOP: "true"
     ports:
       - "8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      # The image has Python but no curl.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/v1/healthz', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
     depends_on:
       db:
         condition: service_healthy
@@ -50,17 +59,32 @@ services:
         condition: service_healthy
 
   # Quick tunnel (no Cloudflare account). Logs print https://….trycloudflare.com.
-  # Named tunnel: set TUNNEL_TOKEN and change command to
-  #   tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
-  # Never commit TUNNEL_TOKEN.
+  # The hostname is random and changes every time this container starts,
+  # including restarts after a crash, so phones must be given the new URL.
+  # Use scripts/home-server.sh to start it and print the verified URL.
   tunnel:
     image: cloudflare/cloudflared:latest
     profiles: ["tunnel"]
     command: tunnel --no-autoupdate --url http://server:8000
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+
+  # Named tunnel: a stable hostname that survives restarts. Create the tunnel in
+  # the Cloudflare Zero Trust dashboard with a public hostname pointing at
+  # http://server:8000, then put its token in TUNNEL_TOKEN in the untracked .env.
+  # Never commit TUNNEL_TOKEN. Do not run this and the quick tunnel together.
+  tunnel-named:
+    image: cloudflare/cloudflared:latest
+    profiles: ["named-tunnel"]
+    command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    restart: unless-stopped
     depends_on:
-      - server
+      server:
+        condition: service_healthy
 
 volumes:
   manhunt-pg:

@@ -45,7 +45,6 @@ enum RulePreset: String, CaseIterable, Identifiable {
         setRow(in: &modules, moduleID: "win", rowID: "time_limit", number: Double(roundMinutes))
         setEnabled(in: &modules, moduleID: "head_start", enabled: true)
         setRow(in: &modules, moduleID: "head_start", rowID: "duration", number: Double(headStartSeconds))
-        setEnabled(in: &modules, moduleID: "reveal_fuzzy", enabled: true)
         setRow(in: &modules, moduleID: "reveal_fuzzy", rowID: "interval", number: Double(pingSeconds))
     }
 
@@ -53,9 +52,8 @@ enum RulePreset: String, CaseIterable, Identifiable {
         let round = rowNumber(in: modules, moduleID: "win", rowID: "time_limit")
         let hsEnabled = moduleEnabled(in: modules, moduleID: "head_start")
         let hs = rowNumber(in: modules, moduleID: "head_start", rowID: "duration")
-        let pingEnabled = moduleEnabled(in: modules, moduleID: "reveal_fuzzy")
         let ping = rowNumber(in: modules, moduleID: "reveal_fuzzy", rowID: "interval")
-        guard hsEnabled == true, pingEnabled == true else { return nil }
+        guard hsEnabled == true else { return nil }
         return allCases.first {
             Int(round?.rounded() ?? -1) == $0.roundMinutes
                 && Int(hs?.rounded() ?? -1) == $0.headStartSeconds

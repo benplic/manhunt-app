@@ -10,9 +10,18 @@ from app.errors import ApiError, ErrorCode
 CLASSIC_ID = "classic"
 
 CLASSIC_MODULES: dict[str, dict[str, Any]] = {
-    "roles": {"mode": "random", "hider_count": 2},
+    "roles": {"mode": "random", "seeker_count": 1},
     "head_start": {"enabled": True, "duration": 60, "seeker_lock": "locked_map"},
-    "reveal_fuzzy": {"enabled": True, "interval": 60, "display": 10, "fuzz": 30},
+    "reveal_fuzzy": {
+        "location_mode": "fuzzy",
+        "persistence": "timed",
+        "interval": 60,
+        "display": 10,
+        "fuzz": 30,
+        "hints_enabled": True,
+        "hints_persistence": "persistent",
+        "hints_interval": 5,
+    },
     "tag_policy": {
         "method": "qr",
         "radius_m": 2,
@@ -44,15 +53,34 @@ CLASSIC_MODULES: dict[str, dict[str, Any]] = {
         "close_hold_s": 5,
         "close_call_points": 20,
         "others_tagged_points": 15,
+        "taunt_enabled": True,
         "taunt_s": 8,
         "taunt_cooldown": 45,
     },
-    "power_ups": {"enabled": True},
+    "power_ups": {
+        "enabled": True,
+        "ghost_enabled": True,
+        "ghost_cost": 20,
+        "decoy_enabled": True,
+        "decoy_cost": 40,
+        "radar_enabled": True,
+        "radar_cost": 40,
+        "jammer_enabled": True,
+        "jammer_cost": 55,
+        "shield_enabled": True,
+        "shield_cost": 70,
+        "scan_enabled": True,
+        "scan_cost": 25,
+        "tracker_enabled": True,
+        "tracker_cost": 50,
+        "lockdown_enabled": True,
+        "lockdown_cost": 75,
+    },
     "effects": {},
 }
 
 RANGES: dict[tuple[str, str], tuple[float, float]] = {
-    ("roles", "hider_count"): (1, 20),
+    ("roles", "seeker_count"): (1, 20),
     ("head_start", "duration"): (15, 600),
     ("reveal_fuzzy", "interval"): (20, 600),
     ("reveal_fuzzy", "display"): (5, 60),
@@ -70,6 +98,7 @@ RANGES: dict[tuple[str, str], tuple[float, float]] = {
     ("signal_loss", "penalty_after"): (30, 900),
     ("win", "time_limit"): (5, 180),
     ("hot_cold", "interval"): (2, 30),
+    ("reveal_fuzzy", "hints_interval"): (2, 30),
     ("points", "taunt_cooldown"): (10, 180),
 }
 

@@ -75,7 +75,19 @@ class GameSession:
         )
         return player
 
-    def assign_roles_random(self, hider_count: int) -> None:
+    def assign_roles_random(self, seeker_count: int) -> None:
+        ids = list(self.state.players.keys())
+        if not ids:
+            return
+        shuffled = ids[:]
+        self.rng.shuffle(shuffled)
+        seekers = max(0, min(seeker_count, len(shuffled)))
+        for index, player_id in enumerate(shuffled):
+            self.state.players[player_id].role = "seeker" if index < seekers else "hider"
+        self._note_input("roles_random", {"seeker_count": seekers})
+
+    def assign_hiders_random(self, hider_count: int) -> None:
+        """Replay path for inputs logged before seeker_count existed."""
         ids = list(self.state.players.keys())
         if not ids:
             return
@@ -245,12 +257,25 @@ class GameSession:
         require_tag_ok(self, claim)
         hider = self.state.players[claim.hider_id]
         seeker = self.state.players[claim.seeker_id]
+        other_hiders: dict[str, dict[str, int]] = {}
+        for player_id, player in self.state.players.items():
+            if (
+                player_id != claim.hider_id
+                and player.role == "hider"
+                and player.status == "active"
+            ):
+                other_hiders[str(player_id)] = {
+                    "points": player.points,
+                    "points_earned": player.points_earned,
+                }
         self.state.last_tag = {
             "hider_id": str(hider.player_id),
             "seeker_id": str(seeker.player_id),
             "hider_status": hider.status,
             "hider_role": hider.role,
             "seeker_points": seeker.points,
+            "seeker_points_earned": seeker.points_earned,
+            "other_hiders": other_hiders,
         }
         for module in self.modules:
             if isinstance(module, TagPolicyModule):
@@ -291,6 +316,17 @@ class GameSession:
         hider.status = str(last["hider_status"])
         hider.role = str(last["hider_role"])
         seeker.points = int(last["seeker_points"])
+        seeker.points_earned = int(
+            last.get("seeker_points_earned", last["seeker_points"])
+        )
+        for player_id_str, snap in last.get("other_hiders", {}).items():
+            other = self.state.players.get(UUID(str(player_id_str)))
+            if other is None:
+                continue
+            other.points = int(snap["points"])
+            other.points_earned = int(
+                snap.get("points_earned", snap["points"])
+            )
         self.state.last_tag = None
         if self.state.phase == "ended":
             self.state.phase = "active"

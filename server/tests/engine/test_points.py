@@ -1,3 +1,6 @@
+import pytest
+
+from app.errors import ErrorCode, GameRuleError
 from tests.engine.helpers import meters, reading, two_player_hunt
 
 
@@ -17,9 +20,18 @@ def test_close_taunt_scores_more_than_a_distant_one() -> None:
     assert close_points > far_points
 
 
-def test_second_taunt_inside_the_cooldown_is_refused() -> None:
-    from app.errors import ErrorCode, GameRuleError
+def test_taunt_disabled_rejects_and_awards_nothing() -> None:
+    session, clock, hider, seeker = two_player_hunt({"points": {"taunt_enabled": False}})
+    session.record_location(hider, reading(meters(100, 100), clock))
+    session.record_location(seeker, reading(meters(110, 100), clock))
+    with pytest.raises(GameRuleError) as exc:
+        session.taunt(hider)
+    assert exc.value.code == ErrorCode.WRONG_PHASE
+    assert session.state.players[hider].points == 0
+    assert session.state.players[hider].points_earned == 0
 
+
+def test_second_taunt_inside_the_cooldown_is_refused() -> None:
     session, clock, hider, seeker = two_player_hunt({"points": {"taunt_cooldown": 45}})
     session.record_location(hider, reading(meters(100, 100), clock))
     session.record_location(seeker, reading(meters(110, 100), clock))
@@ -54,3 +66,23 @@ def test_seeker_gains_twenty_five_for_a_tag() -> None:
     before = session.state.players[seeker].points
     session.claim_tag(TagClaim(seeker, hider, qr_token=token))
     assert session.state.players[seeker].points == before + 25
+
+
+def test_new_players_start_at_zero_and_spending_does_not_change_earned() -> None:
+    from app.engine.modules.power_ups import CATALOG
+
+    session, clock, hider, seeker = two_player_hunt()
+    assert session.state.players[hider].points == 0
+    assert session.state.players[hider].points_earned == 0
+    session.record_location(hider, reading(meters(100, 100), clock))
+    session.record_location(seeker, reading(meters(100, 100), clock))
+    session.taunt(hider)
+    earned = session.state.players[hider].points_earned
+    balance = session.state.players[hider].points
+    assert earned == balance
+    assert earned >= 5
+    cost = int(CATALOG["ghost"]["cost"])
+    session.state.players[hider].points = cost
+    session.purchase(hider, "ghost")
+    assert session.state.players[hider].points == 0
+    assert session.state.players[hider].points_earned == earned

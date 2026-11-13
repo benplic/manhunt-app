@@ -26,6 +26,7 @@ struct LiveGameView: View {
                 boundary: store.mapArena.boundary,
                 boundaryCircle: store.mapArena.boundaryCircle,
                 zones: zones,
+                reveals: store.liveReveals,
                 people: store.livePeople,
                 showHiders: true,
                 // Hiders: radar effect shows seekers; server-sent OOB seeker pins
@@ -72,9 +73,6 @@ struct LiveGameView: View {
                         detail: "Get back inside the yellow line before the penalty.",
                         tint: HuntColor.warning
                     )
-                }
-                if store.paused {
-                    banner(title: "Paused", detail: "The host stopped the clock.", tint: HuntColor.paper)
                 }
                 if store.decoyPicking {
                     // Hide the dock while picking so HuntMap's Drop point stays tappable.
@@ -146,7 +144,7 @@ struct LiveGameView: View {
             }
         }
         .sheet(isPresented: $showBoard) {
-            LeaderboardSheet(players: store.players.sorted { $0.points > $1.points }) {
+            LeaderboardSheet(players: store.players.sorted { $0.earned > $1.earned }) {
                 showBoard = false
             }
             .presentationDetents([.medium, .large])
@@ -162,7 +160,6 @@ struct LiveGameView: View {
         .confirmationDialog("Host", isPresented: $showHost, titleVisibility: .visible) {
             Button(store.paused ? "Resume" : "Pause", action: store.pauseOrResume)
             Button("Undo last tag", action: store.undoLastTag)
-            Button("Acknowledge safety", action: store.acknowledgeSafety)
             Button("End game", role: .destructive, action: store.endLive)
             Button("Cancel", role: .cancel) {}
         }
@@ -272,7 +269,9 @@ struct LiveGameView: View {
                         .foregroundStyle(HuntColor.warning)
                 }
             case .activeHider:
-                if store.match?.snapshot.phase == .active {
+                if store.match?.snapshot.phase == .active,
+                   store.match?.snapshot.you.tauntEnabled != false
+                {
                     let wait = store.match?.snapshot.you.tauntCooldownS ?? 0
                     Button(action: store.taunt) {
                         Label(wait > 0 ? "Taunt · \(wait)s" : "Taunt", systemImage: "megaphone.fill")
@@ -300,7 +299,7 @@ struct LiveGameView: View {
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(SamplePark.powerUps.filter { $0.role == store.viewingRole }) { chip in
+                    ForEach(store.dockPowerChips()) { chip in
                         let enabled = store.chipIsTappable(chip)
                         let cooling = store.match?.snapshot.you.cooldowns?[chip.id] ?? 0
                         Button {
@@ -459,7 +458,7 @@ private struct LeaderboardSheet: View {
                             .foregroundStyle(HuntColor.signal)
                         Text(player.isYou ? "\(player.name) (you)" : player.name)
                         Spacer()
-                        Text("\(player.points)")
+                        Text("\(player.earned)")
                             .font(.headline.monospacedDigit())
                     }
                 }

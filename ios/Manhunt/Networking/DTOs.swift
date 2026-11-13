@@ -91,6 +91,17 @@ struct ZoneTimerDTO: Codable, Equatable {
     }
 }
 
+struct PowerUpDTO: Codable, Equatable, Identifiable {
+    var id: String
+    var title: String
+    var cost: Int
+    var role: PlayerRole
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, cost, role
+    }
+}
+
 struct TimersDTO: Codable, Equatable {
     var headStartS: Int
     var timeLimitS: Int
@@ -129,6 +140,8 @@ struct PlayerViewDTO: Codable {
     var arena: Arena? = nil
     /// Demo lobby state and bot summary. Nil for normal games.
     var demo: DemoDTO? = nil
+    /// Dock chips for the viewer. Nil on older servers (use SamplePark fallback).
+    var powerUps: [PowerUpDTO]? = nil
 
     enum CodingKeys: String, CodingKey {
         case gameId = "game_id"
@@ -145,6 +158,7 @@ struct PlayerViewDTO: Codable {
         case lobbyStartsInS = "lobby_starts_in_s"
         case arena
         case demo
+        case powerUps = "power_ups"
     }
 }
 
@@ -195,11 +209,15 @@ struct YouDTO: Codable {
     var bounds: BoundsDTO
     var safeZone: SafeDTO?
     var points: Int
+    /// Lifetime earned score; nil on older servers decodes as absent.
+    var pointsEarned: Int? = nil
     var hint: HintDTO? = nil
     var effects: [String]? = nil
     var cooldowns: [String: Int]? = nil
     /// Seconds until this hider may taunt again. Nil on older servers.
     var tauntCooldownS: Int? = nil
+    /// Host turned taunts off; nil on older servers decodes as absent (show button).
+    var tauntEnabled: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
         case playerId = "player_id"
@@ -207,8 +225,11 @@ struct YouDTO: Codable {
         case isHost = "is_host"
         case bounds
         case safeZone = "safe_zone"
-        case points, hint, effects, cooldowns
+        case points
+        case pointsEarned = "points_earned"
+        case hint, effects, cooldowns
         case tauntCooldownS = "taunt_cooldown_s"
+        case tauntEnabled = "taunt_enabled"
     }
 }
 
@@ -285,6 +306,7 @@ struct PlayerDTO: Codable, Identifiable, Hashable {
     var status: PlayerStatus
     var isHost: Bool
     var points: Int? = nil
+    var pointsEarned: Int? = nil
     var location: LocationDTO?
 
     var id: UUID { playerId }
@@ -295,6 +317,7 @@ struct PlayerDTO: Codable, Identifiable, Hashable {
         case role, status
         case isHost = "is_host"
         case points
+        case pointsEarned = "points_earned"
         case location
     }
 }
@@ -319,6 +342,7 @@ struct RevealDTO: Codable, Identifiable {
     var lon: Double
     var radiusM: Double
     var expiresInS: Int
+    var displayName: String? = nil
     var id: UUID { revealId }
 
     enum CodingKeys: String, CodingKey {
@@ -327,6 +351,7 @@ struct RevealDTO: Codable, Identifiable {
         case lat, lon
         case radiusM = "radius_m"
         case expiresInS = "expires_in_s"
+        case displayName = "display_name"
     }
 }
 

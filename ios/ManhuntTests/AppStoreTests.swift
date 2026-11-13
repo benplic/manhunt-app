@@ -177,7 +177,7 @@ final class AppStoreTests: XCTestCase {
         let store = AppStore.makePreview()
         store.signInPreview()
         store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
-        store.randomizeRoles(hiderCount: 1)
+        store.randomizeRoles(seekerCount: 1)
         XCTAssertNil(store.startMatch())
         XCTAssertEqual(store.screen, .live)
     }
@@ -250,7 +250,7 @@ final class AppStoreTests: XCTestCase {
         let store = AppStore(service: fake)
         store.signInPreview()
         store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
-        store.randomizeRoles(hiderCount: 1)
+        store.randomizeRoles(seekerCount: 1)
         _ = store.startMatch()
         let loc = CLLocation(latitude: 40.66, longitude: -73.97)
         store.sendFix(from: loc, isFinal: false, battery: 0.04)
@@ -277,7 +277,7 @@ final class AppStoreTests: XCTestCase {
         let store = AppStore(service: fake)
         store.signInPreview()
         store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
-        store.randomizeRoles(hiderCount: 1)
+        store.randomizeRoles(seekerCount: 1)
         _ = store.startMatch()
         // Force the viewer into the hider seat with enough points for decoy.
         guard var snapshot = store.match?.snapshot else {
@@ -339,7 +339,7 @@ final class AppStoreTests: XCTestCase {
         let store = AppStore(service: fake)
         store.signInPreview()
         store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
-        store.randomizeRoles(hiderCount: 1)
+        store.randomizeRoles(seekerCount: 1)
         _ = store.startMatch()
         guard let gameID = store.match?.snapshot.gameId,
               let youID = store.match?.snapshot.you.playerId

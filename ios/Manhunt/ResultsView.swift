@@ -39,7 +39,7 @@ struct ResultsView: View {
                                     .foregroundStyle(HuntColor.muted)
                             }
                             Spacer()
-                            Text("\(player.points)")
+                            Text("\(player.earned)")
                                 .font(.headline.monospacedDigit())
                         }
                         .foregroundStyle(HuntColor.paper)
@@ -76,7 +76,7 @@ struct ResultsView: View {
     }
 
     private var ranked: [VisualPlayer] {
-        store.players.sorted { $0.points > $1.points }
+        store.players.sorted { $0.earned > $1.earned }
     }
 
     private func winnerTitle(_ winner: String) -> String {

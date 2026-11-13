@@ -6,60 +6,51 @@ struct LiveHUD: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(clock.primaryLabel)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(HuntColor.muted)
-                Text(clock.primaryClock)
-                    .font(.system(size: 28, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(primaryTint)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(clock.primaryLabel)
+                        .font(.caption2)
+                        .foregroundStyle(HuntColor.muted)
+                    Text(clock.primaryClock)
+                        .font(.system(size: LiveHUDLayout.clockPointSize, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(primaryTint)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                }
                 HuntProgressBar(
                     progress: clock.primaryProgress,
-                    tint: situation == .headStart ? HuntColor.signal : HuntColor.paper
+                    tint: situation == .headStart ? HuntColor.signal : HuntColor.paper,
+                    height: LiveHUDLayout.barHeight
                 )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Rectangle()
-                .fill(HuntColor.line)
-                .frame(width: 1)
-                .padding(.vertical, 2)
-
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("Next ping")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(HuntColor.muted)
-                    Spacer(minLength: 4)
-                    Text(clock.pingClock ?? "Off")
-                        .font(.subheadline.weight(.bold))
+            VStack(alignment: .trailing, spacing: 2) {
+                if let pingClock = clock.pingClock {
+                    Text("Ping \(pingClock)")
+                        .font(.caption2)
                         .monospacedDigit()
                         .foregroundStyle(HuntColor.paper)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                 }
-                HuntProgressBar(
-                    progress: clock.pingProgress,
-                    tint: clock.pingClock != nil ? HuntColor.seeker : HuntColor.line
-                )
                 if let zoneLine = clock.zoneLine {
                     Text(zoneLine)
-                        .font(.caption2.weight(.semibold))
+                        .font(.caption2)
                         .monospacedDigit()
                         .foregroundStyle(clock.zoneImminent ? HuntColor.warning : HuntColor.muted)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                        .minimumScaleFactor(0.75)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
         .fixedSize(horizontal: false, vertical: true)
-        .background(.black.opacity(0.76), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(.black.opacity(0.76), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(HuntColor.line, lineWidth: 1)
         )
     }
@@ -76,6 +67,7 @@ struct LiveHUD: View {
 private struct HuntProgressBar: View {
     var progress: Double
     var tint: Color
+    var height: CGFloat = LiveHUDLayout.barHeight
 
     var body: some View {
         GeometryReader { geo in
@@ -87,6 +79,6 @@ private struct HuntProgressBar: View {
                     .frame(width: max(0, min(geo.size.width, geo.size.width * progress)))
             }
         }
-        .frame(height: 5)
+        .frame(height: height)
     }
 }

@@ -29,6 +29,7 @@ def test_qr_tag_eliminates_a_nearby_hider() -> None:
     )
     session.claim_tag(TagClaim(seeker, hider, qr_token=token))
     assert session.state.players[hider].status == "eliminated"
-    assert session.state.players[seeker].points == 125
+    assert session.state.players[seeker].points == 25
+    assert session.state.players[seeker].points_earned == 25
     assert session.state.phase == "ended"
     assert session.state.result.winner == "seekers"

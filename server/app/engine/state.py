@@ -61,7 +61,8 @@ class PlayerState:
     is_host: bool
     role: str = "unassigned"
     status: str = "active"
-    points: int = 100
+    points: int = 0
+    points_earned: int = 0
     location: LocationReading | None = None
     last_precise: LocationReading | None = None
     bounds_phase: str = "inside"
@@ -88,6 +89,7 @@ class PlayerState:
     hint: dict[str, Any] | None = None
     # Game second when the current hint was published. None means "recompute".
     hint_at_s: int | None = None
+    hint_until_s: int | None = None
     uwb_token: str | None = None
     # This phone's own range to a peer: meters, game_elapsed_s. Not persisted.
     uwb_ranges: dict[UUID, tuple[float, int]] = field(default_factory=dict)

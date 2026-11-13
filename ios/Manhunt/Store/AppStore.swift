@@ -53,7 +53,7 @@ final class AppStore {
     var joinDraft = ""
     var joinMessage: String?
     var note: String?
-    var hiderCount = 1
+    var seekerCount = 1
     var editor = ArenaEditorModel()
     var situation: LiveSituation = .active
     /// Decoy purchase step: pan the map and drop a pin before POST.
@@ -254,6 +254,9 @@ final class AppStore {
             } else {
                 point = VisualPoint(latitude: 40.6616, longitude: -73.9688)
             }
+            let spendable = player.points
+                ?? (player.playerId == match.snapshot.you.playerId ? match.snapshot.you.points : 0)
+            let earned = player.pointsEarned ?? spendable
             return VisualPlayer(
                 id: player.playerId.uuidString,
                 name: player.displayName,
@@ -261,8 +264,8 @@ final class AppStore {
                 isYou: player.playerId == match.snapshot.you.playerId,
                 isHost: player.isHost,
                 point: point,
-                points: player.points
-                    ?? (player.playerId == match.snapshot.you.playerId ? match.snapshot.you.points : 0)
+                points: spendable,
+                earned: earned
             )
         }
     }
@@ -275,7 +278,7 @@ final class AppStore {
         }
     }
 
-    var shownPoints: Int { match?.snapshot.you.points ?? 120 }
+    var shownPoints: Int { match?.snapshot.you.points ?? 0 }
 
     /// True while the server radar effect is live on `you.effects`.
     var radarShowsSeekers: Bool {
@@ -305,19 +308,26 @@ final class AppStore {
     }
 
     var liveZones: [VisualZone] {
-        var zones = mapArena.zones
-        if let reveals = match?.snapshot.reveals {
-            zones += reveals.map { pin in
-                VisualZone(
-                    id: pin.revealId.uuidString,
-                    name: "Reveal",
-                    kind: .safe,
-                    points: [VisualPoint(latitude: pin.lat, longitude: pin.lon)],
-                    radiusMeters: pin.radiusM
-                )
-            }
+        mapArena.zones
+    }
+
+    var liveReveals: [MapReveal] {
+        guard let reveals = match?.snapshot.reveals else { return [] }
+        return reveals.map { pin in
+            let name: String = {
+                if let displayName = pin.displayName, !displayName.isEmpty {
+                    return displayName
+                }
+                return "Hider"
+            }()
+            return MapReveal(
+                id: pin.revealId.uuidString,
+                name: name,
+                colorIndex: RevealPalette.index(for: pin.playerId),
+                center: VisualPoint(latitude: pin.lat, longitude: pin.lon),
+                radiusMeters: pin.radiusM
+            )
         }
-        return zones
     }
 
     var livePeople: [VisualPlayer] {
@@ -448,6 +458,7 @@ final class AppStore {
     }
 
     func recordLiveEvent(_ banner: BannerDTO, now: Date = Date()) {
+        guard PauseChrome.shouldToast(eventTitle: banner.title) else { return }
         let ignored: Set<String> = ["started", "player_joined", "location"]
         let trimmed = banner.detail.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !ignored.contains(banner.title), !trimmed.isEmpty else { return }
@@ -709,17 +720,17 @@ final class AppStore {
     }
 
     func randomizeRoles() {
-        randomizeRoles(hiderCount: hiderCount)
+        randomizeRoles(seekerCount: seekerCount)
     }
 
-    func randomizeRoles(hiderCount: Int) {
+    func randomizeRoles(seekerCount: Int) {
         guard let id = match?.snapshot.gameId else { return }
-        if let fake, let view = try? fake.randomizeRolesSync(gameID: id, hiderCount: hiderCount) {
+        if let fake, let view = try? fake.randomizeRolesSync(gameID: id, seekerCount: seekerCount) {
             apply(view)
             return
         }
         Task {
-            if let view = try? await service.randomizeRoles(gameID: id, hiderCount: hiderCount) {
+            if let view = try? await service.randomizeRoles(gameID: id, seekerCount: seekerCount) {
                 apply(view)
             }
         }
@@ -1112,6 +1123,35 @@ final class AppStore {
         }
     }
 
+    private static func visualRole(_ role: PlayerRole) -> VisualRole {
+        switch role {
+        case .hider: .hider
+        case .seeker: .seeker
+        case .unassigned: .unassigned
+        }
+    }
+
+    func dockPowerChips() -> [PowerChip] {
+        guard let snapshot = match?.snapshot else {
+            return SamplePark.powerUps.filter { $0.role == viewingRole }
+        }
+        guard let serverList = snapshot.powerUps else {
+            return SamplePark.powerUps.filter { $0.role == viewingRole }
+        }
+        let details = Dictionary(uniqueKeysWithValues: SamplePark.powerUps.map { ($0.id, $0.detail) })
+        return serverList.compactMap { dto in
+            let visual = Self.visualRole(dto.role)
+            guard visual == viewingRole else { return nil }
+            return PowerChip(
+                id: dto.id,
+                title: dto.title,
+                detail: details[dto.id] ?? "",
+                cost: dto.cost,
+                role: visual
+            )
+        }
+    }
+
     func purchaseRequest(
         for chip: PowerChip,
         hasTarget: Bool = false,
@@ -1172,7 +1212,7 @@ final class AppStore {
     }
 
     func dropDecoy(at point: VisualPoint) {
-        guard let chip = SamplePark.powerUps.first(where: { $0.id == "decoy" }) else { return }
+        guard let chip = dockPowerChips().first(where: { $0.id == "decoy" }) else { return }
         // Deny outside the yellow play area before POST. Server still re-checks
         // the session arena boundary; this keeps lat/lon off the wire when the
         // map the player sees already says the point is outside.
