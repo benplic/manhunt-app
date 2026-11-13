@@ -7,6 +7,7 @@ struct LiveGameView: View {
     @State private var showScanner = false
     @State private var showBoard = false
     @State private var showLog = false
+    @State private var showDemo = false
 
     var body: some View {
         @Bindable var store = store
@@ -32,7 +33,9 @@ struct LiveGameView: View {
                 showSeekers: youAreHider ? store.shouldShowSeekerPins : true,
                 fuzzyHiders: false,
                 region: store.mapArena.region,
-                onDrop: store.decoyPicking ? { store.dropDecoy(at: $0) } : nil,
+                onDrop: store.decoyPicking
+                    ? { store.dropDecoy(at: $0) }
+                    : (store.demoPicking ? { store.dropDemoMove(at: $0) } : nil),
                 emphasizeSpawn: chrome == .spawnZone
             )
             .ignoresSafeArea()
@@ -52,7 +55,7 @@ struct LiveGameView: View {
 
             VStack(spacing: 10) {
                 topBar
-                if store.locationAccuracy == .denied || store.locationAccuracy == .reduced {
+                if !store.isDemoGame && (store.locationAccuracy == .denied || store.locationAccuracy == .reduced) {
                     locationBlock
                 }
                 if HeadStartChrome.showsFloatingNotice(chrome),
@@ -86,6 +89,18 @@ struct LiveGameView: View {
                     .padding(.vertical, 8)
                     .background(.black.opacity(0.72), in: Capsule())
                     .foregroundStyle(HuntColor.paper)
+                } else if store.demoPicking {
+                    HStack(spacing: 10) {
+                        Text(store.note ?? "Pan the map, then drop where you want to walk.")
+                            .font(.footnote.weight(.semibold))
+                        Spacer()
+                        Button("Cancel") { store.cancelDemoMovePick() }
+                            .font(.footnote.weight(.semibold))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.black.opacity(0.72), in: Capsule())
+                    .foregroundStyle(HuntColor.paper)
                 } else if HeadStartChrome.showsFloatingNotice(chrome),
                           let update = store.liveUpdate {
                     LiveUpdatePill(triggerKey: update.id.uuidString, text: update.text, tone: update.tone)
@@ -98,7 +113,7 @@ struct LiveGameView: View {
                     LiveUpdatePill(triggerKey: "note:\(note)", text: note, tone: "info")
                 }
                 Spacer()
-                if !store.decoyPicking {
+                if !store.decoyPicking && !store.demoPicking {
                     LiveControls(
                         flashlightOn: store.flashlightOn,
                         onToggleFlashlight: store.toggleFlashlight,
@@ -114,7 +129,7 @@ struct LiveGameView: View {
         .safeAreaInset(edge: .bottom) {
             // Banners stay in the top column. The dock is pinned so a safety
             // alert cannot push Taunt off the screen.
-            if !store.decoyPicking {
+            if !store.decoyPicking && !store.demoPicking {
                 dock(youAreHider: youAreHider)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 8)
@@ -138,6 +153,10 @@ struct LiveGameView: View {
         }
         .sheet(isPresented: $showLog) {
             EventLogSheet(events: store.timeline) { showLog = false }
+                .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showDemo) {
+            DemoPanelView { showDemo = false }
                 .presentationDetents([.medium, .large])
         }
         .confirmationDialog("Host", isPresented: $showHost, titleVisibility: .visible) {
@@ -166,6 +185,13 @@ struct LiveGameView: View {
                 }
                 RolePill(role: store.viewingRole)
                 Spacer(minLength: 0)
+                if store.demoControlsEnabled {
+                    mapChip("Demo") { showDemo = true }
+                        .accessibilityIdentifier("demo-controls-chip")
+                } else if store.isDemoGame {
+                    mapChip("Walk") { store.beginDemoMovePick() }
+                        .accessibilityIdentifier("demo-walk-chip")
+                }
                 if store.isHost {
                     Button {
                         showHost = true

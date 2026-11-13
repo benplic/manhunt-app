@@ -127,6 +127,8 @@ struct PlayerViewDTO: Codable {
     var lobbyStartsInS: Int? = nil
     /// Play area for this game. Every phone draws this, not its local selection.
     var arena: Arena? = nil
+    /// Demo lobby state and bot summary. Nil for normal games.
+    var demo: DemoDTO? = nil
 
     enum CodingKeys: String, CodingKey {
         case gameId = "game_id"
@@ -142,6 +144,46 @@ struct PlayerViewDTO: Codable {
         case you, players, reveals, banners, result
         case lobbyStartsInS = "lobby_starts_in_s"
         case arena
+        case demo
+    }
+}
+
+struct DemoBotDTO: Codable, Equatable, Identifiable {
+    var playerId: UUID
+    var displayName: String
+    var role: PlayerRole
+    var status: PlayerStatus
+    var mode: String
+
+    var id: UUID { playerId }
+
+    enum CodingKeys: String, CodingKey {
+        case playerId = "player_id"
+        case displayName = "display_name"
+        case role, status, mode
+    }
+}
+
+struct DemoPointDTO: Codable, Equatable {
+    var lat: Double
+    var lon: Double
+}
+
+struct DemoDTO: Codable, Equatable {
+    var speed: Int
+    var lobbyHold: Bool
+    var seekerLock: String
+    var controlsEnabled: Bool
+    var virtualLocation: DemoPointDTO?
+    var bots: [DemoBotDTO]
+
+    enum CodingKeys: String, CodingKey {
+        case speed
+        case lobbyHold = "lobby_hold"
+        case seekerLock = "seeker_lock"
+        case controlsEnabled = "controls_enabled"
+        case virtualLocation = "virtual_location"
+        case bots
     }
 }
 

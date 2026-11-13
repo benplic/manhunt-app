@@ -58,6 +58,8 @@ final class AppStore {
     var situation: LiveSituation = .active
     /// Decoy purchase step: pan the map and drop a pin before POST.
     var decoyPicking = false
+    /// Demo walk target picker: pan the map and drop a destination for `move_me`.
+    var demoPicking = false
     var tool: ArenaTool = .playArea
     var draftBoundary: [VisualPoint] = []
     var draftBoundaryCircle: CircleBoundary?
@@ -236,6 +238,8 @@ final class AppStore {
     }
 
     var isHost: Bool { match?.snapshot.you.isHost ?? false }
+    var isDemoGame: Bool { match?.snapshot.demo != nil }
+    var demoControlsEnabled: Bool { match?.snapshot.demo?.controlsEnabled == true }
     var joinCode: String { match?.snapshot.joinCode ?? "" }
     var hostName: String {
         match?.snapshot.players.first(where: \.isHost)?.displayName ?? "The host"
@@ -423,6 +427,7 @@ final class AppStore {
     }
 
     func sendFix(from location: CLLocation, isFinal: Bool, battery: Float? = nil) {
+        if match?.snapshot.demo != nil { return }
         lastSentLocation = location
         let level = battery ?? UIDevice.current.batteryLevel
         let choice = LocationFlag.choose(battery: level, isFinal: isFinal, wasLow: sentLowBattery)
@@ -472,6 +477,8 @@ final class AppStore {
 
     func signOut() {
         turnOffFlashlight()
+        decoyPicking = false
+        demoPicking = false
         stopUWB()
         live?.disconnect()
         live?.refreshToken = nil
@@ -495,6 +502,8 @@ final class AppStore {
     func leaveMatchThenHome() {
         let gameID = match?.snapshot.gameId
         turnOffFlashlight()
+        decoyPicking = false
+        demoPicking = false
         stopUWB()
         location.stop()
         live?.disconnect()
@@ -1144,6 +1153,7 @@ final class AppStore {
     func buyPower(_ chip: PowerChip) {
         guard chipIsTappable(chip) else { return }
         if chip.id == "decoy" {
+            demoPicking = false
             decoyPicking = true
             note = "Pan the map, then drop a decoy inside the play area."
             return
@@ -1320,6 +1330,8 @@ final class AppStore {
         switch view.phase {
         case .ended:
             turnOffFlashlight()
+            decoyPicking = false
+            demoPicking = false
             location.stop()
             live?.disconnect()
             note = nil
@@ -1365,13 +1377,130 @@ final class AppStore {
 
     private func enterLive() {
         screen = .live
-        // FakeGameService UI tests must not touch CoreLocation; a started
-        // CLBackgroundActivitySession crashes the simulator host on teardown.
-        if live != nil {
+        // FakeGameService UI tests must not touch CoreLocation; demo games use virtual movement.
+        if live != nil, match?.snapshot.demo == nil {
             location.start()
         }
         if let id = match?.snapshot.gameId {
             live?.connect(gameID: id)
+        }
+    }
+
+    // MARK: - Demo lobby controls
+
+    func setDemoSpeed(_ speed: Int) {
+        Task { await performDemoAction("set_speed", params: ["speed": .int(speed)], note: "Speed set to \(speed)x.") }
+    }
+
+    func demoSkipMinute() {
+        Task { await performDemoAction("skip", params: ["seconds": .int(60)], note: "Skipped 1 minute.") }
+    }
+
+    func demoForceTag(hiderID: UUID? = nil) {
+        var params: [String: RuleValue] = [:]
+        if let hiderID { params["hider_id"] = .string(hiderID.uuidString) }
+        Task { await performDemoAction("force_tag", params: params, note: "Forced tag.") }
+    }
+
+    func demoSwitchTeam(_ role: PlayerRole? = nil) {
+        var params: [String: RuleValue] = [:]
+        if let role { params["role"] = .string(role.rawValue) }
+        Task { await performDemoAction("switch_team", params: params, note: "Switched team.") }
+    }
+
+    func demoEndPhase() {
+        Task { await performDemoAction("end_phase", params: [:]) }
+    }
+
+    func demoForceReveal() {
+        Task { await performDemoAction("force_reveal", params: [:], note: "Reveal triggered.") }
+    }
+
+    func demoAddPoints(_ amount: Int = 100) {
+        Task { await performDemoAction("add_points", params: ["amount": .int(amount)], note: "Added \(amount) pts.") }
+    }
+
+    func demoToggleBotDark(botID: UUID? = nil, dark: Bool) {
+        var params: [String: RuleValue] = ["dark": .bool(dark)]
+        if let botID { params["bot_id"] = .string(botID.uuidString) }
+        Task {
+            await performDemoAction(
+                "bot_go_dark",
+                params: params,
+                note: dark ? "Bot went dark." : "Bot signal restored."
+            )
+        }
+    }
+
+    func demoToggleBotOOB(botID: UUID? = nil, oob: Bool) {
+        var params: [String: RuleValue] = ["oob": .bool(oob)]
+        if let botID { params["bot_id"] = .string(botID.uuidString) }
+        Task {
+            await performDemoAction(
+                "bot_oob",
+                params: params,
+                note: oob ? "Bot walking out of bounds." : "Bot returning inside."
+            )
+        }
+    }
+
+    func demoToggleLobbyHold() {
+        let current = match?.snapshot.demo?.lobbyHold ?? false
+        Task {
+            await performDemoAction(
+                "lobby_hold",
+                params: ["hold": .bool(!current)],
+                note: !current ? "Countdown paused." : "Countdown resumed."
+            )
+        }
+    }
+
+    func demoSetSeekerLock(_ mode: String) {
+        Task { await performDemoAction("set_seeker_lock", params: ["mode": .string(mode)]) }
+    }
+
+    func beginDemoMovePick() {
+        decoyPicking = false
+        demoPicking = true
+        note = "Pan the map, then drop where you want to walk."
+    }
+
+    func cancelDemoMovePick() {
+        demoPicking = false
+        note = nil
+    }
+
+    func dropDemoMove(at point: VisualPoint) {
+        demoPicking = false
+        Task {
+            await performDemoAction(
+                "move_me",
+                params: ["lat": .double(point.latitude), "lon": .double(point.longitude)],
+                note: "Walking there…"
+            )
+        }
+    }
+
+    @discardableResult
+    func performDemoAction(
+        _ action: String,
+        params: [String: RuleValue],
+        note successNote: String? = nil
+    ) async -> Bool {
+        guard let id = match?.snapshot.gameId else { return false }
+        do {
+            let view = try await service.demo(gameID: id, action: action, params: params)
+            apply(view)
+            if let successNote, view.banners.isEmpty {
+                note = successNote
+            }
+            return true
+        } catch let error as ServiceError {
+            note = error.message
+            return false
+        } catch {
+            note = "Demo action failed."
+            return false
         }
     }
 
