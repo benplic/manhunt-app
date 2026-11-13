@@ -15,7 +15,8 @@ def test_full_demo_game_plays_through_head_start_reveal_and_bot_tags(
     assert joined.status_code == 200
     gid = joined.json()["id"]
 
-    # Put host on seeker team so bot seekers + host play against bot hiders.
+    # PARK42 draws one seeker. A bot has to be that seeker, or the host
+    # stands still and the hiders are never tagged. Keep one bot hider too.
     host_id = auth["user"]["id"]
     view = client.get(f"/v1/games/{gid}", headers=headers).json()
     assert view["phase"] == "lobby"
@@ -25,13 +26,20 @@ def test_full_demo_game_plays_through_head_start_reveal_and_bot_tags(
         json={"action": "switch_team", "role": "seeker"},
     )
     view = client.get(f"/v1/games/{gid}", headers=headers).json()
-    if not any(p["role"] == "hider" for p in view["players"]):
-        bot_id = next(p["player_id"] for p in view["players"] if p["player_id"] != host_id)
-        client.post(
+    bots = [p for p in view["players"] if p["player_id"] != host_id]
+    assignments: dict[str, str] = {}
+    if not any(p["role"] == "seeker" for p in bots):
+        assignments[bots[0]["player_id"]] = "seeker"
+    if not any(p["role"] == "hider" for p in bots) and len(bots) > 1:
+        hider_bot = bots[1] if bots[0]["player_id"] in assignments else bots[0]
+        assignments[hider_bot["player_id"]] = "hider"
+    if assignments:
+        assigned = client.post(
             f"/v1/games/{gid}/roles",
             headers=headers,
-            json={"mode": "manual", "assignments": {bot_id: "hider"}},
+            json={"mode": "manual", "assignments": assignments},
         )
+        assert assigned.status_code == 200
 
     client.post(f"/v1/games/{gid}/demo", headers=headers, json={"action": "end_phase"})
     client.post(f"/v1/games/{gid}/demo", headers=headers, json={"action": "set_speed", "speed": 5})
