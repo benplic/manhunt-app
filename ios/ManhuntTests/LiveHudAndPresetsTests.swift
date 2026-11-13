@@ -394,7 +394,7 @@ final class LiveHudAndPresetsTests: XCTestCase {
         let store = AppStore(service: FakeGameService(), torch: torch)
         store.signInPreview()
         store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
-        store.randomizeRoles(hiderCount: 1)
+        store.randomizeRoles(seekerCount: 1)
         _ = store.startMatch()
 
         store.toggleFlashlight()

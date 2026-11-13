@@ -170,24 +170,24 @@ final class GameRulesTests: XCTestCase {
         XCTAssertEqual(machine.phase, .inside)
     }
 
-    func testRandomRolesHonorTheHiderCountAndEmptyInput() {
+    func testRandomRolesHonorTheSeekerCountAndEmptyInput() {
         let ids = (0..<4).map { _ in UUID() }
         var rng = SplitMix64(state: 99)
-        let assigned = RoleAssigner.assign(playerIDs: ids, hiderCount: 1, using: &rng)
+        let assigned = RoleAssigner.assign(playerIDs: ids, seekerCount: 1, using: &rng)
         XCTAssertEqual(assigned.count, 4)
-        XCTAssertEqual(assigned.values.filter { $0 == .hider }.count, 1)
-        XCTAssertEqual(assigned.values.filter { $0 == .seeker }.count, 3)
+        XCTAssertEqual(assigned.values.filter { $0 == .seeker }.count, 1)
+        XCTAssertEqual(assigned.values.filter { $0 == .hider }.count, 3)
 
         var zero = SplitMix64(state: 1)
-        let allSeekers = RoleAssigner.assign(playerIDs: ids, hiderCount: 0, using: &zero)
-        XCTAssertTrue(allSeekers.values.allSatisfy { $0 == .seeker })
-
-        var overflow = SplitMix64(state: 1)
-        let allHiders = RoleAssigner.assign(playerIDs: ids, hiderCount: 90, using: &overflow)
+        let allHiders = RoleAssigner.assign(playerIDs: ids, seekerCount: 0, using: &zero)
         XCTAssertTrue(allHiders.values.allSatisfy { $0 == .hider })
 
+        var overflow = SplitMix64(state: 1)
+        let allSeekers = RoleAssigner.assign(playerIDs: ids, seekerCount: 90, using: &overflow)
+        XCTAssertTrue(allSeekers.values.allSatisfy { $0 == .seeker })
+
         var unused = SplitMix64(state: 1)
-        XCTAssertTrue(RoleAssigner.assign(playerIDs: [], hiderCount: 2, using: &unused).isEmpty)
+        XCTAssertTrue(RoleAssigner.assign(playerIDs: [], seekerCount: 2, using: &unused).isEmpty)
     }
 
     func testPurchaseRulesRejectTheObviousIllegalBuys() {

@@ -53,7 +53,7 @@ final class AppStore {
     var joinDraft = ""
     var joinMessage: String?
     var note: String?
-    var hiderCount = 1
+    var seekerCount = 1
     var editor = ArenaEditorModel()
     var situation: LiveSituation = .active
     /// Decoy purchase step: pan the map and drop a pin before POST.
@@ -709,17 +709,17 @@ final class AppStore {
     }
 
     func randomizeRoles() {
-        randomizeRoles(hiderCount: hiderCount)
+        randomizeRoles(seekerCount: seekerCount)
     }
 
-    func randomizeRoles(hiderCount: Int) {
+    func randomizeRoles(seekerCount: Int) {
         guard let id = match?.snapshot.gameId else { return }
-        if let fake, let view = try? fake.randomizeRolesSync(gameID: id, hiderCount: hiderCount) {
+        if let fake, let view = try? fake.randomizeRolesSync(gameID: id, seekerCount: seekerCount) {
             apply(view)
             return
         }
         Task {
-            if let view = try? await service.randomizeRoles(gameID: id, hiderCount: hiderCount) {
+            if let view = try? await service.randomizeRoles(gameID: id, seekerCount: seekerCount) {
                 apply(view)
             }
         }

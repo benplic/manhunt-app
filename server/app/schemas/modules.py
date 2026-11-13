@@ -55,10 +55,10 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "version": 1,
         "title": "Roles",
         "blurb": "How hiders and seekers are chosen in the lobby.",
-        "field_order": ["mode", "hider_count"],
+        "field_order": ["mode", "seeker_count"],
         "fields": {
             "mode": _enum("Assignment", ["random", "manual"], "random", ["Random", "Manual"]),
-            "hider_count": _int("Hiders", 1, 20, 2),
+            "seeker_count": _int("Seekers", 1, 20, 1),
         },
     },
     "head_start": {

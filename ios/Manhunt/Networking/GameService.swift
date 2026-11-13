@@ -14,7 +14,7 @@ protocol GameService: AnyObject {
     func createGame(arenaID: UUID, presetID: String, overrides: [String: [String: RuleValue]]) async throws -> PlayerViewDTO
     func timeline(gameID: UUID) async throws -> [TimelineEventDTO]
     func join(code: String) async throws -> PlayerViewDTO
-    func randomizeRoles(gameID: UUID, hiderCount: Int) async throws -> PlayerViewDTO
+    func randomizeRoles(gameID: UUID, seekerCount: Int) async throws -> PlayerViewDTO
     func setRole(gameID: UUID, playerID: UUID, role: PlayerRole) async throws -> PlayerViewDTO
     func start(gameID: UUID) async throws -> PlayerViewDTO
     func pause(gameID: UUID) async throws -> PlayerViewDTO

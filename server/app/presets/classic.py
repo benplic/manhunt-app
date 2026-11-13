@@ -10,7 +10,7 @@ from app.errors import ApiError, ErrorCode
 CLASSIC_ID = "classic"
 
 CLASSIC_MODULES: dict[str, dict[str, Any]] = {
-    "roles": {"mode": "random", "hider_count": 2},
+    "roles": {"mode": "random", "seeker_count": 1},
     "head_start": {"enabled": True, "duration": 60, "seeker_lock": "locked_map"},
     "reveal_fuzzy": {"enabled": True, "interval": 60, "display": 10, "fuzz": 30},
     "tag_policy": {
@@ -52,7 +52,7 @@ CLASSIC_MODULES: dict[str, dict[str, Any]] = {
 }
 
 RANGES: dict[tuple[str, str], tuple[float, float]] = {
-    ("roles", "hider_count"): (1, 20),
+    ("roles", "seeker_count"): (1, 20),
     ("head_start", "duration"): (15, 600),
     ("reveal_fuzzy", "interval"): (20, 600),
     ("reveal_fuzzy", "display"): (5, 60),

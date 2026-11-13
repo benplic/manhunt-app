@@ -75,7 +75,19 @@ class GameSession:
         )
         return player
 
-    def assign_roles_random(self, hider_count: int) -> None:
+    def assign_roles_random(self, seeker_count: int) -> None:
+        ids = list(self.state.players.keys())
+        if not ids:
+            return
+        shuffled = ids[:]
+        self.rng.shuffle(shuffled)
+        seekers = max(0, min(seeker_count, len(shuffled)))
+        for index, player_id in enumerate(shuffled):
+            self.state.players[player_id].role = "seeker" if index < seekers else "hider"
+        self._note_input("roles_random", {"seeker_count": seekers})
+
+    def assign_hiders_random(self, hider_count: int) -> None:
+        """Replay path for inputs logged before seeker_count existed."""
         ids = list(self.state.players.keys())
         if not ids:
             return

@@ -149,15 +149,15 @@ final class FakeGameService: GameService {
         return game.view()
     }
 
-    func randomizeRoles(gameID: UUID, hiderCount: Int) async throws -> PlayerViewDTO {
-        try randomizeRolesSync(gameID: gameID, hiderCount: hiderCount)
+    func randomizeRoles(gameID: UUID, seekerCount: Int) async throws -> PlayerViewDTO {
+        try randomizeRolesSync(gameID: gameID, seekerCount: seekerCount)
     }
 
-    func randomizeRolesSync(gameID: UUID, hiderCount: Int) throws -> PlayerViewDTO {
+    func randomizeRolesSync(gameID: UUID, seekerCount: Int) throws -> PlayerViewDTO {
         guard var game = games[gameID] else { throw ServiceError(code: .gameNotFound, message: "") }
         let assigned = RoleAssigner.assign(
             playerIDs: game.players.map(\.id),
-            hiderCount: hiderCount,
+            seekerCount: seekerCount,
             using: &rng
         )
         for index in game.players.indices {

@@ -62,7 +62,7 @@ def test_create_join_start_needs_both_roles(client: TestClient) -> None:
     assert start.json()["error"]["code"] == "NEED_BOTH_ROLES"
     roles = client.post(
         f"/v1/games/{game_id}/roles",
-        json={"mode": "random", "hider_count": 1},
+        json={"mode": "random", "seeker_count": 1},
         headers=_headers(host["access_token"]),
     )
     assert roles.status_code == 200

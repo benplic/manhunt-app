@@ -118,8 +118,8 @@ final class LiveGameService: GameService {
         return try await view(gameID: created.id)
     }
 
-    func randomizeRoles(gameID: UUID, hiderCount: Int) async throws -> PlayerViewDTO {
-        try await client.post("/v1/games/\(gameID.uuidString)/roles", body: RoleRandomBody(hiderCount: hiderCount))
+    func randomizeRoles(gameID: UUID, seekerCount: Int) async throws -> PlayerViewDTO {
+        try await client.post("/v1/games/\(gameID.uuidString)/roles", body: RoleRandomBody(seekerCount: seekerCount))
     }
 
     func setRole(gameID: UUID, playerID: UUID, role: PlayerRole) async throws -> PlayerViewDTO {

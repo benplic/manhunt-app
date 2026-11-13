@@ -273,7 +273,13 @@ class GameService:
         game = self._live(row)
         mode = body.get("mode")
         if mode == "random":
-            game.assign_roles_random(int(body.get("hider_count", 1)))
+            roles_body = body
+            if "seeker_count" in roles_body:
+                game.assign_roles_random(int(roles_body.get("seeker_count", 1)))
+            elif "hider_count" in roles_body:
+                game.assign_hiders_random(int(roles_body.get("hider_count", 1)))
+            else:
+                game.assign_roles_random(1)
         elif mode == "manual":
             for player_id, role in (body.get("assignments") or {}).items():
                 game.set_role(UUID(str(player_id)), str(role))
@@ -609,9 +615,15 @@ class GameService:
         game.rng.shuffle(order)
         for bot in order:
             game.add_player(bot.id, bot.display_name, is_host=False)
-        hider_count = int(preset.get("modules", {}).get("roles", {}).get("hider_count", 1))
-        hider_count = max(1, min(hider_count, len(game.state.players) - 1))
-        game.assign_roles_random(hider_count)
+        roles = preset.get("modules", {}).get("roles", {})
+        player_count = len(game.state.players)
+        if player_count >= 2:
+            if "seeker_count" in roles:
+                seekers = max(1, min(int(roles["seeker_count"]), player_count - 1))
+                game.assign_roles_random(seekers)
+            else:
+                hiders = max(1, min(int(roles.get("hider_count", 1)), player_count - 1))
+                game.assign_hiders_random(hiders)
         for player in game.state.players.values():
             member = await session.get(GamePlayerRow, (row.id, player.player_id))
             if member is not None:

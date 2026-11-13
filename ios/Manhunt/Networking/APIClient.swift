@@ -137,10 +137,10 @@ struct JoinBody: Encodable {
 
 struct RoleRandomBody: Encodable {
     var mode = "random"
-    var hiderCount: Int
+    var seekerCount: Int
     enum CodingKeys: String, CodingKey {
         case mode
-        case hiderCount = "hider_count"
+        case seekerCount = "seeker_count"
     }
 }
 
