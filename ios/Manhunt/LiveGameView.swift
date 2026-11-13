@@ -64,9 +64,11 @@ struct LiveGameView: View {
                 if HeadStartChrome.showsFloatingNotice(chrome),
                    let banner = store.match?.snapshot.banners.last {
                     self.banner(title: banner.title, detail: banner.detail, tint: tone(banner.tone))
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 if store.situation == .reconnecting {
                     banner(title: "Reconnecting", detail: "The last event will catch up when the socket returns.", tint: HuntColor.paper)
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 if store.situation == .outOfBounds {
                     let remaining = store.match?.snapshot.you.bounds.remainingS
@@ -75,6 +77,7 @@ struct LiveGameView: View {
                         detail: "Get back inside the yellow line before the penalty.",
                         tint: HuntColor.warning
                     )
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 if store.decoyPicking {
                     // Hide the dock while picking so HuntMap's Drop point stays tappable.
@@ -89,6 +92,7 @@ struct LiveGameView: View {
                     .padding(.vertical, 8)
                     .background(.black.opacity(0.72), in: Capsule())
                     .foregroundStyle(HuntColor.paper)
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 } else if store.demoPicking {
                     HStack(spacing: 10) {
                         Text(store.note ?? "Pan the map, then drop where you want to walk.")
@@ -101,6 +105,7 @@ struct LiveGameView: View {
                     .padding(.vertical, 8)
                     .background(.black.opacity(0.72), in: Capsule())
                     .foregroundStyle(HuntColor.paper)
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 } else if HeadStartChrome.showsFloatingNotice(chrome),
                           let update = store.liveUpdate {
                     LiveUpdatePill(triggerKey: update.id.uuidString, text: update.text, tone: update.tone)
@@ -120,11 +125,14 @@ struct LiveGameView: View {
                         onTapSpeaker: store.tapVoicePlaceholder,
                         onTapMic: store.tapVoicePlaceholder
                     )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
             .padding(.bottom, 12)
+            .animation(.snappy, value: store.situation)
+            .animation(.snappy, value: store.decoyPicking || store.demoPicking)
         }
         .safeAreaInset(edge: .bottom) {
             // Banners stay in the top column. The dock is pinned so a safety
@@ -133,8 +141,10 @@ struct LiveGameView: View {
                 dock(youAreHider: youAreHider)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 8)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .animation(.snappy, value: store.decoyPicking || store.demoPicking)
         .sheet(isPresented: $showCode) {
             TagCodeSheet(token: store.match?.qrToken ?? "manhunt-preview")
                 .presentationDetents([.medium])
@@ -245,6 +255,8 @@ struct LiveGameView: View {
                     Text("\(store.shownPoints) pts")
                         .font(.title2.weight(.semibold))
                         .monospacedDigit()
+                        .contentTransition(.numericText())
+                        .animation(.snappy, value: store.shownPoints)
                     Text(HintCopy.line(
                         role: store.match?.snapshot.you.role ?? .unassigned,
                         hint: store.match?.snapshot.you.hint
@@ -280,7 +292,12 @@ struct LiveGameView: View {
                 {
                     let wait = store.match?.snapshot.you.tauntCooldownS ?? 0
                     Button(action: store.taunt) {
-                        Label(wait > 0 ? "Taunt · \(wait)s" : "Taunt", systemImage: "megaphone.fill")
+                        Label {
+                            Text(wait > 0 ? "Taunt · \(wait)s" : "Taunt")
+                                .contentTransition(.numericText(countsDown: true))
+                        } icon: {
+                            Image(systemName: "megaphone.fill")
+                        }
                             .font(.body.weight(.semibold))
                             .frame(maxWidth: .infinity)
                             .frame(minHeight: 48)
@@ -324,6 +341,7 @@ struct LiveGameView: View {
                                 in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                             )
                             .foregroundStyle(enabled ? HuntColor.paper : HuntColor.paper.opacity(0.45))
+                            .animation(.easeOut(duration: 0.2), value: enabled)
                         }
                         .buttonStyle(.huntPress(.medium))
                         .disabled(!enabled)
@@ -428,6 +446,7 @@ struct LiveGameView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(HuntColor.ink.opacity(0.88), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .foregroundStyle(HuntColor.paper)
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 
     private func tone(_ raw: String) -> Color {

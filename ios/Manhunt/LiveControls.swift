@@ -12,6 +12,7 @@ struct LiveControls: View {
             Button(action: onToggleFlashlight) {
                 Image(systemName: flashlightOn ? "flashlight.on.fill" : "flashlight.off.fill")
                     .font(.system(size: 20, weight: .semibold))
+                    .contentTransition(.symbolEffect(.replace))
                     .frame(width: 52, height: 52)
                     .background(
                         flashlightOn ? HuntColor.paper : Color.black.opacity(0.68),
@@ -28,6 +29,7 @@ struct LiveControls: View {
                         color: flashlightOn ? HuntColor.signal.opacity(0.55) : .clear,
                         radius: 10
                     )
+                    .animation(.snappy, value: flashlightOn)
             }
             .buttonStyle(.huntPress(.medium))
             .accessibilityLabel(flashlightOn ? "Turn flashlight off" : "Turn flashlight on")

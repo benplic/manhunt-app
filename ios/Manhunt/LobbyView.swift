@@ -146,6 +146,7 @@ struct LobbyView: View {
                                                     in: Capsule()
                                                 )
                                                 .foregroundStyle(selected ? HuntColor.ink : HuntColor.paper)
+                                                .animation(.snappy, value: selected)
                                         }
                                         .buttonStyle(.huntPress(.selection))
                                     }
@@ -171,6 +172,7 @@ struct LobbyView: View {
                                                     in: Capsule()
                                                 )
                                                 .foregroundStyle(selected ? HuntColor.ink : HuntColor.paper)
+                                                .animation(.snappy, value: selected)
                                         }
                                         .buttonStyle(.huntPress(.selection))
                                     }
