@@ -1,3 +1,6 @@
+import pytest
+
+from app.errors import ErrorCode, GameRuleError
 from tests.engine.helpers import meters, reading, two_player_hunt
 
 
@@ -17,9 +20,18 @@ def test_close_taunt_scores_more_than_a_distant_one() -> None:
     assert close_points > far_points
 
 
-def test_second_taunt_inside_the_cooldown_is_refused() -> None:
-    from app.errors import ErrorCode, GameRuleError
+def test_taunt_disabled_rejects_and_awards_nothing() -> None:
+    session, clock, hider, seeker = two_player_hunt({"points": {"taunt_enabled": False}})
+    session.record_location(hider, reading(meters(100, 100), clock))
+    session.record_location(seeker, reading(meters(110, 100), clock))
+    with pytest.raises(GameRuleError) as exc:
+        session.taunt(hider)
+    assert exc.value.code == ErrorCode.WRONG_PHASE
+    assert session.state.players[hider].points == 0
+    assert session.state.players[hider].points_earned == 0
 
+
+def test_second_taunt_inside_the_cooldown_is_refused() -> None:
     session, clock, hider, seeker = two_player_hunt({"points": {"taunt_cooldown": 45}})
     session.record_location(hider, reading(meters(100, 100), clock))
     session.record_location(seeker, reading(meters(110, 100), clock))

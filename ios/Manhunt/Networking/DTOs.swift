@@ -202,6 +202,8 @@ struct YouDTO: Codable {
     var cooldowns: [String: Int]? = nil
     /// Seconds until this hider may taunt again. Nil on older servers.
     var tauntCooldownS: Int? = nil
+    /// Host turned taunts off; nil on older servers decodes as absent (show button).
+    var tauntEnabled: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
         case playerId = "player_id"
@@ -213,6 +215,7 @@ struct YouDTO: Codable {
         case pointsEarned = "points_earned"
         case hint, effects, cooldowns
         case tauntCooldownS = "taunt_cooldown_s"
+        case tauntEnabled = "taunt_enabled"
     }
 }
 

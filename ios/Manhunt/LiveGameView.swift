@@ -272,7 +272,9 @@ struct LiveGameView: View {
                         .foregroundStyle(HuntColor.warning)
                 }
             case .activeHider:
-                if store.match?.snapshot.phase == .active {
+                if store.match?.snapshot.phase == .active,
+                   store.match?.snapshot.you.tauntEnabled != false
+                {
                     let wait = store.match?.snapshot.you.tauntCooldownS ?? 0
                     Button(action: store.taunt) {
                         Label(wait > 0 ? "Taunt · \(wait)s" : "Taunt", systemImage: "megaphone.fill")

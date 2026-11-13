@@ -72,6 +72,8 @@ class PointsModule(BaseModule):
 
 
 def apply_taunt(s: GameSession, player_id) -> None:
+    if not bool(s.module_settings("points").get("taunt_enabled", True)):
+        raise GameRuleError(ErrorCode.WRONG_PHASE, "Taunts are off.")
     player = s.state.players[player_id]
     if player.role != "hider" or player.status != "active":
         raise GameRuleError(ErrorCode.WRONG_ROLE)

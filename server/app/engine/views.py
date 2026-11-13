@@ -96,6 +96,7 @@ def build_view(
             "effects": [e.type for e in state.effects if e.owner_id == viewer.player_id],
             "cooldowns": cooldowns,
             "taunt_cooldown_s": taunt_cooldown_s,
+            "taunt_enabled": bool(session.module_settings("points").get("taunt_enabled", True)),
         },
         "arena": arena_to_dict(state.arena),
         "players": players,

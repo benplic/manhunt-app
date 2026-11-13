@@ -44,6 +44,7 @@ CLASSIC_MODULES: dict[str, dict[str, Any]] = {
         "close_hold_s": 5,
         "close_call_points": 20,
         "others_tagged_points": 15,
+        "taunt_enabled": True,
         "taunt_s": 8,
         "taunt_cooldown": 45,
     },
