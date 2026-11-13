@@ -342,6 +342,7 @@ struct RevealDTO: Codable, Identifiable {
     var lon: Double
     var radiusM: Double
     var expiresInS: Int
+    var displayName: String? = nil
     var id: UUID { revealId }
 
     enum CodingKeys: String, CodingKey {
@@ -350,6 +351,7 @@ struct RevealDTO: Codable, Identifiable {
         case lat, lon
         case radiusM = "radius_m"
         case expiresInS = "expires_in_s"
+        case displayName = "display_name"
     }
 }
 

@@ -14,6 +14,16 @@ enum HuntColor {
     static let safe = Color(red: 0.36, green: 0.56, blue: 0.95)
     static let warning = Color(red: 0.95, green: 0.62, blue: 0.16)
     static let danger = Color(red: 0.86, green: 0.22, blue: 0.18)
+
+    /// Violet, pink, cyan, lime, magenta, periwinkle — distinct from `safe`.
+    static let revealPalette: [Color] = [
+        Color(red: 0.55, green: 0.36, blue: 0.96),
+        Color(red: 0.96, green: 0.45, blue: 0.70),
+        Color(red: 0.20, green: 0.85, blue: 0.85),
+        Color(red: 0.78, green: 0.95, blue: 0.35),
+        Color(red: 0.85, green: 0.25, blue: 0.55),
+        Color(red: 0.75, green: 0.78, blue: 0.95),
+    ]
 }
 
 enum HuntFont {

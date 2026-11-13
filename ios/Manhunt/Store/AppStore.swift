@@ -308,19 +308,26 @@ final class AppStore {
     }
 
     var liveZones: [VisualZone] {
-        var zones = mapArena.zones
-        if let reveals = match?.snapshot.reveals {
-            zones += reveals.map { pin in
-                VisualZone(
-                    id: pin.revealId.uuidString,
-                    name: "Reveal",
-                    kind: .safe,
-                    points: [VisualPoint(latitude: pin.lat, longitude: pin.lon)],
-                    radiusMeters: pin.radiusM
-                )
-            }
+        mapArena.zones
+    }
+
+    var liveReveals: [MapReveal] {
+        guard let reveals = match?.snapshot.reveals else { return [] }
+        return reveals.map { pin in
+            let name: String = {
+                if let displayName = pin.displayName, !displayName.isEmpty {
+                    return displayName
+                }
+                return "Hider"
+            }()
+            return MapReveal(
+                id: pin.revealId.uuidString,
+                name: name,
+                colorIndex: RevealPalette.index(for: pin.playerId),
+                center: VisualPoint(latitude: pin.lat, longitude: pin.lon),
+                radiusMeters: pin.radiusM
+            )
         }
-        return zones
     }
 
     var livePeople: [VisualPlayer] {

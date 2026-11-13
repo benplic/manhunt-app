@@ -26,6 +26,7 @@ struct LiveGameView: View {
                 boundary: store.mapArena.boundary,
                 boundaryCircle: store.mapArena.boundaryCircle,
                 zones: zones,
+                reveals: store.liveReveals,
                 people: store.livePeople,
                 showHiders: true,
                 // Hiders: radar effect shows seekers; server-sent OOB seeker pins

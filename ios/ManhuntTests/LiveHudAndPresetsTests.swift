@@ -456,6 +456,60 @@ final class LiveHudAndPresetsTests: XCTestCase {
         brokenStore.tapVoicePlaceholder()
         XCTAssertEqual(brokenStore.note, "Voice is coming soon.")
     }
+
+    func testRevealPaletteIsStableAndNotAZoneColor() {
+        let id = UUID(uuidString: "00000000-0000-0000-0000-0000000000AB")!
+        XCTAssertEqual(RevealPalette.index(for: id), RevealPalette.index(for: id))
+        XCTAssertEqual(RevealPalette.index(for: id), 0xAB % 6)
+        let first = RevealPalette.index(for: id)
+        let second = RevealPalette.index(for: UUID())
+        XCTAssertTrue((0..<6).contains(first))
+        XCTAssertTrue((0..<6).contains(second))
+    }
+
+    @MainActor
+    func testLiveZonesDoNotIncludeReveals() {
+        let store = AppStore.makePreview()
+        let revealID = UUID()
+        store.match = MatchHandle(
+            snapshot: PlayerViewDTO(
+                gameId: UUID(),
+                joinCode: "TACO42",
+                phase: .active,
+                phaseRemainingS: nil,
+                gameElapsedS: 10,
+                timeLimitRemainingS: 1000,
+                timers: nil,
+                you: YouDTO(
+                    playerId: UUID(),
+                    role: .seeker,
+                    status: .active,
+                    isHost: true,
+                    bounds: BoundsDTO(phase: "inside", remainingS: nil),
+                    safeZone: nil,
+                    points: 0
+                ),
+                players: [],
+                reveals: [
+                    RevealDTO(
+                        revealId: revealID,
+                        playerId: UUID(),
+                        lat: 40.66,
+                        lon: -73.96,
+                        radiusM: 30,
+                        expiresInS: 8,
+                        displayName: "Riley"
+                    )
+                ],
+                banners: [],
+                result: nil
+            ),
+            qrToken: nil
+        )
+        XCTAssertFalse(store.liveZones.contains { $0.id == revealID.uuidString })
+        XCTAssertEqual(store.liveReveals.first?.name, "Riley")
+        XCTAssertEqual(store.liveReveals.first?.radiusMeters, 30)
+    }
 }
 
 private final class FakeTorch: TorchControlling {

@@ -6,6 +6,7 @@ struct HuntMap: View {
     var boundary: [VisualPoint]
     var boundaryCircle: CircleBoundary? = nil
     var zones: [VisualZone]
+    var reveals: [MapReveal] = []
     var people: [VisualPlayer]
     var showHiders: Bool
     var showSeekers: Bool
@@ -75,6 +76,9 @@ struct HuntMap: View {
                 }
                 ForEach(zones.filter { $0.kind == .outOfBounds }) { zone in
                     zoneContent(zone)
+                }
+                ForEach(reveals) { reveal in
+                    revealContent(reveal)
                 }
                 if emphasizeSpawn {
                     ForEach(zones.filter { $0.kind == .spawn }) { zone in
@@ -191,6 +195,31 @@ struct HuntMap: View {
             MapPolyline(coordinates: zone.points.map(\.coordinate))
                 .stroke(tint, lineWidth: width)
         }
+        if !zone.name.isEmpty,
+           zone.kind == .safe || zone.kind == .outOfBounds || zone.kind == .spawn,
+           let anchor = zone.points.first {
+            Annotation(zone.name, coordinate: anchor.coordinate) {
+                Text(zone.name)
+                    .font(.caption2.weight(.bold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(.black.opacity(0.72), in: Capsule())
+                    .foregroundStyle(HuntColor.paper)
+            }
+        }
+    }
+
+    @MapContentBuilder
+    private func revealContent(_ reveal: MapReveal) -> some MapContent {
+        let color = RevealPalette.color(at: reveal.colorIndex)
+        if reveal.radiusMeters > 1 {
+            MapCircle(center: reveal.center.coordinate, radius: reveal.radiusMeters)
+                .foregroundStyle(color.opacity(0.22))
+                .stroke(color, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+        }
+        Annotation(reveal.name, coordinate: reveal.center.coordinate) {
+            RevealPin(name: reveal.name, color: color, fuzzy: reveal.radiusMeters > 1)
+        }
     }
 
     private func tint(for kind: VisualZone.Kind) -> Color {
@@ -198,6 +227,26 @@ struct HuntMap: View {
         case .safe: HuntColor.safe
         case .outOfBounds: HuntColor.warning
         case .spawn: HuntColor.seeker
+        }
+    }
+}
+
+struct RevealPin: View {
+    var name: String
+    var color: Color
+    var fuzzy: Bool
+
+    var body: some View {
+        VStack(spacing: 2) {
+            Circle()
+                .fill(color)
+                .frame(width: fuzzy ? 12 : 16, height: fuzzy ? 12 : 16)
+            Text(name.split(separator: " ").first.map(String.init) ?? name)
+                .font(.caption2.weight(.bold))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(.black.opacity(0.72), in: Capsule())
+                .foregroundStyle(HuntColor.paper)
         }
     }
 }
