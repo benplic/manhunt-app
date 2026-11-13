@@ -1,6 +1,6 @@
 # Scoring, zones, rules, and live HUD
 
-Date: 2026-11-13. Status: design, not implemented.
+Date: 2026-11-13. Status: implemented on `cursor/scoring-zones-hud-0d26`.
 
 This spec covers the live seeker screen in the attached screenshot, the lobby role stepper, the rules editor, and the points economy. Implementation follows `docs/superpowers/plans/2026-11-13-scoring-zones-hud.md`.
 

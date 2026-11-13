@@ -145,3 +145,29 @@ def test_fuzzy_reveal_emits_pins_are_up_event() -> None:
         e for e in session.drain_events() if e.type == "reveal"
     ]
     assert any("Hider pins are up." in e.text for e in reveal_events)
+
+
+def test_ghosted_hider_pulse_does_not_emit_pins_are_up() -> None:
+    session, clock = make_session(
+        overrides={
+            "head_start": {"enabled": False},
+            "reveal_fuzzy": {"interval": 2, "display": 5, "fuzz": 0},
+            "signal_loss": {"silence": 60},
+            "power_ups": {"enabled": True},
+        }
+    )
+    hid = uuid4()
+    seek = uuid4()
+    session.add_player(hid, "Riley", True)
+    session.add_player(seek, "Jordan", False)
+    session.set_role(hid, "hider")
+    session.set_role(seek, "seeker")
+    session.start()
+    session.record_location(hid, reading(meters(40, 40), clock))
+    session.state.players[hid].points = 100
+    session.purchase(hid, "ghost")
+    session.drain_events()
+    run_for(session, clock, 2)
+    assert session.state.reveals == []
+    reveal_events = [e for e in session.drain_events() if e.type == "reveal"]
+    assert not any("pins are up" in e.text.lower() for e in reveal_events)

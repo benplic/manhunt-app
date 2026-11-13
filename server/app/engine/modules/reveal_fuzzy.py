@@ -71,6 +71,7 @@ class RevealFuzzyModule(BaseModule):
             else now + display
         )
 
+        pins_added = 0
         for player in s.state.players.values():
             if player.role != "hider" or player.status != "active":
                 continue
@@ -115,6 +116,7 @@ class RevealFuzzyModule(BaseModule):
                     expires_at_game_s=expiry,
                 )
             )
+            pins_added += 1
 
         if _hints_active(settings) and hints_persistence == "timed":
             until = now + display
@@ -131,4 +133,6 @@ class RevealFuzzyModule(BaseModule):
             if republish:
                 publish_hints(s)
 
-        s.emit("reveal", {"text": "Hider pins are up."}, tone="info")
+        # No toast when every hider was skipped (ghost, no GPS, eliminated).
+        if pins_added > 0:
+            s.emit("reveal", {"text": "Hider pins are up."}, tone="info")

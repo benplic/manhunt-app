@@ -212,13 +212,14 @@ struct HuntMap: View {
     @MapContentBuilder
     private func revealContent(_ reveal: MapReveal) -> some MapContent {
         let color = RevealPalette.color(at: reveal.colorIndex)
-        if reveal.radiusMeters > 1 {
+        // Precise pins use radius 0. Any positive radius is a fuzzy circle.
+        if reveal.radiusMeters > 0 {
             MapCircle(center: reveal.center.coordinate, radius: reveal.radiusMeters)
                 .foregroundStyle(color.opacity(0.22))
                 .stroke(color, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
         }
         Annotation(reveal.name, coordinate: reveal.center.coordinate) {
-            RevealPin(name: reveal.name, color: color, fuzzy: reveal.radiusMeters > 1)
+            RevealPin(name: reveal.name, color: color, fuzzy: reveal.radiusMeters > 0)
         }
     }
 
