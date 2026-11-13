@@ -458,7 +458,7 @@ final class LiveHudAndPresetsTests: XCTestCase {
     }
 
     func testRevealPaletteIsStableAndNotAZoneColor() {
-        let id = UUID(uuidString: "00000000-0000-0000-0000-0000000000AB")!
+        let id = UUID(uuidString: "AB000000-0000-0000-0000-000000000000")!
         XCTAssertEqual(RevealPalette.index(for: id), RevealPalette.index(for: id))
         XCTAssertEqual(RevealPalette.index(for: id), 0xAB % 6)
         let first = RevealPalette.index(for: id)
