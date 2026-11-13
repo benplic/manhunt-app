@@ -22,11 +22,23 @@ struct HuntMap: View {
     var onDrop: ((VisualPoint) -> Void)?
     var onCrosshair: ((VisualPoint) -> Void)? = nil
     var emphasizeSpawn: Bool = false
+    var glidePeople: Bool = false
 
     @State private var position: MapCameraPosition = .automatic
     @State private var crosshair = VisualPoint(latitude: 40.6616, longitude: -73.9688)
+    @State private var glide = PlayerGlide()
+
+    private var animates: Bool { glidePeople }
 
     var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animates)) { timeline in
+            mapContent(now: timeline.date)
+        }
+        .onAppear { glide.retarget(people, now: Date()) }
+        .onChange(of: people) { _, updated in glide.retarget(updated, now: Date()) }
+    }
+
+    private func mapContent(now: Date) -> some View {
         Map(position: $position) {
                 if let circle = boundaryCircle {
                     MapCircle(
@@ -95,7 +107,7 @@ struct HuntMap: View {
                 }
                 ForEach(people) { person in
                     if shouldShow(person) {
-                        Annotation(person.name, coordinate: displayPoint(for: person).coordinate, anchor: .center) {
+                        Annotation(person.name, coordinate: displayPoint(for: person, now: now).coordinate, anchor: .center) {
                             PlayerPin(person: person, fuzzy: fuzzyHiders && person.role == .hider && !person.isYou)
                         }
                     }
@@ -171,11 +183,12 @@ struct HuntMap: View {
     }
 
     /// Fuzzy pins are offset so the picture reads as "approximate", not exact.
-    private func displayPoint(for person: VisualPlayer) -> VisualPoint {
-        guard fuzzyHiders, person.role == .hider, !person.isYou else { return person.point }
+    private func displayPoint(for person: VisualPlayer, now: Date) -> VisualPoint {
+        let base = glidePeople ? (glide.point(for: person.id, at: now) ?? person.point) : person.point
+        guard fuzzyHiders, person.role == .hider, !person.isYou else { return base }
         return VisualPoint(
-            latitude: person.point.latitude + 0.00035,
-            longitude: person.point.longitude - 0.00028
+            latitude: base.latitude + 0.00035,
+            longitude: base.longitude - 0.00028
         )
     }
 
