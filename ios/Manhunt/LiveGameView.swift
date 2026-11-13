@@ -170,6 +170,8 @@ struct LiveGameView: View {
                 UINotificationFeedbackGenerator().notificationOccurred(.warning)
             }
         }
+
+        PingFlashOverlay(pulse: store.pingPulse)
     }
 
     private var topBar: some View {

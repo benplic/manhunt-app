@@ -40,6 +40,11 @@ struct LiveUpdate: Equatable {
     var receivedAt: Date
 }
 
+struct PingPulse: Equatable {
+    var id = UUID()
+    var role: PlayerRole
+}
+
 @MainActor
 @Observable
 final class AppStore {
@@ -83,6 +88,7 @@ final class AppStore {
     var pasteToken = ""
     var tagMessage: String?
     var liveUpdate: LiveUpdate?
+    var pingPulse: PingPulse?
     var flashlightOn = false
     var timeline: [TimelineEventDTO] = []
     var uwbPeers: [UWBPeer] = []
@@ -507,6 +513,7 @@ final class AppStore {
         keychain.deleteToken()
         session = nil
         match = nil
+        pingPulse = nil
         screen = .signedOut
         joinDraft = ""
         joinMessage = nil
@@ -529,6 +536,7 @@ final class AppStore {
         location.stop()
         live?.disconnect()
         match = nil
+        pingPulse = nil
         screen = .home
         note = nil
         liveUpdate = nil
@@ -1375,6 +1383,9 @@ final class AppStore {
     }
 
     func apply(_ view: PlayerViewDTO, now: Date = Date()) {
+        if PingDetector.didPing(previous: match?.snapshot, next: view) {
+            pingPulse = PingPulse(role: view.you.role)
+        }
         let anchor = ClockLead.anchor(
             previous: match?.snapshot,
             previousAnchor: match?.clockAnchorAt,
@@ -1385,6 +1396,7 @@ final class AppStore {
         publishUWBTokenIfNeeded()
         switch view.phase {
         case .ended:
+            pingPulse = nil
             turnOffFlashlight()
             decoyPicking = false
             demoPicking = false
