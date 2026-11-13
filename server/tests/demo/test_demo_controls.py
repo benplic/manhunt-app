@@ -188,7 +188,10 @@ def test_demo_view_and_all_host_actions(client: TestClient) -> None:
         json={"action": "skip", "seconds": 60},
     )
     assert skipped.status_code == 200
-    assert skipped.json()["timers"]["zone"]["radius_m"] < before_r
+    if skipped.json()["phase"] != "ended":
+        assert skipped.json()["timers"]["zone"]["radius_m"] < before_r
+    else:
+        assert skipped.json()["result"] is not None
 
     # End phase in active -> ended
     if skipped.json()["phase"] != "ended":
