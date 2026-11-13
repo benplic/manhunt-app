@@ -34,7 +34,7 @@ Each item is open until the acceptance line is true. Human items stay open until
 
 ### Demo
 
-- **Demo lobby: bots and controls.** Design: [2026-11-12-demo-lobby-design.md](../specs/2026-11-12-demo-lobby-design.md). Acceptance: `PARK42` uses a circle sample arena with `zone_shrink`, safe/no-go/spawn zones, five moving server bots (where seeker bots chase and tag active hiders via `claim_tag`), server-walked `move_me` ignoring phone GPS on the WebSocket, host-only `POST /v1/games/{id}/demo` gated off in `azure`/`prod`, and iOS `DemoPanelView` + `LobbyView` demo card verified by server `pytest` and iOS `DemoControlsTests`.
+- **Demo lobby: bots and controls.** Design: [2026-11-12-demo-lobby-design.md](../specs/2026-11-12-demo-lobby-design.md). Acceptance: `PARK42` uses a circle sample arena with `zone_shrink`, safe/no-go/spawn zones, five moving server bots (where seeker bots chase and tag active hiders via `claim_tag`), server-walked `move_me` ignoring phone GPS on the WebSocket, host-only `POST /v1/games/{id}/demo` gated off in `azure`/`prod`, and iOS `DemoPanelView` + `LobbyView` demo card verified by server `pytest` and iOS `DemoControlsTests`. Status: server code and tests (`pytest -q`: 114 passed, `ruff check .` clean) and iOS client + `DemoControlsTests` are committed on `cursor/demo-lobby-bots-controls-49cc`; stays open until `xcodebuild test` runs (`No space left on device` prevented building on this host).
 
 ## How to close an item
 
