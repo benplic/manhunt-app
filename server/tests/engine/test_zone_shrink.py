@@ -44,6 +44,7 @@ def test_zone_shrink_schedule_floor_and_pause_freeze() -> None:
         "radius_m": 400.0,
         "next_radius_m": 200.0,
         "shrinks_in_s": 80,
+        "interval_s": 60,
     }
 
     # During head start + first 59s of active, radius stays 400.
@@ -77,6 +78,7 @@ def test_zone_shrink_schedule_floor_and_pause_freeze() -> None:
         "radius_m": 200.0,
         "next_radius_m": 120.0,
         "shrinks_in_s": 60,
+        "interval_s": 60,
     }
 
     # Next step clamps at min_radius_m = 120 instead of 100.
@@ -90,6 +92,7 @@ def test_zone_shrink_schedule_floor_and_pause_freeze() -> None:
         "radius_m": 120.0,
         "next_radius_m": None,
         "shrinks_in_s": None,
+        "interval_s": 60,
     }
 
     # Subsequent intervals keep the floor.
@@ -143,3 +146,27 @@ def test_hider_near_old_edge_goes_out_of_bounds_after_shrink() -> None:
     run_for(session, clock, 8)
     assert session.state.players[hider].bounds_phase == "penalized"
     assert session.state.players[hider].status == "eliminated"
+
+
+def test_zone_timer_reports_the_shrink_interval() -> None:
+    session, _ = make_session(
+        arena=_circle_arena(400.0),
+        overrides={
+            "head_start": {"enabled": False},
+            "zone_shrink": {
+                "enabled": True,
+                "every": 2,
+                "shrink_to": 50,
+                "min_radius_m": 50,
+            },
+        },
+    )
+    hider = uuid4()
+    seeker = uuid4()
+    session.add_player(hider, "Riley", True)
+    session.add_player(seeker, "Jordan", False)
+    session.set_role(hider, "hider")
+    session.set_role(seeker, "seeker")
+    session.start()
+
+    assert build_view(session, hider)["timers"]["zone"]["interval_s"] == 120

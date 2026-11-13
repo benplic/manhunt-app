@@ -571,7 +571,8 @@ private struct FakeGame {
                     ? ZoneTimerDTO(
                         radiusM: zoneRadiusM,
                         nextRadiusM: max(60, zoneRadiusM * 0.75),
-                        shrinksInS: 60
+                        shrinksInS: 60,
+                        intervalS: 60
                     )
                     : nil
             ),

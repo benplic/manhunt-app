@@ -277,6 +277,7 @@ def _build_timers(session: GameSession) -> dict:
             "radius_m": schedule["current_radius_m"],
             "next_radius_m": schedule["next_radius_m"],
             "shrinks_in_s": schedule["shrinks_in_s"],
+            "interval_s": schedule["interval_s"],
         }
     return {
         "head_start_s": head_start_s,
