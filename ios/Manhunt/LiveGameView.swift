@@ -38,7 +38,8 @@ struct LiveGameView: View {
                     ? { store.dropDecoy(at: $0) }
                     : (store.demoPicking ? { store.dropDemoMove(at: $0) } : nil),
                 emphasizeSpawn: chrome == .spawnZone,
-                glidePeople: true
+                glidePeople: true,
+                zoneShrink: store.zoneShrinkClock
             )
             .ignoresSafeArea()
 

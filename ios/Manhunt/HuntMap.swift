@@ -23,12 +23,13 @@ struct HuntMap: View {
     var onCrosshair: ((VisualPoint) -> Void)? = nil
     var emphasizeSpawn: Bool = false
     var glidePeople: Bool = false
+    var zoneShrink: ZoneShrinkClock? = nil
 
     @State private var position: MapCameraPosition = .automatic
     @State private var crosshair = VisualPoint(latitude: 40.6616, longitude: -73.9688)
     @State private var glide = PlayerGlide()
 
-    private var animates: Bool { glidePeople }
+    private var animates: Bool { glidePeople || zoneShrink != nil }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animates)) { timeline in
@@ -41,15 +42,17 @@ struct HuntMap: View {
     private func mapContent(now: Date) -> some View {
         Map(position: $position) {
                 if let circle = boundaryCircle {
-                    MapCircle(
-                        center: CLLocationCoordinate2D(
-                            latitude: circle.center.latitude,
-                            longitude: circle.center.longitude
-                        ),
-                        radius: circle.radiusMeters
-                    )
-                    .foregroundStyle(HuntColor.signal.opacity(0.18))
-                    .stroke(HuntColor.signal, lineWidth: 2)
+                    let shown = zoneShrink?.visual(at: now)
+                    let center = CLLocationCoordinate2D(latitude: circle.center.latitude, longitude: circle.center.longitude)
+                    MapCircle(center: center, radius: shown?.radiusM ?? circle.radiusMeters)
+                        .foregroundStyle(HuntColor.signal.opacity(0.18))
+                        .stroke(HuntColor.signal, lineWidth: 2)
+                    if let shown, let next = shown.nextRadiusM, shown.previewOpacity > 0 {
+                        MapCircle(center: center, radius: next)
+                            .foregroundStyle(.clear)
+                            .stroke(HuntColor.paper.opacity(0.9 * shown.previewOpacity),
+                                    style: StrokeStyle(lineWidth: 2.5, dash: [8, 6]))
+                    }
                 } else if boundary.count >= 3 {
                     MapPolygon(coordinates: boundary.map(\.coordinate))
                         .foregroundStyle(HuntColor.signal.opacity(0.18))

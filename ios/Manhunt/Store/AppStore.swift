@@ -337,6 +337,15 @@ final class AppStore {
         }
     }
 
+    var zoneShrinkClock: ZoneShrinkClock? {
+        guard let match, let zone = match.snapshot.timers?.zone, match.snapshot.phase != .ended else { return nil }
+        return ZoneShrinkClock(
+            zone: zone,
+            anchoredAt: match.clockAnchorAt,
+            rate: ClockLead.rate(snapshot: match.snapshot, paused: paused)
+        )
+    }
+
     /// One orange line: the latest editor notice, otherwise the first blocking issue.
     var editorWarning: String? {
         if let notice = editor.notice, !notice.isEmpty { return notice }
