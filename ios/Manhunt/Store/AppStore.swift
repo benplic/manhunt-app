@@ -458,6 +458,7 @@ final class AppStore {
     }
 
     func recordLiveEvent(_ banner: BannerDTO, now: Date = Date()) {
+        guard PauseChrome.shouldToast(eventTitle: banner.title) else { return }
         let ignored: Set<String> = ["started", "player_joined", "location"]
         let trimmed = banner.detail.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !ignored.contains(banner.title), !trimmed.isEmpty else { return }

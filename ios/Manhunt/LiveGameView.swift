@@ -74,9 +74,6 @@ struct LiveGameView: View {
                         tint: HuntColor.warning
                     )
                 }
-                if store.paused {
-                    banner(title: "Paused", detail: "The host stopped the clock.", tint: HuntColor.paper)
-                }
                 if store.decoyPicking {
                     // Hide the dock while picking so HuntMap's Drop point stays tappable.
                     HStack(spacing: 10) {
@@ -163,7 +160,6 @@ struct LiveGameView: View {
         .confirmationDialog("Host", isPresented: $showHost, titleVisibility: .visible) {
             Button(store.paused ? "Resume" : "Pause", action: store.pauseOrResume)
             Button("Undo last tag", action: store.undoLastTag)
-            Button("Acknowledge safety", action: store.acknowledgeSafety)
             Button("End game", role: .destructive, action: store.endLive)
             Button("Cancel", role: .cancel) {}
         }

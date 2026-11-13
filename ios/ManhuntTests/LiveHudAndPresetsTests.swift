@@ -510,6 +510,28 @@ final class LiveHudAndPresetsTests: XCTestCase {
         XCTAssertEqual(store.liveReveals.first?.name, "Riley")
         XCTAssertEqual(store.liveReveals.first?.radiusMeters, 30)
     }
+
+    @MainActor
+    func testPauseIsOnlyTheClockLabel() {
+        XCTAssertEqual(LiveHUDLayout.clockPointSize, 20)
+        XCTAssertFalse(LiveHUDLayout.showsSecondColumn)
+        XCTAssertFalse(PauseChrome.shouldToast(eventTitle: "paused"))
+        XCTAssertTrue(PauseChrome.shouldToast(eventTitle: "resumed"))
+        XCTAssertTrue(PauseChrome.shouldToast(eventTitle: "zone_warning"))
+
+        let store = AppStore.makePreview()
+        store.recordLiveEvent(
+            BannerDTO(
+                bannerId: UUID(),
+                tone: "info",
+                title: "paused",
+                detail: "The host stopped the clock.",
+                playerId: nil
+            ),
+            now: Date(timeIntervalSince1970: 2_000)
+        )
+        XCTAssertNil(store.liveUpdate)
+    }
 }
 
 private final class FakeTorch: TorchControlling {
