@@ -81,29 +81,32 @@ Reveals are not safe zones.
 
 ## Reveal rules
 
-Reveal is one rules section. It has no on/off switch. The hunt always has a location reveal.
+Reveal is one rules section. It has no on/off switch. The hunt always has a reveal mode.
 
-Rejected alternative: one three-way slider (Fuzzy / Precise / Hints) with a single persistent-or-timed control. Classic runs fuzzy pings and hot/cold together. A single slider would turn one of those off whenever the other is selected.
+**Location mode** is a three-way segmented control, same control style as Tag method (QR / Ultra Wideband): **Fuzzy | Precise | Hot/cold**. No off position.
 
 The section contains:
 
-- **Location**, a segmented control: Fuzzy or Precise. No off position.
-- **Location timing**: Persistent or Timed.
-- Interval (20–600 s, default 60), display (5–60 s, default 10, shown only when timed), fuzz meters (0–100, default 30, shown only when fuzzy).
-- **Hints**, its own toggle, default on.
-- **Hints timing**: Persistent or Timed. Update interval 2–30 s, default 5. Timed hints use the location display duration.
+- **Location**, segmented: Fuzzy, Precise, or Hot/cold. Default Fuzzy.
+- **Location timing**: Persistent or Timed. Shown for Fuzzy and Precise. Hidden for Hot/cold.
+- Interval (20–600 s, default 60), display (5–60 s, default 10, shown only when timed), fuzz meters (0–100, default 30, shown only when Fuzzy).
+- **Hints**, a toggle shown only when Location is Fuzzy. Default on. Hot/cold distance and direction run alongside the fuzzy pins when this is on. When Location is Hot/cold, hints are always on and this row is hidden. When Location is Precise, hints are off and this row is hidden.
+- **Hints timing**: Persistent or Timed. Shown when hints are active (Fuzzy with Hints on, or Hot/cold mode). Update interval 2–30 s, default 5. Timed hints use the location display duration when a location pulse exists; in Hot/cold mode timed hints clear after `display` seconds from each refresh.
 
 Behavior:
 
-- Fuzzy, timed: today's reveal. A new circle on the interval, offset inside the fuzz radius, removed after `display` seconds.
-- Fuzzy, persistent: the circle updates on the interval and does not expire.
-- Precise, timed or persistent: the pin is the true position, `radius_m` is 0. Persistent does not expire.
-- One current pin per hider. A new pulse replaces that hider's previous pin.
+- **Fuzzy**, timed: today's reveal. A new circle on the interval, offset inside the fuzz radius, removed after `display` seconds. Optional hints when the Hints toggle is on.
+- **Fuzzy**, persistent: the circle updates on the interval and does not expire. Optional hints.
+- **Precise**, timed or persistent: the pin is the true position, `radius_m` is 0. No hot/cold hints. Persistent does not expire.
+- **Hot/cold**: no location pins. Seekers only get distance and direction. Refresh every `hints_interval` (or timed clear after `display`).
+- One current pin per hider when location pins run. A new pulse replaces that hider's previous pin.
 - Hints persistent: today's hot/cold. Refresh every `hints_interval` while the hunt is active.
-- Hints timed: publish on the same tick as the location pulse, then clear after `display` seconds. The dock returns to "No hint yet."
-- Hints off: clear the hint and do not publish another.
-- `hot_cold` stays a loaded module so existing presets still tick. It reads the hint fields from `reveal_fuzzy` when those keys are present. The editor does not show a separate Hot / cold card.
-- The reveal module ignores an `enabled: false` left over from an old preset. Location reveal cannot be switched off.
+- Hints timed: publish on a pulse, then clear after `display` seconds. The dock returns to "No hint yet."
+- Hints off (Fuzzy with toggle off, or Precise): clear the hint and do not publish another.
+- `hot_cold` stays a loaded module so existing presets still tick. It reads the mode and hint fields from `reveal_fuzzy` when those keys are present. The editor does not show a separate Hot / cold card.
+- The reveal module ignores an `enabled: false` left over from an old preset. Reveal mode cannot be switched off as a whole.
+
+Schema field `location_mode` values: `fuzzy`, `precise`, `hot_cold`. Labels: Fuzzy, Precise, Hot/cold.
 
 Module id stays `reveal_fuzzy` so saved games and `MODULE_TYPES` do not need a rename. The editor title is **Reveal**.
 

@@ -404,7 +404,7 @@ git commit -m "feat: let the host turn taunts off"
 
 **Interfaces:**
 - Consumes: `RevealPin`, `offset_m`, `session.rng`, `session.module_settings`.
-- Produces: reveal settings keys `location_mode` (`fuzzy`|`precise`), `persistence` (`timed`|`persistent`), `interval`, `display`, `fuzz`, `hints_enabled`, `hints_persistence`, `hints_interval`. Reveal JSON gains `display_name`. `HotColdModule` reads hint keys from `reveal_fuzzy` when present.
+- Produces: reveal settings keys `location_mode` (`fuzzy`|`precise`|`hot_cold`), `persistence` (`timed`|`persistent`), `interval`, `display`, `fuzz`, `hints_enabled`, `hints_persistence`, `hints_interval`. Reveal JSON gains `display_name`. `HotColdModule` reads mode and hint keys from `reveal_fuzzy` when present.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -472,17 +472,48 @@ def test_timed_hints_clear_after_the_display_window() -> None:
     assert session.state.players[seek].hint is not None
     run_for(session, clock, 2)
     assert session.state.players[seek].hint is None
+
+
+def test_hot_cold_mode_publishes_hints_without_pins() -> None:
+    session, clock = make_session(
+        overrides={
+            "head_start": {"enabled": False},
+            "reveal_fuzzy": {
+                "location_mode": "hot_cold",
+                "persistence": "timed",
+                "interval": 2,
+                "display": 5,
+                "fuzz": 30,
+                "hints_enabled": False,
+                "hints_persistence": "persistent",
+                "hints_interval": 2,
+            },
+            "signal_loss": {"silence": 60},
+        }
+    )
+    hid = uuid4()
+    seek = uuid4()
+    session.add_player(hid, "Riley", True)
+    session.add_player(seek, "Jordan", False)
+    session.set_role(hid, "hider")
+    session.set_role(seek, "seeker")
+    session.start()
+    session.record_location(hid, reading(meters(40, 40), clock))
+    session.record_location(seek, reading(meters(80, 40), clock))
+    run_for(session, clock, 2)
+    assert session.state.reveals == []
+    assert session.state.players[seek].hint is not None
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `cd server && . .venv/bin/activate && pytest tests/engine/test_reveal.py -q`
 
-Expected: FAIL. Today's module expires pins and does not publish hints.
+Expected: FAIL. Today's module expires pins and does not publish hints; `hot_cold` mode is unknown.
 
 - [ ] **Step 3: Implement**
 
-Schema for `reveal_fuzzy` (title `Reveal`, blurb `Location pulses and hot/cold hints.`, add `"locked": True` at the module dict's top level next to `title`):
+Schema for `reveal_fuzzy` (title `Reveal`, blurb `Location pulses and hot/cold hints.`, add `"locked": True` at the module dict's top level next to `title`). Location is a three-way segmented control like Tag method:
 
 ```python
 "field_order": [
@@ -496,7 +527,12 @@ Schema for `reveal_fuzzy` (title `Reveal`, blurb `Location pulses and hot/cold h
     "hints_interval",
 ],
 "fields": {
-    "location_mode": _enum("Location", ["fuzzy", "precise"], "fuzzy", ["Fuzzy", "Precise"]),
+    "location_mode": _enum(
+        "Location",
+        ["fuzzy", "precise", "hot_cold"],
+        "fuzzy",
+        ["Fuzzy", "Precise", "Hot/cold"],
+    ),
     "persistence": _enum("Location timing", ["timed", "persistent"], "timed", ["Timed", "Persistent"]),
     "interval": _int("Every", 20, 600, 60, step=10, suffix="s"),
     "display": _int("Stays up", 5, 60, 10, step=5, suffix="s"),
@@ -534,11 +570,13 @@ Keep `"hot_cold": {"enabled": True, "interval": 5}` in `CLASSIC_MODULES` so the 
 
 - Do not return early on `enabled`.
 - Drop expired pins only when building the live list. A pin with `expires_at_game_s` greater than `game_elapsed_s + 60 * 60 * 24` is persistent; still drop pins whose expiry has passed.
-- On a pulse, delete existing reveals for that `player_id` before appending.
+- When `location_mode == "hot_cold"`: clear location pins, do not create new ones, and let hints run via `refresh_hints` / `HotColdModule` (hints are always on in this mode).
+- On a location pulse (Fuzzy or Precise), delete existing reveals for that `player_id` before appending.
 - `location_mode == "precise"`: pin at the true point, `radius_m = 0`.
-- Otherwise keep the seeded offset. `radius_m` is `fuzz` (0 is allowed and the client treats 0 as precise).
+- `location_mode == "fuzzy"`: keep the seeded offset. `radius_m` is `fuzz` (0 is allowed and the client treats 0 as precise).
 - Timed expiry is `game_elapsed_s + display`. Persistent expiry is `game_elapsed_s + 60 * 60 * 24 * 365`.
-- If `hints_enabled` and `hints_persistence == "timed"`, set `seeker.hint_until_s = game_elapsed_s + display` for every seeker on that pulse. `HotColdModule` publishes the hint on the same tick because it runs in module order after reveal only if it is later in the preset dict. Classic order has `hot_cold` before `points` and after `win`, while `reveal_fuzzy` is earlier. So hot/cold runs **before** reveal in the same tick. Set `hint_until_s` at the start of the pulse, and have `HotColdModule` treat `hint_until_s == game_elapsed_s + display` as "publish now". Concretely: `HotColdModule` publishes when persistence is persistent, or when `hint_until_s` is not None and `game_elapsed_s <= hint_until_s`. Reveal sets `hint_until_s` during its tick. Because hot/cold already ran this second, also call the hint publish at the end of the reveal pulse for timed hints:
+- Hints are active when `location_mode == "hot_cold"`, or when `location_mode == "fuzzy"` and `hints_enabled` is true. Precise never publishes hints.
+- If hints are active and `hints_persistence == "timed"`, set `seeker.hint_until_s = game_elapsed_s + display` for every seeker on that pulse (Fuzzy timed location pulse, or Hot/cold timed refresh). Classic order has `hot_cold` before `points` and after `win`, while `reveal_fuzzy` is earlier, so hot/cold runs **before** reveal in the same tick. Call `publish_hints` at the end of a timed-hints pulse so the same second publishes:
 
 ```python
 def publish_hints(s: GameSession) -> None:
@@ -550,16 +588,17 @@ Call `publish_hints` at the end of a timed-hints pulse. `HotColdModule.on_tick` 
 
 `refresh_hints` rules:
 
-- Read settings from `s.module_settings("reveal_fuzzy")` when `hints_enabled` is in that dict, else from `self.settings` / `s.module_settings("hot_cold")`.
+- Read settings from `s.module_settings("reveal_fuzzy")` when `location_mode` or `hints_enabled` is in that dict, else from `self.settings` / `s.module_settings("hot_cold")`.
+- Hints active when mode is `hot_cold`, or mode is `fuzzy` with `hints_enabled` true (default true when key missing on fuzzy). Mode `precise` clears hints.
 - Disabled, jammed, or phase not `active`: set `hint` and `hint_until_s` to None.
 - Persistent: existing interval refresh (`hints_interval`).
 - Timed: if `hint_until_s` is None or `game_elapsed_s > hint_until_s`, set `hint` to None. If a pulse just set `hint_until_s` and `hint` is None, compute `_hint_for`.
 
 `views.py` reveal dict adds `"display_name": state.players[pin.player_id].display_name` when that player exists.
 
-`_force_reveal` drops the `enabled` check. It still requires the module to be loaded.
+`_force_reveal` drops the `enabled` check. It still requires the module to be loaded. When mode is `hot_cold`, force-reveal is a no-op for pins (or temporarily pulses fuzzy for demo — keep it as forcing a pin pulse only when mode is fuzzy or precise; when hot_cold, raise `WRONG_PHASE` with "Hot/cold mode has no pins.").
 
-In `server/tests/api/test_modules_and_invite.py` `test_modules_schema_lists_classic_ids`, stop requiring `hot_cold` in the id set. Require `reveal_fuzzy` instead.
+In `server/tests/api/test_modules_and_invite.py` `test_modules_schema_lists_classic_ids`, stop requiring `hot_cold` in the id set. Require `reveal_fuzzy` instead. Assert `location_mode` values are `["fuzzy", "precise", "hot_cold"]`.
 
 - [ ] **Step 4: Run tests**
 
@@ -747,13 +786,24 @@ enum RevealFormVisibility {
         func flag(_ id: String) -> Bool {
             reveal.rows.first(where: { $0.id == id })?.flag ?? true
         }
+        let mode = choice("location_mode") ?? "fuzzy"
+        let hintsActive = mode == "hot_cold" || (mode == "fuzzy" && flag("hints_enabled"))
         switch rowID {
+        case "persistence", "interval":
+            // Location timing only for Fuzzy and Precise. Hot/cold has no pins.
+            return mode != "hot_cold"
         case "display":
+            if mode == "hot_cold" {
+                return choice("hints_persistence") != "persistent"
+            }
             return choice("persistence") != "persistent"
         case "fuzz":
-            return choice("location_mode") != "precise"
+            return mode == "fuzzy"
+        case "hints_enabled":
+            // Extra toggle only under Fuzzy. Precise and Hot/cold hide it.
+            return mode == "fuzzy"
         case "hints_persistence", "hints_interval":
-            return flag("hints_enabled")
+            return hintsActive
         default:
             return true
         }
@@ -797,7 +847,18 @@ func testLockedModulesHaveNoMasterSwitchAndRevealHidesFuzzWhenPrecise() {
         edited[mIdx].rows[rIdx].choice = precise
     }
     XCTAssertFalse(RevealFormVisibility.shows(rowID: "fuzz", modules: edited))
+    XCTAssertFalse(RevealFormVisibility.shows(rowID: "hints_enabled", modules: edited))
     XCTAssertTrue(RevealFormVisibility.shows(rowID: "interval", modules: edited))
+    if let mIdx = edited.firstIndex(where: { $0.id == "reveal_fuzzy" }),
+       let rIdx = edited[mIdx].rows.firstIndex(where: { $0.id == "location_mode" }),
+       case let .options(_, values) = edited[mIdx].rows[rIdx].control,
+       let hotCold = values.firstIndex(of: "hot_cold") {
+        edited[mIdx].rows[rIdx].choice = hotCold
+    }
+    XCTAssertFalse(RevealFormVisibility.shows(rowID: "fuzz", modules: edited))
+    XCTAssertFalse(RevealFormVisibility.shows(rowID: "persistence", modules: edited))
+    XCTAssertFalse(RevealFormVisibility.shows(rowID: "hints_enabled", modules: edited))
+    XCTAssertTrue(RevealFormVisibility.shows(rowID: "hints_interval", modules: edited))
 }
 ```
 
