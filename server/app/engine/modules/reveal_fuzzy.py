@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from app.engine.geo import ACCURACY_CUTOFF_M, offset_m
 from app.engine.modules.base import BaseModule
+from app.engine.modules.hot_cold import _hints_active
 from app.engine.state import RevealPin
 
 if TYPE_CHECKING:
@@ -18,15 +19,6 @@ def publish_hints(s: GameSession) -> None:
     from app.engine.modules.hot_cold import refresh_hints
 
     refresh_hints(s, after_pulse=True)
-
-
-def _hints_active(settings: dict) -> bool:
-    mode = str(settings.get("location_mode", "fuzzy"))
-    if mode == "hot_cold":
-        return True
-    if mode == "precise":
-        return False
-    return bool(settings.get("hints_enabled", True))
 
 
 class RevealFuzzyModule(BaseModule):
@@ -71,7 +63,6 @@ class RevealFuzzyModule(BaseModule):
                     player.hint_until_s = until
                 if republish:
                     publish_hints(s)
-            s.emit("reveal", {"text": "Hider pins are up."}, tone="info")
             return
 
         expiry = (
