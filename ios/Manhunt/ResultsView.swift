@@ -8,7 +8,7 @@ struct ResultsView: View {
         let winner = result?.winner ?? "none"
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                HuntButton(title: "Home", action: store.leaveResults)
+                HuntButton(title: "Home", haptic: .light, action: store.leaveResults)
                     .accessibilityIdentifier("back-home")
                 Text(winnerTitle(winner))
                     .font(.caption.weight(.bold))

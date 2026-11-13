@@ -18,7 +18,7 @@ struct ArenaEditorView: View {
                             .frame(width: 44, height: 44)
                             .background(HuntColor.inkRaised, in: Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.huntPress(.light))
                     .accessibilityLabel("Back")
                     VStack(alignment: .leading, spacing: 2) {
                         TextField("Arena name", text: $editor.name)
@@ -55,7 +55,7 @@ struct ArenaEditorView: View {
                                     )
                                     .foregroundStyle(selected ? HuntColor.ink : HuntColor.paper)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.huntPress(.selection))
                             .accessibilityIdentifier("tool-\(tool.rawValue)")
                         }
                     }
@@ -91,7 +91,7 @@ struct ArenaEditorView: View {
                         .background(HuntColor.inkRaised, in: Circle())
                         .foregroundStyle(HuntColor.paper)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.huntPress(.light))
                 .accessibilityLabel("Layers")
                 .padding(12)
             }

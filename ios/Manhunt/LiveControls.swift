@@ -29,7 +29,7 @@ struct LiveControls: View {
                         radius: 10
                     )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.huntPress(.medium))
             .accessibilityLabel(flashlightOn ? "Turn flashlight off" : "Turn flashlight on")
             .accessibilityIdentifier("flashlight-button")
 
@@ -45,7 +45,7 @@ struct LiveControls: View {
                         .overlay(Circle().stroke(HuntColor.line, lineWidth: 1))
                         .foregroundStyle(HuntColor.paper)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.huntPress(.light))
                 .accessibilityLabel("Speaker")
                 .accessibilityIdentifier("speaker-button")
 
@@ -58,7 +58,7 @@ struct LiveControls: View {
                         .overlay(Circle().stroke(HuntColor.seeker.opacity(0.6), lineWidth: 1.5))
                         .foregroundStyle(HuntColor.seeker)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.huntPress(.light))
                 .accessibilityLabel("Microphone")
                 .accessibilityIdentifier("mic-button")
             }

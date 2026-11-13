@@ -201,7 +201,7 @@ struct LiveGameView: View {
                             .frame(width: 36, height: 36)
                             .background(.black.opacity(0.55), in: Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.huntPress(.light))
                     .accessibilityLabel("Host controls")
                 }
             }
@@ -225,7 +225,7 @@ struct LiveGameView: View {
                 .frame(height: 32)
                 .background(.black.opacity(0.55), in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.huntPress(.light))
     }
 
     private var locationBlock: some View {
@@ -287,7 +287,7 @@ struct LiveGameView: View {
                             .background(HuntColor.warning, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                             .foregroundStyle(HuntColor.ink)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.huntPress(.medium))
                     .disabled(wait > 0)
                     .accessibilityIdentifier("taunt")
                 }
@@ -301,7 +301,7 @@ struct LiveGameView: View {
                         .background(HuntColor.paper, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .foregroundStyle(HuntColor.ink)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.huntPress(.light))
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -325,7 +325,7 @@ struct LiveGameView: View {
                             )
                             .foregroundStyle(enabled ? HuntColor.paper : HuntColor.paper.opacity(0.45))
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.huntPress(.medium))
                         .disabled(!enabled)
                     }
                 }
@@ -369,7 +369,7 @@ struct LiveGameView: View {
                     .background(HuntColor.seeker, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .foregroundStyle(HuntColor.paper)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.huntPress(.medium))
             .accessibilityIdentifier("tag")
             Text("Scan the hider's rotating code. Both phones have to be within pairing range.")
                 .font(.caption2)
@@ -396,7 +396,7 @@ struct LiveGameView: View {
                         .background(HuntColor.seeker, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .foregroundStyle(HuntColor.paper)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.huntPress(.medium))
                 .accessibilityIdentifier("uwb-tag")
             }
         }
@@ -419,7 +419,7 @@ struct LiveGameView: View {
                 if let actionTitle, let action {
                     Button(actionTitle, action: action)
                         .font(.subheadline.weight(.semibold))
-                        .buttonStyle(.plain)
+                        .buttonStyle(.huntPress(.light))
                         .accessibilityIdentifier("open-settings")
                 }
             }

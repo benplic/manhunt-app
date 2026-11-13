@@ -36,7 +36,7 @@ struct DemoPanelView: View {
                                             )
                                             .foregroundStyle(selected ? HuntColor.ink : HuntColor.paper)
                                     }
-                                    .buttonStyle(.plain)
+                                    .buttonStyle(.huntPress(.selection))
                                     .accessibilityIdentifier("demo-speed-\(speed)")
                                 }
                             }
@@ -172,7 +172,7 @@ struct DemoPanelView: View {
             .overlay(Capsule().stroke(tint.opacity(0.65), lineWidth: 1))
             .foregroundStyle(tint)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.huntPress(.light))
     }
 
     private func botCircleButton(
@@ -189,7 +189,7 @@ struct DemoPanelView: View {
                 .overlay(Circle().stroke(tint.opacity(0.65), lineWidth: 1))
                 .foregroundStyle(tint)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.huntPress(.light))
         .accessibilityLabel(label)
     }
 

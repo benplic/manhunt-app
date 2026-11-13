@@ -148,7 +148,7 @@ struct HuntMap: View {
                                     .background(HuntColor.inkRaised, in: Circle())
                                     .foregroundStyle(HuntColor.signal)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.huntPress(.light))
                             .accessibilityLabel("My location")
                         }
                         Button {
@@ -161,7 +161,7 @@ struct HuntMap: View {
                                 .background(HuntColor.paper, in: Capsule())
                                 .foregroundStyle(HuntColor.ink)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.huntPress(.medium))
                     }
                     .padding(.bottom, 12)
                 }
