@@ -1,6 +1,6 @@
 # Manhunt live animations
 
-Date: 2026-11-13. Status: planned — implementation follows `docs/superpowers/plans/2026-11-13-manhunt-animations.md`.
+Date: 2026-11-13. Status: implemented, device haptics pending — implementation follows `docs/superpowers/plans/2026-11-13-manhunt-animations.md`.
 
 ## Goal
 
