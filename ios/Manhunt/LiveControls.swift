@@ -12,6 +12,7 @@ struct LiveControls: View {
             Button(action: onToggleFlashlight) {
                 Image(systemName: flashlightOn ? "flashlight.on.fill" : "flashlight.off.fill")
                     .font(.system(size: 20, weight: .semibold))
+                    .contentTransition(.symbolEffect(.replace))
                     .frame(width: 52, height: 52)
                     .background(
                         flashlightOn ? HuntColor.paper : Color.black.opacity(0.68),
@@ -28,8 +29,9 @@ struct LiveControls: View {
                         color: flashlightOn ? HuntColor.signal.opacity(0.55) : .clear,
                         radius: 10
                     )
+                    .animation(.snappy, value: flashlightOn)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.huntPress(.medium))
             .accessibilityLabel(flashlightOn ? "Turn flashlight off" : "Turn flashlight on")
             .accessibilityIdentifier("flashlight-button")
 
@@ -45,7 +47,7 @@ struct LiveControls: View {
                         .overlay(Circle().stroke(HuntColor.line, lineWidth: 1))
                         .foregroundStyle(HuntColor.paper)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.huntPress(.light))
                 .accessibilityLabel("Speaker")
                 .accessibilityIdentifier("speaker-button")
 
@@ -58,7 +60,7 @@ struct LiveControls: View {
                         .overlay(Circle().stroke(HuntColor.seeker.opacity(0.6), lineWidth: 1.5))
                         .foregroundStyle(HuntColor.seeker)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.huntPress(.light))
                 .accessibilityLabel("Microphone")
                 .accessibilityIdentifier("mic-button")
             }

@@ -54,7 +54,12 @@ struct HomeView: View {
                         }
                         HuntButton(title: "Join", tint: HuntColor.paper, action: store.join)
                             .accessibilityIdentifier("join-game")
-                        HuntButton(title: "Scan invite QR", systemImage: "qrcode.viewfinder", tint: HuntColor.paper) {
+                        HuntButton(
+                            title: "Scan invite QR",
+                            systemImage: "qrcode.viewfinder",
+                            tint: HuntColor.paper,
+                            haptic: .light
+                        ) {
                             scanningInvite = true
                         }
                         .accessibilityIdentifier("scan-invite")
@@ -87,7 +92,7 @@ struct HomeView: View {
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.huntPress(.light))
                             Button("Rename") {
                                 renameArenaDraft = arena.name
                                 renamingArenaID = arena.id
@@ -125,7 +130,7 @@ struct HomeView: View {
                         }
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.huntPress(.light))
                 .accessibilityIdentifier("edit-preset")
             }
             .padding(20)

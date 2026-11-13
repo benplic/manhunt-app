@@ -104,4 +104,5 @@ def zone_shrink_schedule(s: GameSession) -> dict[str, Any] | None:
         "current_radius_m": circle.radius_m,
         "next_radius_m": next_radius_m,
         "shrinks_in_s": shrinks_in_s,
+        "interval_s": every_s,
     }

@@ -45,7 +45,7 @@ struct CreateGameView: View {
                             }
                         }
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.huntPress(.medium))
                 }
 
                 HStack {
@@ -81,7 +81,7 @@ struct CreateGameView: View {
                                     )
                                     .foregroundStyle(HuntColor.paper)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.huntPress(.selection))
                             .accessibilityIdentifier("preset-\(preset.rawValue)")
                         }
                     }
@@ -168,7 +168,7 @@ struct CreateGameView: View {
                             .background(HuntColor.ink)
                             .foregroundStyle(HuntColor.paper)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.huntPress(.light))
                     .disabled(current <= min)
                     Button {
                         if ensureEnabled { store.modules[mIdx].enabled = true }
@@ -179,7 +179,7 @@ struct CreateGameView: View {
                             .background(HuntColor.ink)
                             .foregroundStyle(HuntColor.paper)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.huntPress(.light))
                     .disabled(current >= max)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))

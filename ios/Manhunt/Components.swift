@@ -39,7 +39,7 @@ struct ScreenHeader: View {
                         .frame(width: 44, height: 44)
                         .background(HuntColor.inkRaised, in: Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.huntPress)
                 .accessibilityLabel("Back")
             }
             VStack(alignment: .leading, spacing: 2) {
@@ -62,6 +62,7 @@ struct HuntButton: View {
     var systemImage: String?
     var tint: Color = HuntColor.signal
     var ink: Color = HuntColor.ink
+    var haptic: HuntHaptic = .medium
     var action: () -> Void
 
     var body: some View {
@@ -78,7 +79,7 @@ struct HuntButton: View {
             .foregroundStyle(ink)
             .background(tint, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.huntPress(haptic))
     }
 }
 

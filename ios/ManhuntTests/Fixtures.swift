@@ -20,4 +20,33 @@ enum Fixtures {
             zones: []
         )
     }
+
+    static func liveView(
+        phase: MatchPhase = .active,
+        elapsed: Int = 0,
+        timeLimitRemaining: Int? = 1800,
+        nextReveal: Int? = 60,
+        zone: ZoneTimerDTO? = nil,
+        role: PlayerRole = .hider
+    ) -> PlayerViewDTO {
+        PlayerViewDTO(
+            gameId: UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!,
+            joinCode: "PARK42",
+            phase: phase,
+            phaseRemainingS: phase == .headStart ? max(0, 60 - elapsed) : nil,
+            gameElapsedS: elapsed,
+            timeLimitRemainingS: timeLimitRemaining,
+            timers: TimersDTO(
+                headStartS: 60, timeLimitS: 1800, revealIntervalS: 60,
+                nextRevealInS: nextReveal, zone: zone
+            ),
+            you: YouDTO(
+                playerId: UUID(uuidString: "00000000-0000-0000-0000-0000000000BB")!,
+                role: role, status: .active, isHost: true,
+                bounds: BoundsDTO(phase: "inside", remainingS: nil),
+                safeZone: nil, points: 0
+            ),
+            players: [], reveals: [], banners: [], result: nil
+        )
+    }
 }

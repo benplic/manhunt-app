@@ -83,11 +83,13 @@ struct ZoneTimerDTO: Codable, Equatable {
     var radiusM: Double
     var nextRadiusM: Double?
     var shrinksInS: Int?
+    var intervalS: Int? = nil
 
     enum CodingKeys: String, CodingKey {
         case radiusM = "radius_m"
         case nextRadiusM = "next_radius_m"
         case shrinksInS = "shrinks_in_s"
+        case intervalS = "interval_s"
     }
 }
 

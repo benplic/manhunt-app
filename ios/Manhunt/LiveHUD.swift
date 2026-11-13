@@ -1,10 +1,20 @@
 import SwiftUI
 
 struct LiveHUD: View {
-    var clock: PhaseClock
+    var snapshot: PlayerViewDTO?
+    var paused: Bool
+    var anchoredAt: Date
     var situation: LiveSituation
 
     var body: some View {
+        let rate = ClockLead.rate(snapshot: snapshot, paused: paused)
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: rate == 0)) { timeline in
+            let lead = ClockLead.seconds(rate: rate, anchoredAt: anchoredAt, now: timeline.date)
+            content(PhaseClock(snapshot: snapshot, paused: paused, leadS: lead))
+        }
+    }
+
+    private func content(_ clock: PhaseClock) -> some View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
@@ -17,6 +27,8 @@ struct LiveHUD: View {
                         .foregroundStyle(primaryTint)
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
+                        .contentTransition(.numericText(countsDown: true))
+                        .animation(.snappy(duration: 0.2), value: clock.primaryClock)
                 }
                 HuntProgressBar(
                     progress: clock.primaryProgress,
@@ -34,6 +46,8 @@ struct LiveHUD: View {
                         .foregroundStyle(HuntColor.paper)
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
+                        .contentTransition(.numericText(countsDown: true))
+                        .animation(.snappy(duration: 0.2), value: pingClock)
                 }
                 if let zoneLine = clock.zoneLine {
                     Text(zoneLine)

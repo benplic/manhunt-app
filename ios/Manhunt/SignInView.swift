@@ -61,7 +61,7 @@ struct SignInView: View {
                         .foregroundStyle(.black)
                         .background(.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.huntPress(.medium))
                 .accessibilityIdentifier("sign-in")
                 SignInWithAppleButton(.signIn) { request in
                     request.requestedScopes = [.fullName]

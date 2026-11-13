@@ -10,7 +10,7 @@ struct PhaseClock: Equatable {
     var zoneLine: String?
     var zoneImminent: Bool
 
-    init(snapshot: PlayerViewDTO?, paused: Bool, locale: Locale = .current) {
+    init(snapshot: PlayerViewDTO?, paused: Bool, locale: Locale = .current, leadS: Double = 0) {
         guard let snapshot else {
             primaryLabel = paused ? "Paused" : "Time left"
             primaryClock = "30:00"
@@ -37,28 +37,34 @@ struct PhaseClock: Equatable {
         if snapshot.phase == .headStart {
             let remaining = snapshot.phaseRemainingS ?? 0
             let total = max(1, timers?.headStartS ?? max(1, remaining))
-            primaryClock = Self.clock(remaining)
+            let left = Self.left(remaining, leadS)
+            primaryClock = Self.clock(Int(left.rounded(.up)))
             if snapshot.spawnLock?.holding == true, !paused {
                 // The number on screen is the countdown that has not started.
                 primaryLabel = "Waiting"
                 primaryProgress = 0
             } else {
-                primaryProgress = Self.clampProgress(1.0 - Double(remaining) / Double(total))
+                primaryProgress = Self.clampProgress(1.0 - left / Double(total))
             }
         } else {
             let remaining = snapshot.timeLimitRemainingS ?? 0
             let total = max(1, timers?.timeLimitS ?? max(1, remaining))
-            primaryClock = snapshot.timeLimitRemainingS.map(Self.clock) ?? "--:--"
-            primaryProgress = snapshot.timeLimitRemainingS != nil
-                ? Self.clampProgress(1.0 - Double(remaining) / Double(total))
-                : 0
+            if let timeLimitRemainingS = snapshot.timeLimitRemainingS {
+                let left = Self.left(timeLimitRemainingS, leadS)
+                primaryClock = Self.clock(Int(left.rounded(.up)))
+                primaryProgress = Self.clampProgress(1.0 - left / Double(total))
+            } else {
+                primaryClock = "--:--"
+                primaryProgress = 0
+            }
         }
 
         if let nextPing = timers?.nextRevealInS,
            let interval = timers?.revealIntervalS,
            interval > 0 {
-            pingClock = Self.clock(nextPing)
-            pingProgress = Self.clampProgress(1.0 - Double(nextPing) / Double(interval))
+            let left = Self.left(nextPing, leadS)
+            pingClock = Self.clock(Int(left.rounded(.up)))
+            pingProgress = Self.clampProgress(1.0 - left / Double(interval))
         } else {
             pingClock = nil
             pingProgress = 0
@@ -68,11 +74,12 @@ struct PhaseClock: Equatable {
             let currentText = Self.formatDistance(zone.radiusM, locale: locale)
             if let nextRadius = zone.nextRadiusM, let shrinksIn = zone.shrinksInS {
                 let nextText = Self.formatDistance(nextRadius, locale: locale)
-                if shrinksIn <= 60 {
-                    zoneLine = "Zone \(currentText) → \(nextText) in \(Self.clock(shrinksIn))"
+                let left = Self.left(shrinksIn, leadS)
+                if left <= 60 {
+                    zoneLine = "Zone \(currentText) → \(nextText) in \(Self.clock(Int(left.rounded(.up))))"
                     zoneImminent = true
                 } else {
-                    zoneLine = "Zone \(currentText) · shrinks in \(Self.clock(shrinksIn))"
+                    zoneLine = "Zone \(currentText) · shrinks in \(Self.clock(Int(left.rounded(.up))))"
                     zoneImminent = false
                 }
             } else {
@@ -103,6 +110,10 @@ struct PhaseClock: Equatable {
     static func clock(_ seconds: Int) -> String {
         let clamped = max(0, seconds)
         return String(format: "%d:%02d", clamped / 60, clamped % 60)
+    }
+
+    private static func left(_ seconds: Int, _ lead: Double) -> Double {
+        max(0, Double(seconds) - lead)
     }
 
     private static func clampProgress(_ value: Double) -> Double {

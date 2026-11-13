@@ -22,22 +22,37 @@ struct HuntMap: View {
     var onDrop: ((VisualPoint) -> Void)?
     var onCrosshair: ((VisualPoint) -> Void)? = nil
     var emphasizeSpawn: Bool = false
+    var glidePeople: Bool = false
+    var zoneShrink: ZoneShrinkClock? = nil
 
     @State private var position: MapCameraPosition = .automatic
     @State private var crosshair = VisualPoint(latitude: 40.6616, longitude: -73.9688)
+    @State private var glide = PlayerGlide()
+
+    private var animates: Bool { glidePeople || zoneShrink != nil }
 
     var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animates)) { timeline in
+            mapContent(now: timeline.date)
+        }
+        .onAppear { glide.retarget(people, now: Date()) }
+        .onChange(of: people) { _, updated in glide.retarget(updated, now: Date()) }
+    }
+
+    private func mapContent(now: Date) -> some View {
         Map(position: $position) {
                 if let circle = boundaryCircle {
-                    MapCircle(
-                        center: CLLocationCoordinate2D(
-                            latitude: circle.center.latitude,
-                            longitude: circle.center.longitude
-                        ),
-                        radius: circle.radiusMeters
-                    )
-                    .foregroundStyle(HuntColor.signal.opacity(0.18))
-                    .stroke(HuntColor.signal, lineWidth: 2)
+                    let shown = zoneShrink?.visual(at: now)
+                    let center = CLLocationCoordinate2D(latitude: circle.center.latitude, longitude: circle.center.longitude)
+                    MapCircle(center: center, radius: shown?.radiusM ?? circle.radiusMeters)
+                        .foregroundStyle(HuntColor.signal.opacity(0.18))
+                        .stroke(HuntColor.signal, lineWidth: 2)
+                    if let shown, let next = shown.nextRadiusM, shown.previewOpacity > 0 {
+                        MapCircle(center: center, radius: next)
+                            .foregroundStyle(.clear)
+                            .stroke(HuntColor.paper.opacity(0.9 * shown.previewOpacity),
+                                    style: StrokeStyle(lineWidth: 2.5, dash: [8, 6]))
+                    }
                 } else if boundary.count >= 3 {
                     MapPolygon(coordinates: boundary.map(\.coordinate))
                         .foregroundStyle(HuntColor.signal.opacity(0.18))
@@ -95,7 +110,7 @@ struct HuntMap: View {
                 }
                 ForEach(people) { person in
                     if shouldShow(person) {
-                        Annotation(person.name, coordinate: displayPoint(for: person).coordinate, anchor: .center) {
+                        Annotation(person.name, coordinate: displayPoint(for: person, now: now).coordinate, anchor: .center) {
                             PlayerPin(person: person, fuzzy: fuzzyHiders && person.role == .hider && !person.isYou)
                         }
                     }
@@ -133,7 +148,7 @@ struct HuntMap: View {
                                     .background(HuntColor.inkRaised, in: Circle())
                                     .foregroundStyle(HuntColor.signal)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.huntPress(.light))
                             .accessibilityLabel("My location")
                         }
                         Button {
@@ -146,7 +161,7 @@ struct HuntMap: View {
                                 .background(HuntColor.paper, in: Capsule())
                                 .foregroundStyle(HuntColor.ink)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.huntPress(.medium))
                     }
                     .padding(.bottom, 12)
                 }
@@ -171,11 +186,12 @@ struct HuntMap: View {
     }
 
     /// Fuzzy pins are offset so the picture reads as "approximate", not exact.
-    private func displayPoint(for person: VisualPlayer) -> VisualPoint {
-        guard fuzzyHiders, person.role == .hider, !person.isYou else { return person.point }
+    private func displayPoint(for person: VisualPlayer, now: Date) -> VisualPoint {
+        let base = glidePeople ? (glide.point(for: person.id, at: now) ?? person.point) : person.point
+        guard fuzzyHiders, person.role == .hider, !person.isYou else { return base }
         return VisualPoint(
-            latitude: person.point.latitude + 0.00035,
-            longitude: person.point.longitude - 0.00028
+            latitude: base.latitude + 0.00035,
+            longitude: base.longitude - 0.00028
         )
     }
 

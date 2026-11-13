@@ -72,7 +72,7 @@ struct LobbyView: View {
                                 .padding(14)
                                 .background(HuntColor.inkRaised, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.huntPress(.light))
                             .accessibilityLabel("\(player.name), \(player.role.rawValue)")
 
                             if store.isHost, !player.isYou, !player.isHost {
@@ -84,7 +84,7 @@ struct LobbyView: View {
                                         .frame(width: 44, height: 44)
                                         .background(HuntColor.inkRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.huntPress(.warning))
                                 .accessibilityLabel("Remove \(player.name)")
                             }
                         }
@@ -105,6 +105,8 @@ struct LobbyView: View {
                                         .font(.caption.weight(.semibold))
                                         .monospacedDigit()
                                         .foregroundStyle(HuntColor.warning)
+                                        .contentTransition(.numericText(countsDown: true))
+                                        .animation(.snappy, value: seconds)
                                 }
                             }
 
@@ -117,7 +119,8 @@ struct LobbyView: View {
                                 HuntButton(
                                     title: demo.lobbyHold ? "Resume" : "Hold",
                                     systemImage: demo.lobbyHold ? "play.fill" : "pause.fill",
-                                    tint: HuntColor.paper
+                                    tint: HuntColor.paper,
+                                    haptic: .light
                                 ) {
                                     store.demoToggleLobbyHold()
                                 }
@@ -143,8 +146,9 @@ struct LobbyView: View {
                                                     in: Capsule()
                                                 )
                                                 .foregroundStyle(selected ? HuntColor.ink : HuntColor.paper)
+                                                .animation(.snappy, value: selected)
                                         }
-                                        .buttonStyle(.plain)
+                                        .buttonStyle(.huntPress(.selection))
                                     }
                                 }
                             }
@@ -168,8 +172,9 @@ struct LobbyView: View {
                                                     in: Capsule()
                                                 )
                                                 .foregroundStyle(selected ? HuntColor.ink : HuntColor.paper)
+                                                .animation(.snappy, value: selected)
                                         }
-                                        .buttonStyle(.plain)
+                                        .buttonStyle(.huntPress(.selection))
                                     }
                                 }
                             }
@@ -195,7 +200,13 @@ struct LobbyView: View {
                     }
                     .padding(.horizontal, 4)
 
-                    HuntButton(title: "Randomize roles", systemImage: "shuffle", tint: HuntColor.paper, action: store.randomizeRoles)
+                    HuntButton(
+                        title: "Randomize roles",
+                        systemImage: "shuffle",
+                        tint: HuntColor.paper,
+                        haptic: .light,
+                        action: store.randomizeRoles
+                    )
                     HuntButton(title: "Start hunt", systemImage: "flag.checkered", action: store.startLive)
                         .accessibilityIdentifier("start-hunt")
                     Text("Tap a player to cycle Hider, Seeker, and Open. Randomize uses the seeker count above. Everyone else hides.")
