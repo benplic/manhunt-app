@@ -91,7 +91,91 @@ struct LobbyView: View {
                     }
                 }
 
-                if let seconds = store.match?.snapshot.lobbyStartsInS {
+                if let demo = store.match?.snapshot.demo, demo.controlsEnabled {
+                    Card {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Text("DEMO LOBBY")
+                                    .font(.caption.weight(.bold))
+                                    .tracking(1.2)
+                                    .foregroundStyle(HuntColor.signal)
+                                Spacer()
+                                if let seconds = store.match?.snapshot.lobbyStartsInS {
+                                    Text(demo.lobbyHold ? "Held at \(seconds)s" : "Starts in \(seconds)s")
+                                        .font(.caption.weight(.semibold))
+                                        .monospacedDigit()
+                                        .foregroundStyle(HuntColor.warning)
+                                }
+                            }
+
+                            HStack(spacing: 8) {
+                                HuntButton(title: "Start now", systemImage: "flag.checkered") {
+                                    store.demoEndPhase()
+                                }
+                                .accessibilityIdentifier("demo-lobby-start")
+
+                                HuntButton(
+                                    title: demo.lobbyHold ? "Resume" : "Hold",
+                                    systemImage: demo.lobbyHold ? "play.fill" : "pause.fill",
+                                    tint: HuntColor.paper
+                                ) {
+                                    store.demoToggleLobbyHold()
+                                }
+                                .accessibilityIdentifier("demo-lobby-hold")
+                            }
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("My team")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(HuntColor.muted)
+                                HStack(spacing: 8) {
+                                    ForEach([PlayerRole.hider, .seeker], id: \.self) { role in
+                                        let selected = store.match?.snapshot.you.role == role
+                                        Button {
+                                            store.demoSwitchTeam(role)
+                                        } label: {
+                                            Text(role == .hider ? "Hider" : "Seeker")
+                                                .font(.subheadline.weight(.semibold))
+                                                .frame(maxWidth: .infinity)
+                                                .frame(height: 36)
+                                                .background(
+                                                    selected ? (role == .hider ? HuntColor.hider : HuntColor.seeker) : HuntColor.ink,
+                                                    in: Capsule()
+                                                )
+                                                .foregroundStyle(selected ? HuntColor.ink : HuntColor.paper)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Head start lock")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(HuntColor.muted)
+                                HStack(spacing: 8) {
+                                    ForEach(["spawn_zone", "locked_map"], id: \.self) { mode in
+                                        let selected = demo.seekerLock == mode
+                                        Button {
+                                            store.demoSetSeekerLock(mode)
+                                        } label: {
+                                            Text(mode == "spawn_zone" ? "Spawn zone" : "Locked map")
+                                                .font(.subheadline.weight(.semibold))
+                                                .frame(maxWidth: .infinity)
+                                                .frame(height: 36)
+                                                .background(
+                                                    selected ? HuntColor.signal : HuntColor.ink,
+                                                    in: Capsule()
+                                                )
+                                                .foregroundStyle(selected ? HuntColor.ink : HuntColor.paper)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else if let seconds = store.match?.snapshot.lobbyStartsInS {
                     Text("Sample hunt starts in \(seconds)s. Roles are already set. End the game to open results.")
                         .font(.footnote)
                         .foregroundStyle(HuntColor.warning)

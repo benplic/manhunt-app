@@ -29,6 +29,16 @@ class UwbIn(BaseModel):
     hider_id: UUID
 
 
+def _view(service: GameService, game, user_id: UUID) -> dict:
+    from app.engine.views import build_view
+
+    return build_view(
+        game,
+        user_id,
+        demo_controls_enabled=service.manager.demo_controls_enabled,
+    )
+
+
 def bind_game_routes(get_session, current_user, service: GameService):
     router = APIRouter(prefix="/v1", tags=["games"])
 
@@ -66,9 +76,7 @@ def bind_game_routes(get_session, current_user, service: GameService):
         user=Depends(current_user),
     ) -> dict:
         game = await service.set_roles(session, user, game_id, body)
-        from app.engine.views import build_view
-
-        return build_view(game, user.id)
+        return _view(service, game, user.id)
 
     @router.post("/games/{game_id}/start")
     async def start(
@@ -76,10 +84,8 @@ def bind_game_routes(get_session, current_user, service: GameService):
         session: AsyncSession = Depends(get_session),
         user=Depends(current_user),
     ) -> dict:
-        from app.engine.views import build_view
-
         game = await service.start(session, user, game_id)
-        return build_view(game, user.id)
+        return _view(service, game, user.id)
 
     @router.post("/games/{game_id}/pause")
     async def pause(
@@ -87,9 +93,7 @@ def bind_game_routes(get_session, current_user, service: GameService):
         session: AsyncSession = Depends(get_session),
         user=Depends(current_user),
     ) -> dict:
-        from app.engine.views import build_view
-
-        return build_view(await service.pause(session, user, game_id), user.id)
+        return _view(service, await service.pause(session, user, game_id), user.id)
 
     @router.post("/games/{game_id}/resume")
     async def resume(
@@ -97,9 +101,7 @@ def bind_game_routes(get_session, current_user, service: GameService):
         session: AsyncSession = Depends(get_session),
         user=Depends(current_user),
     ) -> dict:
-        from app.engine.views import build_view
-
-        return build_view(await service.resume(session, user, game_id), user.id)
+        return _view(service, await service.resume(session, user, game_id), user.id)
 
     @router.post("/games/{game_id}/end")
     async def end(
@@ -107,9 +109,7 @@ def bind_game_routes(get_session, current_user, service: GameService):
         session: AsyncSession = Depends(get_session),
         user=Depends(current_user),
     ) -> dict:
-        from app.engine.views import build_view
-
-        return build_view(await service.end(session, user, game_id), user.id)
+        return _view(service, await service.end(session, user, game_id), user.id)
 
     @router.post("/games/{game_id}/leave")
     async def leave(
@@ -149,10 +149,8 @@ def bind_game_routes(get_session, current_user, service: GameService):
         session: AsyncSession = Depends(get_session),
         user=Depends(current_user),
     ) -> dict:
-        from app.engine.views import build_view
-
         game = await service.remove_player(session, user, game_id, player_id)
-        return build_view(game, user.id)
+        return _view(service, game, user.id)
 
     @router.post("/games/{game_id}/tags/undo")
     async def undo_tag(
@@ -160,9 +158,7 @@ def bind_game_routes(get_session, current_user, service: GameService):
         session: AsyncSession = Depends(get_session),
         user=Depends(current_user),
     ) -> dict:
-        from app.engine.views import build_view
-
-        return build_view(await service.undo_tag(session, user, game_id), user.id)
+        return _view(service, await service.undo_tag(session, user, game_id), user.id)
 
     @router.post("/games/{game_id}/power-ups")
     async def buy_power(
@@ -171,11 +167,11 @@ def bind_game_routes(get_session, current_user, service: GameService):
         session: AsyncSession = Depends(get_session),
         user=Depends(current_user),
     ) -> dict:
-        from app.engine.views import build_view
-
         power_id = str(body.get("id", ""))
         extra = {k: v for k, v in body.items() if k != "id"}
-        return build_view(await service.purchase(session, user, game_id, power_id, extra), user.id)
+        return _view(
+            service, await service.purchase(session, user, game_id, power_id, extra), user.id
+        )
 
     @router.post("/games/{game_id}/taunt")
     async def taunt(
@@ -183,9 +179,7 @@ def bind_game_routes(get_session, current_user, service: GameService):
         session: AsyncSession = Depends(get_session),
         user=Depends(current_user),
     ) -> dict:
-        from app.engine.views import build_view
-
-        return build_view(await service.taunt(session, user, game_id), user.id)
+        return _view(service, await service.taunt(session, user, game_id), user.id)
 
     @router.post("/games/{game_id}/safety/ack")
     async def ack_safety(
@@ -193,9 +187,7 @@ def bind_game_routes(get_session, current_user, service: GameService):
         session: AsyncSession = Depends(get_session),
         user=Depends(current_user),
     ) -> dict:
-        from app.engine.views import build_view
-
-        return build_view(await service.ack_safety(session, user, game_id), user.id)
+        return _view(service, await service.ack_safety(session, user, game_id), user.id)
 
     @router.get("/games/{game_id}/invite")
     async def invite(

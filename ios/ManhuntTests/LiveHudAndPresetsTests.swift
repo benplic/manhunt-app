@@ -357,6 +357,35 @@ final class LiveHudAndPresetsTests: XCTestCase {
 
         XCTAssertEqual(DockChrome.state(phase: .active, role: .seeker, remainingS: nil), .activeTagging)
         XCTAssertEqual(DockChrome.state(phase: .active, role: .hider, remainingS: nil), .activeHider)
+
+        let heldOutside = DockChrome.state(
+            phase: .headStart,
+            role: .seeker,
+            remainingS: 60,
+            spawnHolding: true,
+            seekerOutsideSpawn: true
+        )
+        XCTAssertEqual(
+            heldOutside,
+            .headStartWaiting(
+                title: "Get in the spawn zone",
+                subtitle: "The countdown starts when every seeker is inside"
+            )
+        )
+        let heldInside = DockChrome.state(
+            phase: .headStart,
+            role: .seeker,
+            remainingS: 60,
+            spawnHolding: true,
+            seekerOutsideSpawn: false
+        )
+        XCTAssertEqual(
+            heldInside,
+            .headStartWaiting(
+                title: "Waiting on seekers",
+                subtitle: "The countdown starts when every seeker is inside"
+            )
+        )
     }
 
     @MainActor

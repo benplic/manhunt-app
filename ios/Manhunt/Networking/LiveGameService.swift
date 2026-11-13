@@ -266,4 +266,10 @@ final class LiveGameService: GameService {
             body: Body(id: powerID, lat: extra["lat"], lon: extra["lon"])
         )
     }
+
+    func demo(gameID: UUID, action: String, params: [String: RuleValue]) async throws -> PlayerViewDTO {
+        var payload = params
+        payload["action"] = .string(action)
+        return try await client.post("/v1/games/\(gameID.uuidString)/demo", body: payload)
+    }
 }

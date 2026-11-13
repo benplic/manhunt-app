@@ -60,6 +60,284 @@ enum ZoneClip {
     return best.map { geoFromLocal($0, origin: origin) }
   }
 
+  /// Cuts out-of-bounds shapes out of a spawn or safe zone.
+  /// Nil when an out zone covers the subject. The subject itself when they only overlap
+  /// as a hole (the ring model cannot store a hole; live play still treats that ground as out)
+  /// or when they do not overlap. Spawn and safe are not obstacles for each other.
+  static func subtract(_ zone: ArenaZone, obstacles: [ArenaZone]) -> ArenaZone? {
+    let cuts = obstacles.filter { $0.kind == .outOfBounds && $0.id != zone.id }
+    guard zone.kind == .safe || zone.kind == .seekerSpawn, !cuts.isEmpty else { return zone }
+    var current: ArenaZone? = zone
+    for cut in cuts {
+      guard let subject = current else { return nil }
+      current = subtractOne(subject, obstacle: cut)
+    }
+    return current
+  }
+
+  private static func subtractOne(_ zone: ArenaZone, obstacle: ArenaZone) -> ArenaZone? {
+    guard let cutter = ring(for: obstacle), cutter.count >= 3 else { return zone }
+    switch zone.shape {
+    case let .circle(center, radius):
+      guard radius.isFinite, radius > 0 else { return nil }
+      switch circleOverlap(center: center, radius: radius, obstacle: cutter) {
+      case .none, .hole:
+        return zone
+      case .covered:
+        return nil
+      case .partial:
+        let subject = circleSamples(center: center, radiusMeters: radius, steps: 32)
+        guard let diff = differenceGeo(subject, minus: cutter), diff.count >= 3 else { return zone }
+        if sameRing(diff, subject) { return zone }
+        return ArenaZone(
+          id: zone.id,
+          name: zone.name,
+          kind: zone.kind,
+          shape: .polygon(Polygon(vertices: diff))
+        )
+      }
+    case let .polygon(polygon):
+      guard polygon.vertices.count >= 3 else { return nil }
+      guard let diff = differenceGeo(polygon.vertices, minus: cutter), diff.count >= 3 else { return nil }
+      if sameRing(diff, polygon.vertices) { return zone }
+      return ArenaZone(
+        id: zone.id,
+        name: zone.name,
+        kind: zone.kind,
+        shape: .polygon(Polygon(vertices: diff))
+      )
+    }
+  }
+
+  private enum CircleOverlap {
+    case none
+    case hole
+    case covered
+    case partial
+  }
+
+  private static func circleOverlap(center: GeoPoint, radius: Double, obstacle: [GeoPoint]) -> CircleOverlap {
+    let polygon = Polygon(vertices: obstacle)
+    let centerInside = ArenaGeometry.contains(center, in: polygon)
+    let clearance = distanceToRing(center, obstacle)
+    if centerInside, clearance >= radius - 0.05 { return .covered }
+    let verticesInside = obstacle.allSatisfy {
+      ArenaGeometry.meters(from: center, to: $0) <= radius + 0.05
+    }
+    if verticesInside, !centerInside { return .hole }
+    if !centerInside, clearance >= radius - 0.01 { return .none }
+    return .partial
+  }
+
+  private static func ring(for zone: ArenaZone) -> [GeoPoint]? {
+    switch zone.shape {
+    case let .polygon(polygon):
+      return polygon.vertices.count >= 3 ? polygon.vertices : nil
+    case let .circle(center, radius):
+      guard radius.isFinite, radius > 0 else { return nil }
+      return circleSamples(center: center, radiusMeters: radius, steps: 32)
+    }
+  }
+
+  /// Largest simple piece of `subject` minus `cutter`, in geographic coordinates.
+  /// Nil when `cutter` covers `subject`.
+  private static func differenceGeo(_ subject: [GeoPoint], minus cutter: [GeoPoint]) -> [GeoPoint]? {
+    guard subject.count >= 3, cutter.count >= 3 else { return subject }
+    let origin = subject[0]
+    let sub = ensureCCW(subject.map { localXY($0, origin: origin) })
+    let cut = ensureCCW(cutter.map { localXY($0, origin: origin) })
+    let hits = collectHits(sub, cut)
+    if hits.isEmpty {
+      if sub.allSatisfy({ xyContains($0, in: cut) }) { return nil }
+      return subject
+    }
+    var best: [XY] = []
+    var bestArea = 0.0
+    let subjectArea = polygonAreaMeters(sub)
+    for start in sub.indices where !xyContains(sub[start], in: cut) {
+      let loop = oneLoop(sub, cut, template: hits, start: start)
+      let area = polygonAreaMeters(loop)
+      if area > bestArea, area <= subjectArea + 0.01 {
+        bestArea = area
+        best = loop
+      }
+    }
+    // A failed walk keeps the original ring. Live play still treats out zones as out.
+    guard best.count >= 3, bestArea >= 1 else { return subject }
+    return best.map { geoFromLocal($0, origin: origin) }
+  }
+
+  private struct Hit {
+    var id: Int
+    var si: Int
+    var t: Double
+    var point: XY
+    var ci: Int
+    var u: Double
+    var used: Bool
+  }
+
+  private static func collectHits(_ sub: [XY], _ cut: [XY]) -> [Hit] {
+    var hits: [Hit] = []
+    var nextID = 0
+    for i in sub.indices {
+      let a = sub[i]
+      let b = sub[(i + 1) % sub.count]
+      for j in cut.indices {
+        let c = cut[j]
+        let d = cut[(j + 1) % cut.count]
+        guard let hit = properHit(a, b, c, d) else { continue }
+        hits.append(Hit(id: nextID, si: i, t: hit.t, point: hit.point, ci: j, u: hit.u, used: false))
+        nextID += 1
+      }
+    }
+    return hits
+  }
+
+  private static func properHit(_ a: XY, _ b: XY, _ c: XY, _ d: XY) -> (point: XY, t: Double, u: Double)? {
+    let den = (a.x - b.x) * (c.y - d.y) - (a.y - b.y) * (c.x - d.x)
+    if abs(den) < 1e-12 { return nil }
+    let t = ((a.x - c.x) * (c.y - d.y) - (a.y - c.y) * (c.x - d.x)) / den
+    let u = ((a.x - c.x) * (a.y - b.y) - (a.y - c.y) * (a.x - b.x)) / den
+    if t <= 1e-7 || t >= 1 - 1e-7 || u <= 1e-7 || u >= 1 - 1e-7 { return nil }
+    return (XY(x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y)), t, u)
+  }
+
+  private static func oneLoop(_ sub: [XY], _ cut: [XY], template: [Hit], start: Int) -> [XY] {
+    var hits = template.map { hit -> Hit in
+      var copy = hit
+      copy.used = false
+      return copy
+    }
+    var result: [XY] = []
+    var index = start
+    var resumeT = -1.0
+    var guardSteps = 0
+    while guardSteps < 100 {
+      guardSteps += 1
+      if resumeT < 0, !xyContains(sub[index], in: cut) {
+        result.append(sub[index])
+      }
+      let edgeHits = hits.indices.filter { hits[$0].si == index && hits[$0].t > resumeT + 1e-8 && !hits[$0].used }
+        .sorted { hits[$0].t < hits[$1].t }
+      if edgeHits.isEmpty {
+        resumeT = -1
+        let next = (index + 1) % sub.count
+        if next == start { break }
+        index = next
+        continue
+      }
+      let entryIndex = edgeHits[0]
+      hits[entryIndex].used = true
+      result.append(hits[entryIndex].point)
+      let walked = reverseToExit(cut, hits: &hits, entry: hits[entryIndex])
+      guard let exit = walked.exit else { return [] }
+      result.append(contentsOf: walked.points)
+      if let exitIndex = hits.firstIndex(where: { $0.id == exit.id }) {
+        hits[exitIndex].used = true
+      }
+      result.append(exit.point)
+      index = exit.si
+      resumeT = exit.t
+    }
+    return clean(result)
+  }
+
+  private static func reverseToExit(
+    _ cut: [XY],
+    hits: inout [Hit],
+    entry: Hit
+  ) -> (points: [XY], exit: Hit?) {
+    var ci = entry.ci
+    var u = entry.u
+    var points: [XY] = []
+    var guardSteps = 0
+    while guardSteps < 80 {
+      guardSteps += 1
+      let behind = hits.filter { $0.id != entry.id && !$0.used && $0.ci == ci && $0.u < u - 1e-7 }
+      if let next = behind.max(by: { $0.u < $1.u }) {
+        return (points, next)
+      }
+      points.append(cut[ci])
+      ci = (ci - 1 + cut.count) % cut.count
+      u = 1
+    }
+    return (points, nil)
+  }
+
+  private static func clean(_ points: [XY]) -> [XY] {
+    var output: [XY] = []
+    for point in points {
+      if let last = output.last, hypot(point.x - last.x, point.y - last.y) <= 1e-6 { continue }
+      output.append(point)
+    }
+    if output.count >= 2,
+       let first = output.first,
+       let last = output.last,
+       hypot(first.x - last.x, first.y - last.y) < 1e-6 {
+      output.removeLast()
+    }
+    return output
+  }
+
+  private static func xyContains(_ point: XY, in poly: [XY]) -> Bool {
+    guard poly.count >= 3 else { return false }
+    for index in poly.indices {
+      let start = poly[index]
+      let end = poly[(index + 1) % poly.count]
+      let dx = end.x - start.x
+      let dy = end.y - start.y
+      let lengthSquared = dx * dx + dy * dy
+      let distance: Double
+      if lengthSquared < 1e-18 {
+        distance = hypot(point.x - start.x, point.y - start.y)
+      } else {
+        let raw = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared
+        let t = min(1, max(0, raw))
+        distance = hypot(point.x - (start.x + dx * t), point.y - (start.y + dy * t))
+      }
+      if distance <= 1e-7 { return true }
+    }
+    var inside = false
+    var previous = poly.count - 1
+    for index in poly.indices {
+      let current = poly[index]
+      let prior = poly[previous]
+      if (current.y > point.y) != (prior.y > point.y) {
+        let x = (prior.x - current.x) * (point.y - current.y) / (prior.y - current.y + 1e-18) + current.x
+        if point.x < x - 1e-12 { inside.toggle() }
+      }
+      previous = index
+    }
+    return inside
+  }
+
+  private static func distanceToRing(_ point: GeoPoint, _ ring: [GeoPoint]) -> Double {
+    guard ring.count >= 2 else { return .infinity }
+    var best = Double.infinity
+    for index in ring.indices {
+      best = min(best, distancePointToSegment(point, ring[index], ring[(index + 1) % ring.count]))
+    }
+    return best
+  }
+
+  private static func distancePointToSegment(_ point: GeoPoint, _ start: GeoPoint, _ end: GeoPoint) -> Double {
+    let endXY = localXY(end, origin: start)
+    let pointXY = localXY(point, origin: start)
+    let lengthSquared = endXY.x * endXY.x + endXY.y * endXY.y
+    if lengthSquared < 1e-9 { return hypot(pointXY.x, pointXY.y) }
+    let raw = (pointXY.x * endXY.x + pointXY.y * endXY.y) / lengthSquared
+    let t = min(1, max(0, raw))
+    return hypot(pointXY.x - endXY.x * t, pointXY.y - endXY.y * t)
+  }
+
+  private static func sameRing(_ lhs: [GeoPoint], _ rhs: [GeoPoint]) -> Bool {
+    guard lhs.count == rhs.count else { return false }
+    return zip(lhs, rhs).allSatisfy { left, right in
+      abs(left.latitude - right.latitude) < 1e-12 && abs(left.longitude - right.longitude) < 1e-12
+    }
+  }
+
   private static func clipConvex(_ subject: [XY], clip: [XY]) -> [XY]? {
     var output = subject
     for index in clip.indices {

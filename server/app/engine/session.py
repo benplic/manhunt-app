@@ -52,6 +52,7 @@ class GameSession:
         # Sample lobby (PARK42). The realtime loop counts this down. Not engine time.
         self.sample_start_after_s: int | None = None
         self.sample_waited_s = 0
+        self.demo: Any = None
 
     def module_settings(self, module_id: str) -> dict[str, Any]:
         return self.state.preset.get("modules", {}).get(module_id, {})
@@ -167,6 +168,17 @@ class GameSession:
                 player_id=player_id,
                 tone="safety",
             )
+        for module in self.modules:
+            module.on_location(self, player, reading)
+
+    def set_synthetic_location(self, player_id: UUID, reading: LocationReading) -> None:
+        """Update a demo bot or virtual player location without event/input log bloat."""
+        player = self.state.players[player_id]
+        player.location = reading
+        player.last_location_at = reading.recorded_at
+        player.battery = reading.battery
+        if reading.accuracy_m <= 30:
+            player.last_precise = reading
         for module in self.modules:
             module.on_location(self, player, reading)
 
@@ -310,6 +322,16 @@ class GameSession:
                     # Safety (signal loss) still runs on pause; other timers do not.
                     if module.module_id == "signal_loss":
                         module.on_tick(self)
+            return
+        from app.engine.modules.head_start import spawn_clock_held
+
+        if spawn_clock_held(self):
+            # Head start has not begun (or a seeker stepped out). The match
+            # clock stays put. Spawn banners, out-of-bounds, and going-dark still run.
+            for module in self.modules:
+                if module.module_id in {"head_start", "zone_policy", "signal_loss"}:
+                    module.on_tick(self)
+            self._check_win()
             return
         self.state.game_elapsed_s += 1
         for module in self.modules:

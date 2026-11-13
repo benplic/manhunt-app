@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     manhunt_apns_team_id: str = ""
     manhunt_apns_bundle_id: str = "app.manhunt.ios"
     manhunt_apns_production: bool = False
+    manhunt_demo_controls: bool | None = None
+
+    @property
+    def demo_controls_enabled(self) -> bool:
+        if self.manhunt_demo_controls is not None:
+            return self.manhunt_demo_controls
+        return self.manhunt_env in {"local", "test", "home"}
 
     def validate_startup(self) -> None:
         """Refuse to boot if fake sign-in is enabled in a cloud environment."""

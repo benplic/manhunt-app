@@ -13,6 +13,7 @@ from uuid import UUID
 
 from fastapi import WebSocket
 
+from app.demo.bots import BotDriver
 from app.engine.arena import arena_from_dict
 from app.engine.clock import Clock
 from app.engine.qr import make_qr_token, token_ttl
@@ -28,9 +29,16 @@ log = logging.getLogger("manhunt.realtime")
 
 
 class SessionManager:
-    def __init__(self, clock: Clock | None = None, qr_key: str = "dev") -> None:
+    def __init__(
+        self,
+        clock: Clock | None = None,
+        qr_key: str = "dev",
+        *,
+        demo_controls_enabled: bool = True,
+    ) -> None:
         self.clock = clock or WallClock()
         self.qr_key = qr_key
+        self.demo_controls_enabled = demo_controls_enabled
         self.sessions: dict[UUID, GameSession] = {}
         self.sockets: dict[UUID, dict[UUID, WebSocket]] = defaultdict(dict)
         self._last_push: dict[UUID, float] = {}
@@ -86,10 +94,22 @@ class SessionManager:
                 continue
             if session.state.phase in {"ended", "lobby"}:
                 continue
-            session.tick()
-            self._refresh_qr(session)
+            steps = (
+                session.demo.speed
+                if session.demo is not None and session.state.phase in {"head_start", "active"}
+                else 1
+            )
+            for _ in range(steps):
+                if session.state.phase in {"ended", "lobby", "paused"}:
+                    break
+                session.tick()
+                if session.demo is not None:
+                    BotDriver.step(session)
+                self._refresh_qr(session)
 
     def _advance_sample(self, session: GameSession) -> None:
+        if session.demo is not None and session.demo.lobby_hold:
+            return
         delay = session.sample_start_after_s
         if delay is None:
             return
@@ -147,7 +167,11 @@ class SessionManager:
             return
         events = session.drain_events()
         for player_id, ws in list(self.sockets.get(game_id, {}).items()):
-            view = build_view(session, player_id)
+            view = build_view(
+                session,
+                player_id,
+                demo_controls_enabled=self.demo_controls_enabled,
+            )
             try:
                 await ws.send_json({"type": "view", "data": view})
                 for event in events:

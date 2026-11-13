@@ -8,11 +8,16 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
+from shapely.geometry import Polygon as ShapelyPolygon
+from shapely.ops import unary_union
+
 from app.engine.geo import (
     GeoPoint,
     circle_inside_play_area,
     circle_sample_ring,
     clip_polygon,
+    geo_from_local,
+    local_xy,
     polygon_inside_play_area,
     self_intersects,
 )
@@ -194,13 +199,81 @@ def clip_arena(arena: Arena) -> Arena:
         clipped = clip_zone(zone, arena.boundary)
         if clipped is not None:
             clipped_zones.append(clipped)
+    # Out zones win over spawn and safe the same way the play boundary does:
+    # the overlap is cut away. Spawn and safe are allowed to cover each other.
+    origin = arena.boundary[0]
+    obstacles = [zone for zone in clipped_zones if zone.kind == ZoneKind.OUT_OF_BOUNDS]
+    final_zones: list[ArenaZone] = []
+    for zone in clipped_zones:
+        if zone.kind in {ZoneKind.SAFE, ZoneKind.SEEKER_SPAWN} and obstacles:
+            cut = subtract_out_zones(zone, obstacles, origin)
+            if cut is None:
+                continue
+            final_zones.append(cut)
+        else:
+            final_zones.append(zone)
     return Arena(
         id=arena.id,
         name=arena.name,
         boundary=arena.boundary,
-        zones=clipped_zones,
+        zones=final_zones,
         boundary_circle=arena.boundary_circle,
     )
+
+
+def subtract_out_zones(
+    zone: ArenaZone, obstacles: list[ArenaZone], origin: GeoPoint
+) -> ArenaZone | None:
+    """Remove out-of-bounds area from a spawn or safe zone.
+
+    A hole (the out zone sits entirely inside) cannot be stored as a ring, so
+    the original shape is kept. Live play still treats that ground as out.
+    """
+    cuts = [item for item in obstacles if item.kind == ZoneKind.OUT_OF_BOUNDS]
+    if not cuts:
+        return zone
+    subject = _zone_polygon(zone, origin)
+    cutter = unary_union([_zone_polygon(item, origin) for item in cuts])
+    if subject.is_empty or cutter.is_empty:
+        return zone
+    if not subject.is_valid:
+        subject = subject.buffer(0)
+    if not cutter.is_valid:
+        cutter = cutter.buffer(0)
+    overlap = subject.intersection(cutter)
+    if overlap.is_empty or overlap.area < 0.5:
+        return zone
+    diff = subject.difference(cutter)
+    if diff.is_empty or diff.area < 1.0:
+        return None
+    if diff.geom_type == "GeometryCollection":
+        polygons = [geom for geom in diff.geoms if geom.geom_type == "Polygon"]
+        if not polygons:
+            return None
+        diff = max(polygons, key=lambda geom: geom.area)
+    if diff.geom_type == "MultiPolygon":
+        diff = max(diff.geoms, key=lambda geom: geom.area)
+    if diff.geom_type != "Polygon" or diff.area < 1.0:
+        return None
+    if list(diff.interiors):
+        return zone
+    ring = [geo_from_local(x, y, origin) for x, y in list(diff.exterior.coords)[:-1]]
+    if len(ring) < 3:
+        return None
+    return ArenaZone(
+        id=zone.id,
+        name=zone.name,
+        kind=zone.kind,
+        shape=PolygonShape(vertices=ring),
+    )
+
+
+def _zone_polygon(zone: ArenaZone, origin: GeoPoint) -> ShapelyPolygon:
+    if isinstance(zone.shape, CircleShape):
+        ring = circle_sample_ring(zone.shape.center, zone.shape.radius_m, steps=32)
+    else:
+        ring = zone.shape.vertices
+    return ShapelyPolygon([local_xy(point, origin) for point in ring])
 
 
 def validate_arena(arena: Arena) -> list[ArenaIssue]:

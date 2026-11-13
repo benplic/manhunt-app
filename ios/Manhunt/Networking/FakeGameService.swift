@@ -25,7 +25,8 @@ final class FakeGameService: GameService {
             players: [
                 FakePlayer(id: UUID(), name: "Jordan Blake", role: .seeker, isHost: true),
                 FakePlayer(id: UUID(), name: "Casey Lee", role: .hider, isHost: false),
-            ]
+            ],
+            demoEnabled: true
         )
     }
 
@@ -342,6 +343,153 @@ final class FakeGameService: GameService {
         return game.view()
     }
 
+    /// Test helper: open a PARK42-style demo lobby as host with bots on both teams.
+    func joinDemoAsHost() async throws -> PlayerViewDTO {
+        joinDemoAsHostSync()
+    }
+
+    func joinDemoAsHostSync() -> PlayerViewDTO {
+        let id = UUID()
+        let youID = signedIn?.id ?? UUID()
+        let youName = signedIn?.displayName ?? "Casey Lee"
+        let game = FakeGame(
+            id: id,
+            joinCode: "PARK42",
+            youAreHost: true,
+            players: [
+                FakePlayer(id: youID, name: youName, role: .seeker, isHost: true),
+                FakePlayer(id: UUID(), name: "Riley Chen", role: .hider, isHost: false),
+                FakePlayer(id: UUID(), name: "Jordan Blake", role: .hider, isHost: false),
+                FakePlayer(id: UUID(), name: "Quinn Adler", role: .seeker, isHost: false),
+            ],
+            demoEnabled: true,
+            lobbyStartsInS: 30
+        )
+        games[id] = game
+        return game.view()
+    }
+
+    func demo(gameID: UUID, action: String, params: [String: RuleValue]) async throws -> PlayerViewDTO {
+        try demoSync(gameID: gameID, action: action, params: params)
+    }
+
+    func demoSync(gameID: UUID, action: String, params: [String: RuleValue]) throws -> PlayerViewDTO {
+        guard var game = games[gameID], game.demoEnabled else {
+            throw ServiceError(code: .gameNotFound, message: "Demo controls are only available in the sample lobby.")
+        }
+        if action != "move_me", !game.youAreHost {
+            throw ServiceError(code: .notHost, message: "Only the host can use demo controls.")
+        }
+        let youIndex = game.players.firstIndex(where: { $0.isHost == game.youAreHost }) ?? 0
+        switch action {
+        case "set_speed":
+            guard case let .int(speed) = params["speed"], [1, 2, 5, 10].contains(speed) else {
+                throw ServiceError(code: .validationFailed, message: "Invalid speed.")
+            }
+            game.demoSpeed = speed
+        case "skip":
+            guard game.phase == .headStart || game.phase == .active else {
+                throw ServiceError(code: .wrongPhase, message: "Skip requires a live hunt.")
+            }
+            let seconds: Int
+            if case let .int(val) = params["seconds"] { seconds = val } else { seconds = 60 }
+            game.gameElapsedS += seconds
+            game.timeLimitRemainingS = max(0, game.timeLimitRemainingS - seconds)
+            if game.phase == .headStart, game.gameElapsedS >= 60 {
+                game.phase = .active
+            }
+            if game.gameElapsedS >= 120 {
+                game.zoneRadiusM = max(60, game.zoneRadiusM * 0.75)
+            }
+        case "force_tag":
+            guard game.phase == .active else {
+                throw ServiceError(code: .wrongPhase, message: "Force tag requires active phase.")
+            }
+            guard let targetIdx = game.players.firstIndex(where: { $0.role == .hider && $0.status == .active }) else {
+                throw ServiceError(code: .targetNotActive, message: "No active hider.")
+            }
+            game.players[targetIdx].status = .eliminated
+            if !game.players.contains(where: { $0.role == .hider && $0.status == .active }) {
+                game.phase = .ended
+            }
+        case "switch_team":
+            let nextRole: PlayerRole
+            if case let .string(raw) = params["role"], let parsed = PlayerRole(rawValue: raw) {
+                nextRole = parsed
+            } else {
+                nextRole = game.players[youIndex].role == .hider ? .seeker : .hider
+            }
+            game.players[youIndex].role = nextRole
+            game.players[youIndex].status = .active
+        case "end_phase":
+            switch game.phase {
+            case .lobby:
+                game.phase = .headStart
+                game.lobbyStartsInS = nil
+            case .headStart:
+                game.phase = .active
+            case .active, .paused:
+                game.phase = .ended
+            case .ended:
+                throw ServiceError(code: .wrongPhase, message: "Already ended.")
+            }
+        case "force_reveal":
+            guard game.phase == .headStart || game.phase == .active else {
+                throw ServiceError(code: .wrongPhase, message: "Reveal requires live hunt.")
+            }
+            if let hider = game.players.first(where: { $0.role == .hider && $0.status == .active }) {
+                game.reveals = [
+                    RevealDTO(
+                        revealId: UUID(),
+                        playerId: hider.id,
+                        lat: 40.6620,
+                        lon: -73.9690,
+                        radiusM: 30,
+                        expiresInS: 10
+                    )
+                ]
+            }
+        case "add_points":
+            let amount: Int
+            if case let .int(val) = params["amount"] { amount = val } else { amount = 100 }
+            game.players[youIndex].points += amount
+        case "bot_go_dark":
+            let dark: Bool
+            if case let .bool(val) = params["dark"] { dark = val } else { dark = true }
+            if let botIdx = game.players.firstIndex(where: { $0.id != game.players[youIndex].id && $0.status != .eliminated }) {
+                let botID = game.players[botIdx].id
+                game.botModes[botID] = dark ? "go_dark" : "auto"
+                game.players[botIdx].status = dark ? .signalLost : .active
+            }
+        case "bot_oob":
+            let oob: Bool
+            if case let .bool(val) = params["oob"] { oob = val } else { oob = true }
+            if let botIdx = game.players.firstIndex(where: { $0.id != game.players[youIndex].id && $0.status != .eliminated }) {
+                let botID = game.players[botIdx].id
+                game.botModes[botID] = oob ? "oob" : "auto"
+            }
+        case "move_me":
+            guard case let .double(lat) = params["lat"], case let .double(lon) = params["lon"] else {
+                throw ServiceError(code: .validationFailed, message: "Coordinates required.")
+            }
+            game.virtualLocation = DemoPointDTO(lat: lat, lon: lon)
+        case "lobby_hold":
+            guard game.phase == .lobby else {
+                throw ServiceError(code: .wrongPhase, message: "Hold only applies in lobby.")
+            }
+            if case let .bool(hold) = params["hold"] { game.lobbyHold = hold }
+        case "set_seeker_lock":
+            guard game.phase == .lobby else {
+                throw ServiceError(code: .wrongPhase, message: "Seeker lock only changes in lobby.")
+            }
+            if case let .string(mode) = params["mode"] { game.demoSeekerLock = mode }
+        default:
+            throw ServiceError(code: .validationFailed, message: "Unknown action.")
+        }
+        games[gameID] = game
+        return game.view()
+    }
+
     private func mutate(_ gameID: UUID, _ body: (inout FakeGame) -> Void) throws -> PlayerViewDTO {
         guard var game = games[gameID] else { throw ServiceError(code: .gameNotFound, message: "") }
         body(&game)
@@ -371,22 +519,58 @@ private struct FakeGame {
     var ackedSafety = false
     var taunted = false
     var tagMethod: String = "qr"
+    var demoEnabled = false
+    var demoSpeed = 1
+    var lobbyHold = false
+    var demoSeekerLock = "spawn_zone"
+    var lobbyStartsInS: Int? = nil
+    var gameElapsedS = 0
+    var timeLimitRemainingS = 1800
+    var zoneRadiusM = 210.0
+    var virtualLocation: DemoPointDTO? = DemoPointDTO(lat: 40.6617, lon: -73.9690)
+    var botModes: [UUID: String] = [:]
+    var reveals: [RevealDTO] = []
 
     func view() -> PlayerViewDTO {
         let you = players.first(where: { $0.isHost == youAreHost }) ?? players[0]
+        let bots = players.filter { $0.id != you.id }.map {
+            DemoBotDTO(
+                playerId: $0.id,
+                displayName: $0.name,
+                role: $0.role,
+                status: $0.status,
+                mode: botModes[$0.id] ?? "auto"
+            )
+        }
+        let demo: DemoDTO? = demoEnabled
+            ? DemoDTO(
+                speed: demoSpeed,
+                lobbyHold: lobbyHold,
+                seekerLock: demoSeekerLock,
+                controlsEnabled: youAreHost,
+                virtualLocation: virtualLocation,
+                bots: bots
+            )
+            : nil
         return PlayerViewDTO(
             gameId: id,
             joinCode: joinCode,
             phase: phase,
-            phaseRemainingS: phase == .headStart ? 60 : nil,
-            gameElapsedS: 0,
-            timeLimitRemainingS: 1800,
+            phaseRemainingS: phase == .headStart ? max(0, 60 - gameElapsedS) : nil,
+            gameElapsedS: gameElapsedS,
+            timeLimitRemainingS: timeLimitRemainingS,
             timers: TimersDTO(
                 headStartS: 60,
                 timeLimitS: 1800,
                 revealIntervalS: 60,
                 nextRevealInS: 60,
-                zone: nil
+                zone: demoEnabled
+                    ? ZoneTimerDTO(
+                        radiusM: zoneRadiusM,
+                        nextRadiusM: max(60, zoneRadiusM * 0.75),
+                        shrinksInS: 60
+                    )
+                    : nil
             ),
             you: YouDTO(
                 playerId: you.id,
@@ -407,10 +591,13 @@ private struct FakeGame {
                     location: nil
                 )
             },
-            reveals: [],
+            reveals: reveals,
             banners: [],
             result: phase == .ended ? ResultDTO(winner: "seekers", reason: "Host ended.", endedAt: nil) : nil,
-            tagMethod: tagMethod
+            tagMethod: tagMethod,
+            seekerLock: demoEnabled ? demoSeekerLock : nil,
+            lobbyStartsInS: lobbyStartsInS,
+            demo: demo
         )
     }
 }

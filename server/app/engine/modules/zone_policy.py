@@ -30,6 +30,11 @@ class ZonePolicyModule(BaseModule):
         countdown = int(self.settings.get("oob_countdown", 15))
         safe_visit = int(self.settings.get("safe_visit", 60))
         play = s.state.arena.boundary
+        # Imported here so head_start can import this module's zone tests
+        # without a cycle at load time.
+        from app.engine.modules.head_start import spawn_clock_held
+
+        safe_time_runs = not spawn_clock_held(s)
         for player in s.state.players.values():
             reading = player.location
             if reading is None or reading.accuracy_m > ACCURACY_CUTOFF_M:
@@ -52,7 +57,10 @@ class ZonePolicyModule(BaseModule):
                         tone="warning",
                     )
             player.oob_revealed = player.role == "seeker" and player.bounds_phase != "inside"
-            _advance_safe(s, player, point, safe_visit)
+            # Safe time stays put while seekers are still walking to spawn.
+            # Out-of-bounds above still counts; that is a hazard, not the match clock.
+            if safe_time_runs:
+                _advance_safe(s, player, point, safe_visit)
 
     def check_tag(self, s: GameSession, claim: TagClaim) -> ErrorCode | None:
         hider = s.state.players.get(claim.hider_id)
@@ -63,6 +71,11 @@ class ZonePolicyModule(BaseModule):
         if hider.safe_zone_id is not None and not hider.safe_expired:
             return ErrorCode.TARGET_IN_SAFE_ZONE
         return None
+
+
+def _covered_by_out_zone(point: GeoPoint, zones) -> bool:
+    """Out zones take priority over spawn and safe, including where they overlap."""
+    return any(zone.kind == ZoneKind.OUT_OF_BOUNDS and _in_zone(point, zone) for zone in zones)
 
 
 def _in_zone(point: GeoPoint, zone) -> bool:
@@ -96,10 +109,13 @@ def _advance_bounds(player: PlayerState, is_outside: bool, countdown: int) -> No
 
 def _advance_safe(s: GameSession, player: PlayerState, point: GeoPoint, visit: int) -> None:
     inside_id = None
-    for zone in s.state.arena.zones:
-        if zone.kind == ZoneKind.SAFE and _in_zone(point, zone):
-            inside_id = zone.id
-            break
+    # Standing in an out zone is not standing in a safe zone, even when the
+    # shapes overlap or the out zone is a hole we could not cut out of the ring.
+    if not _covered_by_out_zone(point, s.state.arena.zones):
+        for zone in s.state.arena.zones:
+            if zone.kind == ZoneKind.SAFE and _in_zone(point, zone):
+                inside_id = zone.id
+                break
     if inside_id is None:
         if player.safe_zone_id is not None:
             cooldown = int(s.module_settings("zone_policy").get("safe_cooldown", 60))

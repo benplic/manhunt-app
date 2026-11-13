@@ -69,7 +69,11 @@ struct HuntMap: View {
                             .frame(width: 14, height: 14)
                     }
                 }
-                ForEach(zones) { zone in
+                // Out zones paint last so a hole in a spawn or safe zone still reads as out.
+                ForEach(zones.filter { $0.kind != .outOfBounds }) { zone in
+                    zoneContent(zone)
+                }
+                ForEach(zones.filter { $0.kind == .outOfBounds }) { zone in
                     zoneContent(zone)
                 }
                 if emphasizeSpawn {

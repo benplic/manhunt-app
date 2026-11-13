@@ -93,3 +93,32 @@ def test_second_park42_join_reuses_the_lobby(client: TestClient) -> None:
     view = client.get(f"/v1/games/{game_id}", headers=first).json()
     # The second person joins the same lobby. Bots are not created again.
     assert len(view["players"]) == 7
+
+
+def test_park42_uses_circle_arena_zones_and_shrink(client: TestClient) -> None:
+    from app.engine.arena import ZoneKind, validate_arena
+
+    headers = _headers(_auth(client, "Casey"))
+    joined = client.post("/v1/games/join", headers=headers, json={"join_code": "PARK42"})
+    assert joined.status_code == 200
+    game_id = joined.json()["id"]
+    game = client.app.state.manager.sessions[UUID(game_id)]
+
+    assert game.state.arena.boundary_circle is not None
+    assert game.state.arena.boundary_circle.radius_m >= 150
+    assert validate_arena(game.state.arena) == []
+    kinds = {zone.kind for zone in game.state.arena.zones}
+    assert ZoneKind.SAFE in kinds
+    assert ZoneKind.OUT_OF_BOUNDS in kinds
+    assert ZoneKind.SEEKER_SPAWN in kinds
+
+    shrink = game.state.preset["modules"]["zone_shrink"]
+    assert shrink["enabled"] is True
+    assert shrink["every"] == 1
+    assert game.state.preset["modules"]["head_start"]["seeker_lock"] == "spawn_zone"
+
+    view = client.get(f"/v1/games/{game_id}", headers=headers).json()
+    assert view["arena"]["boundary_circle"] is not None
+    assert view["timers"]["zone"] is not None
+    assert view["timers"]["zone"]["shrinks_in_s"] == 60
+

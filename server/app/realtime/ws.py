@@ -47,7 +47,16 @@ def bind_ws(manager: SessionManager, get_settings, persist_location=None):
         )
         from app.engine.views import build_view
 
-        await ws.send_json(envelope("view", build_view(session, user_id)))
+        await ws.send_json(
+            envelope(
+                "view",
+                build_view(
+                    session,
+                    user_id,
+                    demo_controls_enabled=manager.demo_controls_enabled,
+                ),
+            )
+        )
         last_seq = data.get("last_seq")
         if last_seq is not None:
             try:
@@ -81,6 +90,8 @@ def bind_ws(manager: SessionManager, get_settings, persist_location=None):
                 if kind == "ping":
                     await ws.send_json(envelope("pong", {}))
                 elif kind == "location":
+                    if session.demo is not None:
+                        continue
                     now = time.monotonic()
                     if now - last_loc < 0.5:
                         continue

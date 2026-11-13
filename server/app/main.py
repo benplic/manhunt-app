@@ -19,6 +19,7 @@ from app.auth.routes import bind_auth_routes, bind_me_routes
 from app.config import Settings, get_settings
 from app.db.models import GameRow
 from app.db.session import create_schema, lifespan_resources
+from app.demo.routes import bind_demo_routes
 from app.errors import ApiError, ErrorCode, GameRuleError
 from app.games.routes import bind_game_routes
 from app.games.service import GameService
@@ -39,7 +40,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     configure_logging(settings.manhunt_env)
 
     engine, factory = lifespan_resources(settings)
-    manager = SessionManager(qr_key=settings.manhunt_qr_signing_key)
+    manager = SessionManager(
+        qr_key=settings.manhunt_qr_signing_key,
+        demo_controls_enabled=settings.demo_controls_enabled,
+    )
     service = GameService(manager)
 
     async def get_session() -> AsyncIterator[AsyncSession]:
@@ -67,6 +71,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ).scalars()
             restored = 0
             for row in rows:
+                if row.join_code == "PARK42":
+                    # TODO: persist demo snapshot if sample lobbies ever need crash
+                    # recovery across restarts.
+                    row.status = "abandoned"
+                    continue
                 if row.inputs:
                     game = rebuild_session(
                         game_id=row.id,
@@ -202,6 +211,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await session.commit()
 
     app.include_router(bind_game_routes(get_session, current_user, service))
+    app.include_router(bind_demo_routes(get_session, current_user, service, settings_dep))
     app.include_router(bind_ws(manager, settings_dep, persist_location=persist_location))
     # APPLICATIONINSIGHTS_CONNECTION_STRING is injected by Container Apps when
     # the Bicep Insights resource exists. Portal metrics use it; we do not
