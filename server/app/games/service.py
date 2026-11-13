@@ -565,7 +565,11 @@ class GameService:
                     )
                     player.role = member.role
                     player.status = member.status
-        return build_view(game, user.id)
+        return build_view(
+            game,
+            user.id,
+            demo_controls_enabled=self.manager.demo_controls_enabled,
+        )
 
     async def _create_sample(self, session: AsyncSession, host: User) -> GameRow:
         """PARK42: the host, five stable bots, classic rules, start after 30 lobby seconds."""

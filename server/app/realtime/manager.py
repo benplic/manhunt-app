@@ -29,9 +29,16 @@ log = logging.getLogger("manhunt.realtime")
 
 
 class SessionManager:
-    def __init__(self, clock: Clock | None = None, qr_key: str = "dev") -> None:
+    def __init__(
+        self,
+        clock: Clock | None = None,
+        qr_key: str = "dev",
+        *,
+        demo_controls_enabled: bool = True,
+    ) -> None:
         self.clock = clock or WallClock()
         self.qr_key = qr_key
+        self.demo_controls_enabled = demo_controls_enabled
         self.sessions: dict[UUID, GameSession] = {}
         self.sockets: dict[UUID, dict[UUID, WebSocket]] = defaultdict(dict)
         self._last_push: dict[UUID, float] = {}
@@ -160,7 +167,11 @@ class SessionManager:
             return
         events = session.drain_events()
         for player_id, ws in list(self.sockets.get(game_id, {}).items()):
-            view = build_view(session, player_id)
+            view = build_view(
+                session,
+                player_id,
+                demo_controls_enabled=self.demo_controls_enabled,
+            )
             try:
                 await ws.send_json({"type": "view", "data": view})
                 for event in events:

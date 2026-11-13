@@ -10,7 +10,12 @@ from app.engine.session import GameSession
 from app.engine.state import PlayerState
 
 
-def build_view(session: GameSession, viewer_id: UUID) -> dict:
+def build_view(
+    session: GameSession,
+    viewer_id: UUID,
+    *,
+    demo_controls_enabled: bool = True,
+) -> dict:
     state = session.state
     viewer = state.players[viewer_id]
     players = []
@@ -103,6 +108,41 @@ def build_view(session: GameSession, viewer_id: UUID) -> dict:
             for b in state.banners
         ],
         "result": result,
+        "demo": _build_demo(session, viewer, demo_controls_enabled=demo_controls_enabled),
+    }
+
+
+def _build_demo(
+    session: GameSession,
+    viewer: PlayerState,
+    *,
+    demo_controls_enabled: bool,
+) -> dict | None:
+    demo = session.demo
+    if demo is None:
+        return None
+    bots = []
+    for bot_id in demo.bot_ids:
+        bot = session.state.players.get(bot_id)
+        if bot is None:
+            continue
+        bots.append(
+            {
+                "player_id": str(bot.player_id),
+                "display_name": bot.display_name,
+                "role": bot.role,
+                "status": bot.status,
+                "mode": demo.bot_modes.get(bot_id, "auto"),
+            }
+        )
+    vloc = viewer.location
+    return {
+        "speed": demo.speed,
+        "lobby_hold": demo.lobby_hold,
+        "seeker_lock": str(session.module_settings("head_start").get("seeker_lock", "locked_map")),
+        "controls_enabled": bool(demo_controls_enabled and viewer.is_host),
+        "virtual_location": {"lat": vloc.lat, "lon": vloc.lon} if vloc is not None else None,
+        "bots": bots,
     }
 
 

@@ -47,7 +47,16 @@ def bind_ws(manager: SessionManager, get_settings, persist_location=None):
         )
         from app.engine.views import build_view
 
-        await ws.send_json(envelope("view", build_view(session, user_id)))
+        await ws.send_json(
+            envelope(
+                "view",
+                build_view(
+                    session,
+                    user_id,
+                    demo_controls_enabled=manager.demo_controls_enabled,
+                ),
+            )
+        )
         last_seq = data.get("last_seq")
         if last_seq is not None:
             try:
