@@ -15,8 +15,8 @@ The Mac stays awake for the length of a game. Phones on cellular reach it throug
 ```bash
 cp server/.env.example .env   # repo root; set MANHUNT_SESSION_SIGNING_KEY, MANHUNT_QR_SIGNING_KEY, MANHUNT_TRAIL_KEY
 docker compose up -d
-# phones on cellular: also start the quick tunnel (server + db + tunnel):
-# docker compose --profile tunnel up -d
+# phones on cellular: start server + db + tunnel and print the verified public URL:
+# scripts/home-server.sh up
 ```
 
 Keep the Mac awake:
@@ -29,11 +29,21 @@ Health check from this Mac: `curl http://localhost:8000/v1/healthz` should retur
 
 ### 2. Expose it to phones
 
-**Quick tunnel (default):** `docker compose --profile tunnel up -d`. Watch with `docker compose logs tunnel` for `https://….trycloudflare.com`. That URL changes every time the `tunnel` container restarts. If you recreate `server` or `db`, restart `tunnel` too (`docker compose restart tunnel`) and paste the new URL into the app.
+**One command:** `scripts/home-server.sh up` checks free disk, restarts Docker Desktop if its daemon is hung, starts db + server + tunnel, and prints the public URL only after `/v1/healthz` answers 200 through the tunnel. `scripts/home-server.sh status` re-checks everything and exits non-zero if anything is down. Run it before every game.
 
-**Named tunnel:** create a tunnel in the Cloudflare Zero Trust dashboard, put the token in `TUNNEL_TOKEN` (never commit it), and change the compose command to `tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}`.
+**Quick tunnel (default):** a random `https://….trycloudflare.com` hostname. It changes every time the `tunnel` container starts, including after a crash or a Docker restart, so a URL from yesterday is dead today. Cloudflare gives quick tunnels no uptime guarantee. A brand-new hostname can take a minute to resolve; a phone that looked it up too early may cache "no such host" for a while (toggle airplane mode to clear it).
+
+**Named tunnel (stable URL, recommended):** in the Cloudflare Zero Trust dashboard create a tunnel with a public hostname on a domain you own, pointing at `http://server:8000`. Put `TUNNEL_TOKEN=…` and `MANHUNT_PUBLIC_URL=https://<that hostname>` in the untracked `.env` (never commit the token). `scripts/home-server.sh up` then uses the `named-tunnel` profile and the URL in the app never changes.
 
 From a phone on **cellular** (not Wi-Fi): `curl https://<host>/v1/healthz` must return 200.
+
+### Keep it up
+
+All services use `restart: unless-stopped`, and the tunnel waits for the server healthcheck. A crashed server comes back on its own with the same tunnel URL.
+
+Docker Desktop hangs when the disk fills, and that silently kills the server and the tunnel. `home-server.sh` refuses to start below 5 GB free and warns below 20 GB. Big, safe-to-regenerate space on a dev Mac: unused simulator runtimes (`xcrun simctl runtime list`, then `xcrun simctl runtime delete <id>`), `xcrun simctl delete unavailable`, `~/Library/Developer/Xcode/DerivedData`, and `docker system prune`.
+
+Also turn on Docker Desktop's "Start Docker Desktop when you sign in" setting, and keep `caffeinate -dims` running during a game.
 
 ### 3. Sideload the iOS app
 
