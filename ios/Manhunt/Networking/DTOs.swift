@@ -91,6 +91,17 @@ struct ZoneTimerDTO: Codable, Equatable {
     }
 }
 
+struct PowerUpDTO: Codable, Equatable, Identifiable {
+    var id: String
+    var title: String
+    var cost: Int
+    var role: PlayerRole
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, cost, role
+    }
+}
+
 struct TimersDTO: Codable, Equatable {
     var headStartS: Int
     var timeLimitS: Int
@@ -129,6 +140,8 @@ struct PlayerViewDTO: Codable {
     var arena: Arena? = nil
     /// Demo lobby state and bot summary. Nil for normal games.
     var demo: DemoDTO? = nil
+    /// Dock chips for the viewer. Nil on older servers (use SamplePark fallback).
+    var powerUps: [PowerUpDTO]? = nil
 
     enum CodingKeys: String, CodingKey {
         case gameId = "game_id"
@@ -145,6 +158,7 @@ struct PlayerViewDTO: Codable {
         case lobbyStartsInS = "lobby_starts_in_s"
         case arena
         case demo
+        case powerUps = "power_ups"
     }
 }
 

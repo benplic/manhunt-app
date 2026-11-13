@@ -54,7 +54,7 @@ struct PresetEditorView: View {
                 ForEach($store.modules) { $module in
                     Card {
                         VStack(alignment: .leading, spacing: 12) {
-                            Toggle(isOn: $module.enabled) {
+                            if module.locked {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(module.title)
                                         .font(.headline)
@@ -63,11 +63,25 @@ struct PresetEditorView: View {
                                         .font(.footnote)
                                         .foregroundStyle(HuntColor.muted)
                                 }
-                            }
-                            .tint(HuntColor.signal)
-                            if module.enabled {
                                 ForEach($module.rows) { $row in
-                                    rowControl(row: $row)
+                                    revealRow(module: module, row: $row)
+                                }
+                            } else {
+                                Toggle(isOn: $module.enabled) {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(module.title)
+                                            .font(.headline)
+                                            .foregroundStyle(HuntColor.paper)
+                                        Text(module.blurb)
+                                            .font(.footnote)
+                                            .foregroundStyle(HuntColor.muted)
+                                    }
+                                }
+                                .tint(HuntColor.signal)
+                                if module.enabled {
+                                    ForEach($module.rows) { $row in
+                                        rowControl(row: $row)
+                                    }
                                 }
                             }
                         }
@@ -77,6 +91,14 @@ struct PresetEditorView: View {
             .padding(20)
         }
         .background(HuntColor.ink)
+    }
+
+    @ViewBuilder
+    private func revealRow(module: VisualModule, row: Binding<VisualRow>) -> some View {
+        if module.id != "reveal_fuzzy"
+            || RevealFormVisibility.shows(rowID: row.wrappedValue.id, modules: store.modules) {
+            rowControl(row: row)
+        }
     }
 
     @ViewBuilder

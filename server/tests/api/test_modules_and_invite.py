@@ -8,6 +8,18 @@ def _auth(client: TestClient, name: str = "Casey") -> dict:
     return client.post("/v1/auth/dev", json={"display_name": name}).json()
 
 
+def test_core_modules_are_locked_and_power_costs_are_fields(client: TestClient) -> None:
+    body = client.get("/v1/modules").json()
+    modules = body["modules"]
+    for module_id in ("tag_policy", "win", "points", "zone_policy", "reveal_fuzzy"):
+        assert modules[module_id]["locked"] is True
+        assert "enabled" not in modules[module_id]["fields"]
+    assert modules["power_ups"]["locked"] is False
+    assert modules["power_ups"]["fields"]["scan_cost"]["default"] == 25
+    assert modules["power_ups"]["fields"]["ghost_cost"]["default"] == 20
+    assert "hot_cold" not in modules
+
+
 def test_modules_schema_lists_classic_ids(client: TestClient) -> None:
     response = client.get("/v1/modules")
     assert response.status_code == 200

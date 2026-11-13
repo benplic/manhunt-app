@@ -15,27 +15,41 @@ if TYPE_CHECKING:
     from app.engine.session import GameSession
 
 CATALOG: dict[str, dict[str, Any]] = {
-    "ghost": {"role": "hider", "cost": 40, "duration": None, "cooldown": 20, "needs_target": False},
-    "decoy": {"role": "hider", "cost": 60, "duration": None, "cooldown": 30, "needs_target": True},
-    "radar": {"role": "hider", "cost": 50, "duration": 20, "cooldown": 40, "needs_target": False},
-    "jammer": {"role": "hider", "cost": 70, "duration": 60, "cooldown": 90, "needs_target": False},
-    "shield": {"role": "hider", "cost": 80, "duration": 30, "cooldown": 60, "needs_target": False},
-    "scan": {"role": "seeker", "cost": 45, "duration": None, "cooldown": 30, "needs_target": False},
+    "ghost": {"role": "hider", "cost": 20, "duration": None, "cooldown": 20, "needs_target": False},
+    "decoy": {"role": "hider", "cost": 40, "duration": None, "cooldown": 30, "needs_target": True},
+    "radar": {"role": "hider", "cost": 40, "duration": 20, "cooldown": 40, "needs_target": False},
+    "jammer": {"role": "hider", "cost": 55, "duration": 60, "cooldown": 90, "needs_target": False},
+    "shield": {"role": "hider", "cost": 70, "duration": 30, "cooldown": 60, "needs_target": False},
+    "scan": {"role": "seeker", "cost": 25, "duration": None, "cooldown": 30, "needs_target": False},
     "tracker": {
         "role": "seeker",
-        "cost": 55,
+        "cost": 50,
         "duration": 180,
         "cooldown": 60,
         "needs_target": False,
     },
     "lockdown": {
         "role": "seeker",
-        "cost": 90,
+        "cost": 75,
         "duration": 60,
         "cooldown": 120,
         "needs_target": False,
     },
 }
+
+
+def resolve_power(s: GameSession, power_id: str) -> dict[str, Any]:
+    base = CATALOG.get(power_id)
+    if base is None:
+        raise GameRuleError(ErrorCode.VALIDATION_FAILED, f"Unknown power-up {power_id}.")
+    settings = s.module_settings("power_ups")
+    if not bool(settings.get("enabled", True)):
+        raise GameRuleError(ErrorCode.WRONG_PHASE, "Power-ups are off.")
+    if not bool(settings.get(f"{power_id}_enabled", True)):
+        raise GameRuleError(ErrorCode.WRONG_PHASE, "That power-up is off.")
+    spec = dict(base)
+    spec["cost"] = int(settings.get(f"{power_id}_cost", base["cost"]))
+    return spec
 
 
 class PowerUpsModule(BaseModule):
@@ -53,9 +67,7 @@ class PowerUpsModule(BaseModule):
 
 
 def apply_purchase(s: GameSession, player_id, power_id: str, **kwargs: Any) -> None:
-    spec = CATALOG.get(power_id)
-    if spec is None:
-        raise GameRuleError(ErrorCode.VALIDATION_FAILED, f"Unknown power-up {power_id}.")
+    spec = resolve_power(s, power_id)
     player = s.state.players[player_id]
     if s.state.phase != "active":
         raise GameRuleError(ErrorCode.WRONG_PHASE)

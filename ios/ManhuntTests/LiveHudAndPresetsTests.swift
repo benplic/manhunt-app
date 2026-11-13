@@ -139,6 +139,37 @@ final class LiveHudAndPresetsTests: XCTestCase {
         XCTAssertNil(RulePreset.matching(modules: custom))
     }
 
+    func testLockedModulesHaveNoMasterSwitchAndRevealHidesFuzzWhenPrecise() {
+        let modules = ModuleForm.offlineModules()
+        for id in ["tag_policy", "win", "points", "zone_policy", "reveal_fuzzy"] {
+            let module = modules.first { $0.id == id }
+            XCTAssertEqual(module?.locked, true, id)
+            XCTAssertEqual(module?.tracksEnabled, false, id)
+        }
+        XCTAssertEqual(modules.first { $0.id == "power_ups" }?.locked, false)
+        XCTAssertNotNil(modules.first { $0.id == "power_ups" }?.rows.first { $0.id == "scan_cost" })
+        var edited = modules
+        if let mIdx = edited.firstIndex(where: { $0.id == "reveal_fuzzy" }),
+           let rIdx = edited[mIdx].rows.firstIndex(where: { $0.id == "location_mode" }),
+           case let .options(_, values) = edited[mIdx].rows[rIdx].control,
+           let precise = values.firstIndex(of: "precise") {
+            edited[mIdx].rows[rIdx].choice = precise
+        }
+        XCTAssertFalse(RevealFormVisibility.shows(rowID: "fuzz", modules: edited))
+        XCTAssertFalse(RevealFormVisibility.shows(rowID: "hints_enabled", modules: edited))
+        XCTAssertTrue(RevealFormVisibility.shows(rowID: "interval", modules: edited))
+        if let mIdx = edited.firstIndex(where: { $0.id == "reveal_fuzzy" }),
+           let rIdx = edited[mIdx].rows.firstIndex(where: { $0.id == "location_mode" }),
+           case let .options(_, values) = edited[mIdx].rows[rIdx].control,
+           let hotCold = values.firstIndex(of: "hot_cold") {
+            edited[mIdx].rows[rIdx].choice = hotCold
+        }
+        XCTAssertFalse(RevealFormVisibility.shows(rowID: "fuzz", modules: edited))
+        XCTAssertFalse(RevealFormVisibility.shows(rowID: "persistence", modules: edited))
+        XCTAssertFalse(RevealFormVisibility.shows(rowID: "hints_enabled", modules: edited))
+        XCTAssertTrue(RevealFormVisibility.shows(rowID: "hints_interval", modules: edited))
+    }
+
     func testPresetOverridesGatesZoneShrinkToCircleArenas() {
         var modules = ModuleForm.offlineModules()
         if let idx = modules.firstIndex(where: { $0.id == "zone_shrink" }) {

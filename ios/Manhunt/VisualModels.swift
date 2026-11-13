@@ -119,6 +119,7 @@ struct VisualModule: Identifiable {
     var enabled: Bool
     /// True when the schema has an `enabled` bool. The card toggle writes that field.
     var tracksEnabled: Bool = false
+    var locked: Bool = false
     var rows: [VisualRow]
 }
 
@@ -281,14 +282,14 @@ enum SamplePark {
     ]
 
     static let powerUps: [PowerChip] = [
-        PowerChip(id: "ghost", title: "Ghost", detail: "Skip the next reveal", cost: 40, role: .hider),
-        PowerChip(id: "decoy", title: "Decoy", detail: "Next pin is a fake", cost: 60, role: .hider),
-        PowerChip(id: "radar", title: "Radar", detail: "See seekers for 20s", cost: 50, role: .hider),
-        PowerChip(id: "jammer", title: "Jammer", detail: "Mute hot / cold hints", cost: 70, role: .hider),
-        PowerChip(id: "shield", title: "Shield", detail: "Untaggable for 30s", cost: 80, role: .hider),
-        PowerChip(id: "scan", title: "Scan", detail: "Reveal one hider now", cost: 45, role: .seeker),
-        PowerChip(id: "tracker", title: "Tracker", detail: "Hot / cold for 3 min", cost: 55, role: .seeker),
-        PowerChip(id: "lockdown", title: "Lockdown", detail: "Safe zones off", cost: 90, role: .seeker),
+        PowerChip(id: "ghost", title: "Ghost", detail: "Skip the next reveal", cost: 20, role: .hider),
+        PowerChip(id: "decoy", title: "Decoy", detail: "Next pin is a fake", cost: 40, role: .hider),
+        PowerChip(id: "radar", title: "Radar", detail: "See seekers for 20s", cost: 40, role: .hider),
+        PowerChip(id: "jammer", title: "Jammer", detail: "Mute hot / cold hints", cost: 55, role: .hider),
+        PowerChip(id: "shield", title: "Shield", detail: "Untaggable for 30s", cost: 70, role: .hider),
+        PowerChip(id: "scan", title: "Scan", detail: "Reveal one hider now", cost: 25, role: .seeker),
+        PowerChip(id: "tracker", title: "Tracker", detail: "Hot / cold for 3 min", cost: 50, role: .seeker),
+        PowerChip(id: "lockdown", title: "Lockdown", detail: "Safe zones off", cost: 75, role: .seeker),
     ]
 
     static func classicModules() -> [VisualModule] {

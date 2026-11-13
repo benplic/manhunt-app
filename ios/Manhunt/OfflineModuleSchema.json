@@ -6,7 +6,7 @@
       "blurb": "How hiders and seekers are chosen in the lobby.",
       "field_order": [
         "mode",
-        "hider_count"
+        "seeker_count"
       ],
       "fields": {
         "mode": {
@@ -22,13 +22,13 @@
             "Manual"
           ]
         },
-        "hider_count": {
+        "seeker_count": {
           "type": "int",
-          "title": "Hiders",
+          "title": "Seekers",
           "min": 1,
           "max": 20,
           "step": 1,
-          "default": 2,
+          "default": 1,
           "suffix": ""
         }
       }
@@ -74,19 +74,47 @@
     },
     "reveal_fuzzy": {
       "version": 1,
-      "title": "Fuzzy reveal",
-      "blurb": "Seekers see approximate hider pins on a timer.",
+      "title": "Reveal",
+      "blurb": "Location pulses and hot/cold hints.",
+      "locked": true,
       "field_order": [
-        "enabled",
+        "location_mode",
+        "persistence",
         "interval",
         "display",
-        "fuzz"
+        "fuzz",
+        "hints_enabled",
+        "hints_persistence",
+        "hints_interval"
       ],
       "fields": {
-        "enabled": {
-          "type": "bool",
-          "title": "Enabled",
-          "default": true
+        "location_mode": {
+          "type": "enum",
+          "title": "Location",
+          "values": [
+            "fuzzy",
+            "precise",
+            "hot_cold"
+          ],
+          "default": "fuzzy",
+          "labels": [
+            "Fuzzy",
+            "Precise",
+            "Hot/cold"
+          ]
+        },
+        "persistence": {
+          "type": "enum",
+          "title": "Location timing",
+          "values": [
+            "timed",
+            "persistent"
+          ],
+          "default": "timed",
+          "labels": [
+            "Timed",
+            "Persistent"
+          ]
         },
         "interval": {
           "type": "int",
@@ -99,7 +127,7 @@
         },
         "display": {
           "type": "int",
-          "title": "Pin stays",
+          "title": "Stays up",
           "min": 5,
           "max": 60,
           "step": 5,
@@ -114,6 +142,33 @@
           "step": 5,
           "default": 30,
           "suffix": "m"
+        },
+        "hints_enabled": {
+          "type": "bool",
+          "title": "Hints",
+          "default": true
+        },
+        "hints_persistence": {
+          "type": "enum",
+          "title": "Hints timing",
+          "values": [
+            "timed",
+            "persistent"
+          ],
+          "default": "persistent",
+          "labels": [
+            "Timed",
+            "Persistent"
+          ]
+        },
+        "hints_interval": {
+          "type": "int",
+          "title": "Hints every",
+          "min": 2,
+          "max": 30,
+          "step": 1,
+          "default": 5,
+          "suffix": "s"
         }
       }
     },
@@ -121,6 +176,7 @@
       "version": 1,
       "title": "Tag",
       "blurb": "Ultra Wideband confirms the tag. A rotating code is the fallback.",
+      "locked": true,
       "field_order": [
         "method",
         "radius_m",
@@ -178,6 +234,7 @@
       "version": 1,
       "title": "Zones",
       "blurb": "Out of bounds counts down. Safe zones block tags until time runs out.",
+      "locked": true,
       "field_order": [
         "oob_countdown",
         "hider_oob_penalty",
@@ -329,6 +386,7 @@
       "version": 1,
       "title": "Win",
       "blurb": "How the hunt ends.",
+      "locked": true,
       "field_order": [
         "condition",
         "time_limit"
@@ -360,39 +418,21 @@
         }
       }
     },
-    "hot_cold": {
-      "version": 1,
-      "title": "Hot / cold",
-      "blurb": "Distance and direction toward hiders. Not a precise pin.",
-      "field_order": [
-        "enabled",
-        "interval"
-      ],
-      "fields": {
-        "enabled": {
-          "type": "bool",
-          "title": "Hints",
-          "default": true
-        },
-        "interval": {
-          "type": "int",
-          "title": "Update every",
-          "min": 2,
-          "max": 30,
-          "step": 1,
-          "default": 5,
-          "suffix": "s"
-        }
-      }
-    },
     "points": {
       "version": 1,
       "title": "Points",
       "blurb": "Scoring, including how often a hider can taunt.",
+      "locked": true,
       "field_order": [
+        "taunt_enabled",
         "taunt_cooldown"
       ],
       "fields": {
+        "taunt_enabled": {
+          "type": "bool",
+          "title": "Taunt",
+          "default": true
+        },
         "taunt_cooldown": {
           "type": "int",
           "title": "Taunt cooldown",
@@ -408,14 +448,143 @@
       "version": 1,
       "title": "Power-ups",
       "blurb": "Purchases the dock already knows.",
+      "locked": false,
       "field_order": [
-        "enabled"
+        "enabled",
+        "ghost_enabled",
+        "ghost_cost",
+        "decoy_enabled",
+        "decoy_cost",
+        "radar_enabled",
+        "radar_cost",
+        "jammer_enabled",
+        "jammer_cost",
+        "shield_enabled",
+        "shield_cost",
+        "scan_enabled",
+        "scan_cost",
+        "tracker_enabled",
+        "tracker_cost",
+        "lockdown_enabled",
+        "lockdown_cost"
       ],
       "fields": {
         "enabled": {
           "type": "bool",
           "title": "Enabled",
           "default": true
+        },
+        "ghost_enabled": {
+          "type": "bool",
+          "title": "Ghost",
+          "default": true
+        },
+        "ghost_cost": {
+          "type": "int",
+          "title": "Ghost cost",
+          "min": 0,
+          "max": 200,
+          "step": 5,
+          "default": 20,
+          "suffix": "pts"
+        },
+        "decoy_enabled": {
+          "type": "bool",
+          "title": "Decoy",
+          "default": true
+        },
+        "decoy_cost": {
+          "type": "int",
+          "title": "Decoy cost",
+          "min": 0,
+          "max": 200,
+          "step": 5,
+          "default": 40,
+          "suffix": "pts"
+        },
+        "radar_enabled": {
+          "type": "bool",
+          "title": "Radar",
+          "default": true
+        },
+        "radar_cost": {
+          "type": "int",
+          "title": "Radar cost",
+          "min": 0,
+          "max": 200,
+          "step": 5,
+          "default": 40,
+          "suffix": "pts"
+        },
+        "jammer_enabled": {
+          "type": "bool",
+          "title": "Jammer",
+          "default": true
+        },
+        "jammer_cost": {
+          "type": "int",
+          "title": "Jammer cost",
+          "min": 0,
+          "max": 200,
+          "step": 5,
+          "default": 55,
+          "suffix": "pts"
+        },
+        "shield_enabled": {
+          "type": "bool",
+          "title": "Shield",
+          "default": true
+        },
+        "shield_cost": {
+          "type": "int",
+          "title": "Shield cost",
+          "min": 0,
+          "max": 200,
+          "step": 5,
+          "default": 70,
+          "suffix": "pts"
+        },
+        "scan_enabled": {
+          "type": "bool",
+          "title": "Scan",
+          "default": true
+        },
+        "scan_cost": {
+          "type": "int",
+          "title": "Scan cost",
+          "min": 0,
+          "max": 200,
+          "step": 5,
+          "default": 25,
+          "suffix": "pts"
+        },
+        "tracker_enabled": {
+          "type": "bool",
+          "title": "Tracker",
+          "default": true
+        },
+        "tracker_cost": {
+          "type": "int",
+          "title": "Tracker cost",
+          "min": 0,
+          "max": 200,
+          "step": 5,
+          "default": 50,
+          "suffix": "pts"
+        },
+        "lockdown_enabled": {
+          "type": "bool",
+          "title": "Lockdown",
+          "default": true
+        },
+        "lockdown_cost": {
+          "type": "int",
+          "title": "Lockdown cost",
+          "min": 0,
+          "max": 200,
+          "step": 5,
+          "default": 75,
+          "suffix": "pts"
         }
       }
     },
@@ -436,7 +605,6 @@
     "zone_shrink",
     "signal_loss",
     "win",
-    "hot_cold",
     "points",
     "power_ups",
     "effects"

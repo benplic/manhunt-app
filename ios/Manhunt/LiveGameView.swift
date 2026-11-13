@@ -302,7 +302,7 @@ struct LiveGameView: View {
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(SamplePark.powerUps.filter { $0.role == store.viewingRole }) { chip in
+                    ForEach(store.dockPowerChips()) { chip in
                         let enabled = store.chipIsTappable(chip)
                         let cooling = store.match?.snapshot.you.cooldowns?[chip.id] ?? 0
                         Button {

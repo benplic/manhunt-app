@@ -1115,6 +1115,35 @@ final class AppStore {
         }
     }
 
+    private static func visualRole(_ role: PlayerRole) -> VisualRole {
+        switch role {
+        case .hider: .hider
+        case .seeker: .seeker
+        case .unassigned: .unassigned
+        }
+    }
+
+    func dockPowerChips() -> [PowerChip] {
+        guard let snapshot = match?.snapshot else {
+            return SamplePark.powerUps.filter { $0.role == viewingRole }
+        }
+        guard let serverList = snapshot.powerUps else {
+            return SamplePark.powerUps.filter { $0.role == viewingRole }
+        }
+        let details = Dictionary(uniqueKeysWithValues: SamplePark.powerUps.map { ($0.id, $0.detail) })
+        return serverList.compactMap { dto in
+            let visual = Self.visualRole(dto.role)
+            guard visual == viewingRole else { return nil }
+            return PowerChip(
+                id: dto.id,
+                title: dto.title,
+                detail: details[dto.id] ?? "",
+                cost: dto.cost,
+                role: visual
+            )
+        }
+    }
+
     func purchaseRequest(
         for chip: PowerChip,
         hasTarget: Bool = false,
@@ -1175,7 +1204,7 @@ final class AppStore {
     }
 
     func dropDecoy(at point: VisualPoint) {
-        guard let chip = SamplePark.powerUps.first(where: { $0.id == "decoy" }) else { return }
+        guard let chip = dockPowerChips().first(where: { $0.id == "decoy" }) else { return }
         // Deny outside the yellow play area before POST. Server still re-checks
         // the session arena boundary; this keeps lat/lon off the wire when the
         // map the player sees already says the point is outside.

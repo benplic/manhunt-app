@@ -83,3 +83,24 @@ def test_scan_radar_and_jammer() -> None:
     session.tick()
     seeker_view = build_view(session, seeker)
     assert seeker_view["you"].get("hint") is None
+
+
+def test_disabled_power_is_rejected_and_a_custom_cost_is_charged() -> None:
+    session, clock, hider, seeker = two_player_hunt(
+        {
+            "power_ups": {
+                "enabled": True,
+                "ghost_enabled": False,
+                "scan_enabled": True,
+                "scan_cost": 10,
+            }
+        }
+    )
+    session.state.players[hider].points = 100
+    with pytest.raises(GameRuleError):
+        session.purchase(hider, "ghost")
+    assert session.state.players[hider].points == 100
+    session.state.players[seeker].points = 10
+    session.purchase(seeker, "scan")
+    assert session.state.players[seeker].points == 0
+    assert session.state.players[seeker].points_earned == 0

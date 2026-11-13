@@ -50,11 +50,12 @@ struct ModuleSchemaDTO: Decodable, Equatable {
     var version: Int
     var title: String?
     var blurb: String?
+    var locked: Bool
     var fieldOrder: [String]
     var fields: [String: SchemaFieldDTO]
 
     enum CodingKeys: String, CodingKey {
-        case version, title, blurb, fields
+        case version, title, blurb, locked, fields
         case fieldOrder = "field_order"
     }
 
@@ -63,6 +64,7 @@ struct ModuleSchemaDTO: Decodable, Equatable {
         version = try container.decodeIfPresent(Int.self, forKey: .version) ?? 1
         title = try container.decodeIfPresent(String.self, forKey: .title)
         blurb = try container.decodeIfPresent(String.self, forKey: .blurb)
+        locked = try container.decodeIfPresent(Bool.self, forKey: .locked) ?? false
         fields = try container.decodeIfPresent([String: SchemaFieldDTO].self, forKey: .fields) ?? [:]
         fieldOrder = try container.decodeIfPresent([String].self, forKey: .fieldOrder) ?? fields.keys.sorted()
     }
@@ -126,8 +128,9 @@ enum ModuleForm {
     private static func module(id: String, schema: ModuleSchemaDTO) -> VisualModule? {
         // Points and effects have no host-facing fields. An empty card is not a control.
         if schema.fields.isEmpty { return nil }
+        let locked = schema.locked
         let enabledField = schema.fields["enabled"]
-        let tracksEnabled = enabledField?.type == "bool"
+        let tracksEnabled = !locked && enabledField?.type == "bool"
         var rows: [VisualRow] = []
         var seen: Set<String> = []
         for key in schema.fieldOrder where key != "enabled" {
@@ -138,8 +141,9 @@ enum ModuleForm {
             id: id,
             title: schema.title ?? id,
             blurb: schema.blurb ?? "",
-            enabled: enabledField?.defaultBool ?? true,
+            enabled: locked ? true : (enabledField?.defaultBool ?? true),
             tracksEnabled: tracksEnabled,
+            locked: locked,
             rows: rows
         )
     }
@@ -178,5 +182,39 @@ enum ModuleForm {
 
     private static func minValue(_ number: Double, min: Double, max: Double) -> Double {
         Swift.min(max, Swift.max(min, number))
+    }
+}
+
+enum RevealFormVisibility {
+    static func shows(rowID: String, modules: [VisualModule]) -> Bool {
+        guard let reveal = modules.first(where: { $0.id == "reveal_fuzzy" }) else { return true }
+        func choice(_ id: String) -> String? {
+            guard let row = reveal.rows.first(where: { $0.id == id }),
+                  case let .options(_, values) = row.control,
+                  values.indices.contains(row.choice) else { return nil }
+            return values[row.choice]
+        }
+        func flag(_ id: String) -> Bool {
+            reveal.rows.first(where: { $0.id == id })?.flag ?? true
+        }
+        let mode = choice("location_mode") ?? "fuzzy"
+        let hintsActive = mode == "hot_cold" || (mode == "fuzzy" && flag("hints_enabled"))
+        switch rowID {
+        case "persistence", "interval":
+            return mode != "hot_cold"
+        case "display":
+            if mode == "hot_cold" {
+                return choice("hints_persistence") != "persistent"
+            }
+            return choice("persistence") != "persistent"
+        case "fuzz":
+            return mode == "fuzzy"
+        case "hints_enabled":
+            return mode == "fuzzy"
+        case "hints_persistence", "hints_interval":
+            return hintsActive
+        default:
+            return true
+        }
     }
 }

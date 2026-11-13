@@ -8,6 +8,32 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.engine.modules.power_ups import CATALOG
+
+_POWER_TITLES = {
+    "ghost": "Ghost",
+    "decoy": "Decoy",
+    "radar": "Radar",
+    "jammer": "Jammer",
+    "shield": "Shield",
+    "scan": "Scan",
+    "tracker": "Tracker",
+    "lockdown": "Lockdown",
+}
+
+
+def _power_ups_fields() -> tuple[list[str], dict[str, Any]]:
+    fields: dict[str, Any] = {"enabled": _bool("Enabled", True)}
+    field_order = ["enabled"]
+    for power_id, base in CATALOG.items():
+        title = _POWER_TITLES[power_id]
+        fields[f"{power_id}_enabled"] = _bool(title, True)
+        fields[f"{power_id}_cost"] = _int(
+            f"{title} cost", 0, 200, int(base["cost"]), step=5, suffix="pts"
+        )
+        field_order.extend([f"{power_id}_enabled", f"{power_id}_cost"])
+    return field_order, fields
+
 
 def _int(
     title: str, lo: int, hi: int, default: int, step: int = 1, suffix: str = ""
@@ -116,6 +142,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "version": 1,
         "title": "Tag",
         "blurb": "Ultra Wideband confirms the tag. A rotating code is the fallback.",
+        "locked": True,
         "field_order": ["method", "radius_m", "result", "pairing_m"],
         "fields": {
             "method": _enum("Method", ["qr", "uwb"], "qr", ["QR code", "Ultra Wideband"]),
@@ -133,6 +160,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "version": 1,
         "title": "Zones",
         "blurb": "Out of bounds counts down. Safe zones block tags until time runs out.",
+        "locked": True,
         "field_order": [
             "oob_countdown",
             "hider_oob_penalty",
@@ -180,6 +208,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "version": 1,
         "title": "Win",
         "blurb": "How the hunt ends.",
+        "locked": True,
         "field_order": ["condition", "time_limit"],
         "fields": {
             "condition": _enum(
@@ -195,6 +224,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "version": 1,
         "title": "Points",
         "blurb": "Scoring, including how often a hider can taunt.",
+        "locked": True,
         "field_order": ["taunt_enabled", "taunt_cooldown"],
         "fields": {
             "taunt_enabled": _bool("Taunt", True),
@@ -205,8 +235,13 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "version": 1,
         "title": "Power-ups",
         "blurb": "Purchases the dock already knows.",
-        "field_order": ["enabled"],
-        "fields": {"enabled": _bool("Enabled", True)},
+        "locked": False,
+        **dict(
+            zip(
+                ("field_order", "fields"),
+                _power_ups_fields(),
+            )
+        ),
     },
     "effects": {
         "version": 1,
