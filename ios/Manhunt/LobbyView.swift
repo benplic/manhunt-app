@@ -105,6 +105,8 @@ struct LobbyView: View {
                                         .font(.caption.weight(.semibold))
                                         .monospacedDigit()
                                         .foregroundStyle(HuntColor.warning)
+                                        .contentTransition(.numericText(countsDown: true))
+                                        .animation(.snappy, value: seconds)
                                 }
                             }
 

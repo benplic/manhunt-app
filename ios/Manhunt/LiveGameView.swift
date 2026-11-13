@@ -202,7 +202,9 @@ struct LiveGameView: View {
                 }
             }
             LiveHUD(
-                clock: PhaseClock(snapshot: store.match?.snapshot, paused: store.paused),
+                snapshot: store.match?.snapshot,
+                paused: store.paused,
+                anchoredAt: store.match?.clockAnchorAt ?? Date(),
                 situation: store.situation
             )
         }

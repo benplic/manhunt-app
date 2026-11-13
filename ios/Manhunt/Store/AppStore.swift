@@ -30,6 +30,7 @@ struct Session: Equatable {
 struct MatchHandle {
     var snapshot: PlayerViewDTO
     var qrToken: String?
+    var clockAnchorAt = Date()
 }
 
 struct LiveUpdate: Equatable {
@@ -1364,8 +1365,14 @@ final class AppStore {
         }
     }
 
-    func apply(_ view: PlayerViewDTO) {
-        match = MatchHandle(snapshot: view, qrToken: match?.qrToken)
+    func apply(_ view: PlayerViewDTO, now: Date = Date()) {
+        let anchor = ClockLead.anchor(
+            previous: match?.snapshot,
+            previousAnchor: match?.clockAnchorAt,
+            next: view,
+            now: now
+        )
+        match = MatchHandle(snapshot: view, qrToken: match?.qrToken, clockAnchorAt: anchor)
         publishUWBTokenIfNeeded()
         switch view.phase {
         case .ended:
