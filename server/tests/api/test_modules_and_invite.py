@@ -13,7 +13,9 @@ def test_modules_schema_lists_classic_ids(client: TestClient) -> None:
     assert response.status_code == 200
     body = response.json()
     ids = set(body["modules"].keys())
-    assert {"roles", "head_start", "power_ups", "hot_cold", "zone_shrink"} <= ids
+    assert {"roles", "head_start", "power_ups", "reveal_fuzzy", "zone_shrink"} <= ids
+    location_mode = body["modules"]["reveal_fuzzy"]["fields"]["location_mode"]
+    assert location_mode["values"] == ["fuzzy", "precise", "hot_cold"]
     # The preset editor renders this document. Order and bounds are part of it.
     assert body["order"][0] == "roles"
     assert set(body["modules"]["zone_shrink"]["fields"]) == {

@@ -89,6 +89,7 @@ class PlayerState:
     hint: dict[str, Any] | None = None
     # Game second when the current hint was published. None means "recompute".
     hint_at_s: int | None = None
+    hint_until_s: int | None = None
     uwb_token: str | None = None
     # This phone's own range to a peer: meters, game_elapsed_s. Not persisted.
     uwb_ranges: dict[UUID, tuple[float, int]] = field(default_factory=dict)

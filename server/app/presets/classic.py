@@ -12,7 +12,16 @@ CLASSIC_ID = "classic"
 CLASSIC_MODULES: dict[str, dict[str, Any]] = {
     "roles": {"mode": "random", "seeker_count": 1},
     "head_start": {"enabled": True, "duration": 60, "seeker_lock": "locked_map"},
-    "reveal_fuzzy": {"enabled": True, "interval": 60, "display": 10, "fuzz": 30},
+    "reveal_fuzzy": {
+        "location_mode": "fuzzy",
+        "persistence": "timed",
+        "interval": 60,
+        "display": 10,
+        "fuzz": 30,
+        "hints_enabled": True,
+        "hints_persistence": "persistent",
+        "hints_interval": 5,
+    },
     "tag_policy": {
         "method": "qr",
         "radius_m": 2,
@@ -71,6 +80,7 @@ RANGES: dict[tuple[str, str], tuple[float, float]] = {
     ("signal_loss", "penalty_after"): (30, 900),
     ("win", "time_limit"): (5, 180),
     ("hot_cold", "interval"): (2, 30),
+    ("reveal_fuzzy", "hints_interval"): (2, 30),
     ("points", "taunt_cooldown"): (10, 180),
 }
 

@@ -79,14 +79,37 @@ SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "reveal_fuzzy": {
         "version": 1,
-        "title": "Fuzzy reveal",
-        "blurb": "Seekers see approximate hider pins on a timer.",
-        "field_order": ["enabled", "interval", "display", "fuzz"],
+        "title": "Reveal",
+        "blurb": "Location pulses and hot/cold hints.",
+        "locked": True,
+        "field_order": [
+            "location_mode",
+            "persistence",
+            "interval",
+            "display",
+            "fuzz",
+            "hints_enabled",
+            "hints_persistence",
+            "hints_interval",
+        ],
         "fields": {
-            "enabled": _bool("Enabled", True),
+            "location_mode": _enum(
+                "Location",
+                ["fuzzy", "precise", "hot_cold"],
+                "fuzzy",
+                ["Fuzzy", "Precise", "Hot/cold"],
+            ),
+            "persistence": _enum(
+                "Location timing", ["timed", "persistent"], "timed", ["Timed", "Persistent"]
+            ),
             "interval": _int("Every", 20, 600, 60, step=10, suffix="s"),
-            "display": _int("Pin stays", 5, 60, 10, step=5, suffix="s"),
+            "display": _int("Stays up", 5, 60, 10, step=5, suffix="s"),
             "fuzz": _int("Fuzz", 0, 100, 30, step=5, suffix="m"),
+            "hints_enabled": _bool("Hints", True),
+            "hints_persistence": _enum(
+                "Hints timing", ["timed", "persistent"], "persistent", ["Timed", "Persistent"]
+            ),
+            "hints_interval": _int("Hints every", 2, 30, 5, suffix="s"),
         },
     },
     "tag_policy": {
@@ -166,16 +189,6 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 ["All hiders caught", "Time limit", "Either"],
             ),
             "time_limit": _int("Time limit", 5, 180, 30, step=5, suffix="min"),
-        },
-    },
-    "hot_cold": {
-        "version": 1,
-        "title": "Hot / cold",
-        "blurb": "Distance and direction toward hiders. Not a precise pin.",
-        "field_order": ["enabled", "interval"],
-        "fields": {
-            "enabled": _bool("Hints", True),
-            "interval": _int("Update every", 2, 30, 5, suffix="s"),
         },
     },
     "points": {

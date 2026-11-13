@@ -36,6 +36,7 @@ def build_view(
     reveals = []
     for pin in state.reveals:
         if viewer.role == "seeker" or pin.player_id == viewer_id:
+            player = state.players.get(pin.player_id)
             reveals.append(
                 {
                     "reveal_id": str(pin.reveal_id),
@@ -44,6 +45,7 @@ def build_view(
                     "lon": pin.lon,
                     "radius_m": pin.radius_m,
                     "expires_in_s": max(0, pin.expires_at_game_s - state.game_elapsed_s),
+                    "display_name": player.display_name if player is not None else "",
                 }
             )
     you_safe = None
