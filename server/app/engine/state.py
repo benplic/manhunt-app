@@ -61,7 +61,8 @@ class PlayerState:
     is_host: bool
     role: str = "unassigned"
     status: str = "active"
-    points: int = 100
+    points: int = 0
+    points_earned: int = 0
     location: LocationReading | None = None
     last_precise: LocationReading | None = None
     bounds_phase: str = "inside"

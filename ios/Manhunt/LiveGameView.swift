@@ -146,7 +146,7 @@ struct LiveGameView: View {
             }
         }
         .sheet(isPresented: $showBoard) {
-            LeaderboardSheet(players: store.players.sorted { $0.points > $1.points }) {
+            LeaderboardSheet(players: store.players.sorted { $0.earned > $1.earned }) {
                 showBoard = false
             }
             .presentationDetents([.medium, .large])
@@ -459,7 +459,7 @@ private struct LeaderboardSheet: View {
                             .foregroundStyle(HuntColor.signal)
                         Text(player.isYou ? "\(player.name) (you)" : player.name)
                         Spacer()
-                        Text("\(player.points)")
+                        Text("\(player.earned)")
                             .font(.headline.monospacedDigit())
                     }
                 }

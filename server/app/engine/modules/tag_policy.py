@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from app.engine.geo import ACCURACY_CUTOFF_M, distance_m
 from app.engine.modules.base import BaseModule, TagClaim
+from app.engine.modules.points import grant_points
 from app.engine.qr import parse_qr_token
 from app.errors import ErrorCode, GameRuleError
 
@@ -77,7 +78,8 @@ class TagPolicyModule(BaseModule):
             hider.status = "active"
         else:
             hider.status = "eliminated"
-        seeker.points += 25
+        bonus = int(s.module_settings("points").get("tag_points", 25))
+        grant_points(seeker, bonus)
         s.emit(
             "tag",
             {"text": f"{seeker.display_name} tagged {hider.display_name}."},

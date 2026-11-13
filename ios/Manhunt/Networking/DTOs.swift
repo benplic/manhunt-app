@@ -195,6 +195,8 @@ struct YouDTO: Codable {
     var bounds: BoundsDTO
     var safeZone: SafeDTO?
     var points: Int
+    /// Lifetime earned score; nil on older servers decodes as absent.
+    var pointsEarned: Int? = nil
     var hint: HintDTO? = nil
     var effects: [String]? = nil
     var cooldowns: [String: Int]? = nil
@@ -207,7 +209,9 @@ struct YouDTO: Codable {
         case isHost = "is_host"
         case bounds
         case safeZone = "safe_zone"
-        case points, hint, effects, cooldowns
+        case points
+        case pointsEarned = "points_earned"
+        case hint, effects, cooldowns
         case tauntCooldownS = "taunt_cooldown_s"
     }
 }
@@ -285,6 +289,7 @@ struct PlayerDTO: Codable, Identifiable, Hashable {
     var status: PlayerStatus
     var isHost: Bool
     var points: Int? = nil
+    var pointsEarned: Int? = nil
     var location: LocationDTO?
 
     var id: UUID { playerId }
@@ -295,6 +300,7 @@ struct PlayerDTO: Codable, Identifiable, Hashable {
         case role, status
         case isHost = "is_host"
         case points
+        case pointsEarned = "points_earned"
         case location
     }
 }

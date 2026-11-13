@@ -35,6 +35,7 @@ def test_ghost_skips_the_next_reveal() -> None:
         overrides={"reveal_fuzzy": {"interval": 2, "display": 10, "fuzz": 30}}
     )
     session.record_location(hider, reading(meters(100, 100), clock))
+    session.state.players[hider].points = 100
     session.purchase(hider, "ghost")
     run_for(session, clock, 1)
     assert all(p.player_id != hider for p in session.state.reveals)

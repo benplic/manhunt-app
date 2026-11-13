@@ -231,7 +231,9 @@ def _add_points(session: GameSession, actor_id: UUID, amount: int) -> None:
     player = session.state.players.get(actor_id)
     if player is None:
         raise GameRuleError(ErrorCode.NOT_A_MEMBER)
-    player.points += amount
+    from app.engine.modules.points import grant_points
+
+    grant_points(player, amount)
 
 
 def _pick_bot(

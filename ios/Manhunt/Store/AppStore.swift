@@ -254,6 +254,9 @@ final class AppStore {
             } else {
                 point = VisualPoint(latitude: 40.6616, longitude: -73.9688)
             }
+            let spendable = player.points
+                ?? (player.playerId == match.snapshot.you.playerId ? match.snapshot.you.points : 0)
+            let earned = player.pointsEarned ?? spendable
             return VisualPlayer(
                 id: player.playerId.uuidString,
                 name: player.displayName,
@@ -261,8 +264,8 @@ final class AppStore {
                 isYou: player.playerId == match.snapshot.you.playerId,
                 isHost: player.isHost,
                 point: point,
-                points: player.points
-                    ?? (player.playerId == match.snapshot.you.playerId ? match.snapshot.you.points : 0)
+                points: spendable,
+                earned: earned
             )
         }
     }
@@ -275,7 +278,7 @@ final class AppStore {
         }
     }
 
-    var shownPoints: Int { match?.snapshot.you.points ?? 120 }
+    var shownPoints: Int { match?.snapshot.you.points ?? 0 }
 
     /// True while the server radar effect is live on `you.effects`.
     var radarShowsSeekers: Bool {

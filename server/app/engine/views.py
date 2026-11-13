@@ -29,6 +29,7 @@ def build_view(
                 "status": player.status,
                 "is_host": player.is_host,
                 "points": player.points,
+                "points_earned": player.points_earned,
                 "location": _visible_location(state, viewer, player),
             }
         )
@@ -90,6 +91,7 @@ def build_view(
             },
             "safe_zone": you_safe,
             "points": viewer.points,
+            "points_earned": viewer.points_earned,
             "hint": viewer.hint,
             "effects": [e.type for e in state.effects if e.owner_id == viewer.player_id],
             "cooldowns": cooldowns,
