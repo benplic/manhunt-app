@@ -563,6 +563,58 @@ final class GameRulesTests: XCTestCase {
         XCTAssertTrue(polygon.vertices.allSatisfy { $0.longitude * 111_320 < 21 })
     }
 
+    /// A rectangle that straddles the bay must keep the whole interior strip, not one ear,
+    /// and that strip has to be savable.
+    func testConcaveOverlapKeepsTheInteriorStripAndCanSave() {
+        let editor = ArenaEditorModel()
+        editor.boundary = Self.concavePlayArea()
+        editor.zones = [
+            ArenaZone(
+                id: UUID(),
+                name: "Out of bounds",
+                kind: .outOfBounds,
+                shape: .polygon(Polygon(vertices: [
+                    Fixtures.meters(x: 10, y: 40),
+                    Fixtures.meters(x: 50, y: 40),
+                    Fixtures.meters(x: 50, y: 60),
+                    Fixtures.meters(x: 10, y: 60),
+                ]))
+            ),
+        ]
+        let prepared = editor.preparedForSave()
+        XCTAssertTrue(prepared.blocking.isEmpty)
+        XCTAssertEqual(prepared.arena.zones.count, 1)
+        guard case let .polygon(polygon) = prepared.arena.zones[0].shape else {
+            return XCTFail("Expected a polygon")
+        }
+        XCTAssertTrue(polygon.vertices.allSatisfy { ArenaGeometry.contains($0, in: editor.boundary) })
+        XCTAssertTrue(polygon.vertices.allSatisfy { $0.longitude * 111_320 < 21 })
+        XCTAssertTrue(Self.hasVertex(polygon.vertices, nearX: 10, y: 40))
+        XCTAssertTrue(Self.hasVertex(polygon.vertices, nearX: 10, y: 60))
+        XCTAssertTrue(Self.hasVertex(polygon.vertices, nearX: 20, y: 40))
+        XCTAssertTrue(Self.hasVertex(polygon.vertices, nearX: 20, y: 60))
+        XCTAssertGreaterThanOrEqual(Self.areaSquareMeters(polygon.vertices), 190)
+    }
+
+    func testZoneInsideAConcavePlayAreaKeepsEveryVertex() {
+        let play = Self.concavePlayArea()
+        let zone = ArenaZone(
+            id: UUID(),
+            name: "Out of bounds",
+            kind: .outOfBounds,
+            shape: .polygon(Polygon(vertices: [
+                Fixtures.meters(x: 5, y: 40),
+                Fixtures.meters(x: 15, y: 40),
+                Fixtures.meters(x: 15, y: 60),
+                Fixtures.meters(x: 5, y: 60),
+            ]))
+        )
+        guard case let .polygon(polygon) = ZoneClip.clip(zone, to: play)?.shape else {
+            return XCTFail("Expected the inside quad to stay a polygon")
+        }
+        XCTAssertEqual(polygon.vertices.count, 4)
+    }
+
     func testOutZoneClipsSpawnAndSafeWhileThoseTwoMayOverlap() {
         let out = ArenaZone(
             id: UUID(),
@@ -701,6 +753,27 @@ final class GameRulesTests: XCTestCase {
         XCTAssertFalse(ArenaGeometry.covers(zone: zone, playArea: play))
     }
 
+    private static func hasVertex(_ vertices: [GeoPoint], nearX x: Double, y: Double) -> Bool {
+        vertices.contains { point in
+            abs(point.longitude * 111_320 - x) < 1.5 && abs(point.latitude * 111_320 - y) < 1.5
+        }
+    }
+
+    /// Shoelace in the same flat meters as Fixtures.meters (equator, 111,320 m per degree).
+    private static func areaSquareMeters(_ vertices: [GeoPoint]) -> Double {
+        guard vertices.count >= 3 else { return 0 }
+        var area = 0.0
+        for index in vertices.indices {
+            let next = vertices[(index + 1) % vertices.count]
+            let x = vertices[index].longitude * 111_320
+            let y = vertices[index].latitude * 111_320
+            let nx = next.longitude * 111_320
+            let ny = next.latitude * 111_320
+            area += x * ny - nx * y
+        }
+        return abs(area) / 2
+    }
+
     private static func concavePlayArea() -> Polygon {
         Polygon(vertices: [
             Fixtures.meters(x: 0, y: 0),
@@ -761,6 +834,53 @@ final class GameRulesTests: XCTestCase {
             flag: false
         )
         XCTAssertFalse(broken.stepperRangeIsUsable)
+    }
+
+    func testBareSchemaUsesBundledNamesAndFieldOrder() throws {
+        // The home server image can omit display copy. The form still has to
+        // show the bundled names instead of ids and JSON types.
+        let json = """
+        {"modules":{
+          "head_start":{"version":1,"fields":{
+            "enabled":{"type":"bool","default":true},
+            "duration":{"type":"int","min":15,"max":600,"default":60},
+            "seeker_lock":{"type":"enum","values":["locked_map","spawn_zone"],"default":"locked_map"}
+          }},
+          "roles":{"version":1,"fields":{
+            "mode":{"type":"enum","values":["random","manual"],"default":"random"},
+            "seeker_count":{"type":"int","min":1,"max":20,"default":1}
+          }}
+        }}
+        """
+        let response = try JSONDecoder().decode(ModulesResponse.self, from: Data(json.utf8))
+        let modules = ModuleForm.modules(from: response)
+        let head = try XCTUnwrap(modules.first { $0.id == "head_start" })
+        XCTAssertEqual(head.title, "Head start")
+        XCTAssertEqual(head.blurb, "Hiders hide before seekers are released.")
+        let duration = try XCTUnwrap(head.rows.first { $0.id == "duration" })
+        XCTAssertEqual(duration.title, "Duration")
+        let lock = try XCTUnwrap(head.rows.first { $0.id == "seeker_lock" })
+        XCTAssertEqual(lock.title, "Seekers wait")
+        guard case let .options(display, _) = lock.control else {
+            return XCTFail("Seekers wait should be a choice")
+        }
+        XCTAssertEqual(display, ["Locked map", "Spawn zone"])
+        let roles = try XCTUnwrap(modules.first { $0.id == "roles" })
+        // The Nov 10 branch asserted "Hiders" for hider_count. The bundled schema
+        // now names that slot seeker_count / "Seekers".
+        XCTAssertEqual(roles.rows.map(\.title), ["Assignment", "Seekers"])
+    }
+
+    func testExplicitSchemaTitleBeatsTheBundle() throws {
+        let json = """
+        {"modules":{"head_start":{"version":1,"title":"Custom start","blurb":"Custom blurb","field_order":["duration"],"fields":{"duration":{"type":"int","title":"Wait","min":15,"max":600,"default":60}}}},"order":["head_start"]}
+        """
+        let response = try JSONDecoder().decode(ModulesResponse.self, from: Data(json.utf8))
+        let modules = ModuleForm.modules(from: response)
+        let head = try XCTUnwrap(modules.first { $0.id == "head_start" })
+        XCTAssertEqual(head.title, "Custom start")
+        XCTAssertEqual(head.blurb, "Custom blurb")
+        XCTAssertEqual(head.rows.map(\.title), ["Wait"])
     }
 
     func testDuplicateSchemaKeysDoNotRepeatRows() throws {
