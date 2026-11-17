@@ -544,6 +544,7 @@ final class AppStore {
         note = nil
         liveUpdate = nil
         liveUpdateExpiryTask?.cancel()
+        noteExpiryTask?.cancel()
     }
 
     /// Leave the current lobby/hunt (POST /leave) then return home.
@@ -1651,7 +1652,7 @@ final class AppStore {
         do {
             let auth = try await service.signIn(
                 displayName: displayName,
-                installationId: InstallationID.current(defaults: defaults)
+                installationId: InstallationID.current(keychain: keychain)
             )
             await finishRemoteAuth(auth)
         } catch {

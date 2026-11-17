@@ -435,6 +435,8 @@ final class FakeGameService: GameService {
                 game.phase = .headStart
                 game.lobbyStartsInS = nil
             case .headStart:
+                // Mirror server demo hard-advance: jump elapsed so timers match PARK42.
+                game.gameElapsedS = max(game.gameElapsedS, 60)
                 game.phase = .active
             case .active, .paused:
                 game.phase = .ended

@@ -6,6 +6,7 @@ struct KeychainStore {
     var service: String = "app.manhunt.ios"
     var accessAccount: String = "session"
     var refreshAccount: String = "refresh"
+    var installationAccount: String = "installation"
 
     func saveToken(_ token: String) throws {
         try save(token, account: accessAccount)
@@ -15,12 +16,20 @@ struct KeychainStore {
         try save(token, account: refreshAccount)
     }
 
+    func saveInstallationID(_ id: String) throws {
+        try save(id, account: installationAccount)
+    }
+
     func readToken() -> String? {
         read(account: accessAccount)
     }
 
     func readRefreshToken() -> String? {
         read(account: refreshAccount)
+    }
+
+    func readInstallationID() -> String? {
+        read(account: installationAccount)
     }
 
     func deleteToken() {

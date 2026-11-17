@@ -30,6 +30,13 @@ def _headers(auth: dict) -> dict:
     return {"Authorization": f"Bearer {auth['access_token']}"}
 
 
+def test_park42_rejects_host_name_matching_a_bot(client: TestClient) -> None:
+    headers = _headers(_auth(client, "Riley Chen"))
+    denied = client.post("/v1/games/join", headers=headers, json={"join_code": "PARK42"})
+    assert denied.status_code == 409
+    assert denied.json()["error"]["code"] == "DISPLAY_NAME_TAKEN"
+
+
 def test_park42_fills_bots_starts_and_can_end(client: TestClient) -> None:
     headers = _headers(_auth(client, "Casey"))
     joined = client.post("/v1/games/join", headers=headers, json={"join_code": "PARK42"})
