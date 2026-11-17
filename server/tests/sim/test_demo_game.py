@@ -1,6 +1,6 @@
 """Full-match simulation tests for the PARK42 demo lobby."""
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 
@@ -8,7 +8,10 @@ from fastapi.testclient import TestClient
 def test_full_demo_game_plays_through_head_start_reveal_and_bot_tags(
     client: TestClient,
 ) -> None:
-    auth = client.post("/v1/auth/dev", json={"display_name": "Casey"}).json()
+    auth = client.post(
+        "/v1/auth/dev",
+        json={"display_name": "Casey", "installation_id": str(uuid4())},
+    ).json()
     headers = {"Authorization": f"Bearer {auth['access_token']}"}
 
     joined = client.post("/v1/games/join", headers=headers, json={"join_code": "PARK42"})
@@ -68,7 +71,10 @@ def test_full_demo_game_plays_through_head_start_reveal_and_bot_tags(
 def test_demo_game_exercises_zone_shrink_and_safe_zone_with_human_hider(
     client: TestClient,
 ) -> None:
-    auth = client.post("/v1/auth/dev", json={"display_name": "Casey"}).json()
+    auth = client.post(
+        "/v1/auth/dev",
+        json={"display_name": "Casey", "installation_id": str(uuid4())},
+    ).json()
     headers = {"Authorization": f"Bearer {auth['access_token']}"}
     joined = client.post("/v1/games/join", headers=headers, json={"join_code": "PARK42"})
     gid = joined.json()["id"]

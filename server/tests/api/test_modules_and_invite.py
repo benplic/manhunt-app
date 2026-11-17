@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from fastapi.testclient import TestClient
 
 from app.engine.arena import arena_to_dict
@@ -5,7 +7,10 @@ from tests.engine.helpers import square
 
 
 def _auth(client: TestClient, name: str = "Casey") -> dict:
-    return client.post("/v1/auth/dev", json={"display_name": name}).json()
+    return client.post(
+        "/v1/auth/dev",
+        json={"display_name": name, "installation_id": str(uuid4())},
+    ).json()
 
 
 def test_core_modules_are_locked_and_power_costs_are_fields(client: TestClient) -> None:

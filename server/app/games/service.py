@@ -54,6 +54,14 @@ _SAMPLE_BOTS = (
 )
 
 
+def _norm_name(name: str) -> str:
+    return " ".join(name.strip().lower().split())
+
+
+def _name_taken_message(name: str) -> str:
+    return f'"{name.strip()}" is already in this lobby. Pick a different display name.'
+
+
 def _sample_arena() -> dict:
     # Circle centered on Riverside Green in Prospect Park so PARK42 exercises
     # zone shrink, spawn lock, safe zones, and OOB hazards without needing a phone at the park.
@@ -212,9 +220,10 @@ class GameService:
             )
             if (count or 0) >= 20:
                 raise ApiError(ErrorCode.GAME_FULL, "This lobby is full.", status_code=409)
+            game = self._live(row)
+            self._reject_duplicate_display_name(game, user)
             session.add(GamePlayerRow(game_id=row.id, user_id=user.id))
             await session.commit()
-            game = self._live(row)
             game.add_player(user.id, user.display_name, is_host=False)
             if game.demo is not None:
                 BotDriver.seed_positions(game)
@@ -577,9 +586,30 @@ class GameService:
             demo_controls_enabled=self.manager.demo_controls_enabled,
         )
 
+    def _reject_duplicate_display_name(self, game: GameSession, user: User) -> None:
+        """Block a new seat when another roster member already uses this display name."""
+        wanted = _norm_name(user.display_name)
+        for player in game.state.players.values():
+            if player.player_id == user.id:
+                continue
+            if _norm_name(player.display_name) == wanted:
+                raise ApiError(
+                    ErrorCode.DISPLAY_NAME_TAKEN,
+                    _name_taken_message(user.display_name),
+                    status_code=409,
+                )
+
     async def _create_sample(self, session: AsyncSession, host: User) -> GameRow:
         """PARK42: the host, five stable bots, classic rules, start after 30 lobby seconds."""
         bots = await self._sample_bots(session)
+        host_key = _norm_name(host.display_name)
+        for _, bot_name in _SAMPLE_BOTS:
+            if _norm_name(bot_name) == host_key:
+                raise ApiError(
+                    ErrorCode.DISPLAY_NAME_TAKEN,
+                    _name_taken_message(host.display_name),
+                    status_code=409,
+                )
         seed = random.SystemRandom().randint(1, 2**31 - 1)
         preset = classic_preset(
             {

@@ -8,44 +8,48 @@ struct PresetEditorView: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 ScreenHeader(
-                    title: store.editingPresetID == nil ? "New preset" : "Edit preset",
+                    title: store.presetManagementEnabled
+                        ? (store.editingPresetID == nil ? "New preset" : "Edit preset")
+                        : "Rules",
                     subtitle: "Built from the server's module schema.",
                     onBack: store.closePreset
                 )
 
-                Card {
-                    VStack(alignment: .leading, spacing: 12) {
-                        TextField("Preset name", text: $store.presetName)
-                            .textInputAutocapitalization(.words)
-                            .foregroundStyle(HuntColor.paper)
-                            .padding(12)
-                            .background(HuntColor.ink, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        if let note = store.note {
-                            Text(note)
-                                .font(.footnote)
-                                .foregroundStyle(HuntColor.warning)
-                        }
-                        HuntButton(
-                            title: store.isSavingPreset
-                                ? "Saving…"
-                                : (store.editingPresetID == nil ? "Save preset" : "Save changes"),
-                            action: { Task { await store.savePreset() } }
-                        )
-                        .disabled(store.isSavingPreset)
-                        Button("New preset", action: store.beginNewPreset)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(HuntColor.signal)
-                        ForEach(store.savedPresets) { preset in
-                            HStack {
-                                Button(preset.name) { store.loadPreset(preset) }
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(HuntColor.signal)
-                                Button("Rename") { store.loadPreset(preset) }
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(HuntColor.muted)
-                                Button("Delete") { store.deletePreset(id: preset.id) }
-                                    .font(.caption.weight(.semibold))
+                if store.presetManagementEnabled {
+                    Card {
+                        VStack(alignment: .leading, spacing: 12) {
+                            TextField("Preset name", text: $store.presetName)
+                                .textInputAutocapitalization(.words)
+                                .foregroundStyle(HuntColor.paper)
+                                .padding(12)
+                                .background(HuntColor.ink, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            if let note = store.note {
+                                Text(note)
+                                    .font(.footnote)
                                     .foregroundStyle(HuntColor.warning)
+                            }
+                            HuntButton(
+                                title: store.isSavingPreset
+                                    ? "Saving…"
+                                    : (store.editingPresetID == nil ? "Save preset" : "Save changes"),
+                                action: { Task { await store.savePreset() } }
+                            )
+                            .disabled(store.isSavingPreset)
+                            Button("New preset", action: store.beginNewPreset)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(HuntColor.signal)
+                            ForEach(store.savedPresets) { preset in
+                                HStack {
+                                    Button(preset.name) { store.loadPreset(preset) }
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(HuntColor.signal)
+                                    Button("Rename") { store.loadPreset(preset) }
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(HuntColor.muted)
+                                    Button("Delete") { store.deletePreset(id: preset.id) }
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(HuntColor.warning)
+                                }
                             }
                         }
                     }

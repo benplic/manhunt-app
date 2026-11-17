@@ -1,6 +1,6 @@
 """PARK42 is the solo sample lobby: bots, classic rules, a 30s start, then end."""
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 
@@ -20,7 +20,10 @@ def test_generate_skips_the_sample_code() -> None:
 
 
 def _auth(client: TestClient, name: str) -> dict:
-    return client.post("/v1/auth/dev", json={"display_name": name}).json()
+    return client.post(
+        "/v1/auth/dev",
+        json={"display_name": name, "installation_id": str(uuid4())},
+    ).json()
 
 
 def _headers(auth: dict) -> dict:

@@ -3,10 +3,13 @@ import Foundation
 struct UserDTO: Codable, Hashable {
     var id: UUID
     var displayName: String
+    /// Present on the wire for future photo upload; always null for now.
+    var avatarUrl: String?
 
     enum CodingKeys: String, CodingKey {
         case id
         case displayName = "display_name"
+        case avatarUrl = "avatar_url"
     }
 }
 
@@ -304,6 +307,7 @@ struct SafeDTO: Codable {
 struct PlayerDTO: Codable, Identifiable, Hashable {
     var playerId: UUID
     var displayName: String
+    var avatarUrl: String? = nil
     var role: PlayerRole
     var status: PlayerStatus
     var isHost: Bool
@@ -316,6 +320,7 @@ struct PlayerDTO: Codable, Identifiable, Hashable {
     enum CodingKeys: String, CodingKey {
         case playerId = "player_id"
         case displayName = "display_name"
+        case avatarUrl = "avatar_url"
         case role, status
         case isHost = "is_host"
         case points

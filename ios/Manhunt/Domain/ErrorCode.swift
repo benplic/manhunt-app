@@ -13,6 +13,7 @@ enum ErrorCode: String, Codable, Equatable {
     case gameNotFound = "GAME_NOT_FOUND"
     case invalidJoinCode = "INVALID_JOIN_CODE"
     case gameFull = "GAME_FULL"
+    case displayNameTaken = "DISPLAY_NAME_TAKEN"
     case wrongPhase = "WRONG_PHASE"
     case needBothRoles = "NEED_BOTH_ROLES"
     case tokenInvalid = "TOKEN_INVALID"

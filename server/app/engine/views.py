@@ -25,6 +25,8 @@ def build_view(
             {
                 "player_id": str(player.player_id),
                 "display_name": player.display_name,
+                # Wired for clients; photo upload is intentionally not shipped yet.
+                "avatar_url": None,
                 "role": player.role,
                 "status": player.status,
                 "is_host": player.is_host,

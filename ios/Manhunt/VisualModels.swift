@@ -18,6 +18,7 @@ struct VisualPoint: Hashable {
 struct MapReveal: Identifiable, Hashable {
     var id: String
     var name: String
+    var playerID: String
     var colorIndex: Int
     var center: VisualPoint
     var radiusMeters: Double

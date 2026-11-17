@@ -2,11 +2,15 @@ import SwiftUI
 
 struct CreateGameView: View {
     @Environment(AppStore.self) private var store
+    @State private var renamingPresetID: String?
+    @State private var renamePresetDraft = ""
+    @State private var deletingPresetID: String?
 
     var body: some View {
         @Bindable var store = store
         let activePreset = RulePreset.matching(modules: store.modules)
         let isCircleArena = store.selectedArena?.boundaryCircle != nil
+        let selectedSavedID = store.editingPresetID
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 ScreenHeader(title: "New game", subtitle: "Pick a park and a ruleset.", onBack: store.goHome)
@@ -64,8 +68,9 @@ struct CreateGameView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(RulePreset.allCases) { preset in
-                            let selected = activePreset == preset
+                            let selected = activePreset == preset && selectedSavedID == nil
                             Button {
+                                store.editingPresetID = nil
                                 store.applyRulePreset(preset)
                             } label: {
                                 Text(preset.rawValue)
@@ -84,8 +89,48 @@ struct CreateGameView: View {
                             .buttonStyle(.huntPress(.selection))
                             .accessibilityIdentifier("preset-\(preset.rawValue)")
                         }
+                        ForEach(store.savedPresets) { preset in
+                            let selected = selectedSavedID == preset.id
+                            HStack(spacing: 6) {
+                                Button {
+                                    store.applySavedPreset(preset)
+                                } label: {
+                                    Text(preset.name)
+                                        .font(.subheadline.weight(.semibold))
+                                        .lineLimit(1)
+                                }
+                                .buttonStyle(.plain)
+                                Button("Rename") {
+                                    renamePresetDraft = preset.name
+                                    renamingPresetID = preset.id
+                                }
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(HuntColor.signal)
+                                Button("Delete") {
+                                    deletingPresetID = preset.id
+                                }
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(HuntColor.warning)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(
+                                selected ? HuntColor.seeker : HuntColor.inkRaised,
+                                in: Capsule()
+                            )
+                            .overlay(
+                                Capsule().stroke(selected ? HuntColor.seeker : HuntColor.line, lineWidth: 1)
+                            )
+                            .foregroundStyle(HuntColor.paper)
+                            .accessibilityIdentifier("saved-preset-\(preset.id)")
+                        }
                     }
                 }
+
+                Button("New preset", action: store.openNewPreset)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(HuntColor.signal)
+                    .accessibilityIdentifier("new-preset")
 
                 Text(activePreset?.blurb ?? "Custom: adjusted from base rules.")
                     .font(.footnote)
@@ -118,7 +163,7 @@ struct CreateGameView: View {
                         Divider().background(HuntColor.line)
                         zoneShrinkRow(isCircleArena: isCircleArena)
                         Divider().background(HuntColor.line)
-                        Button("All rules", action: store.openPreset)
+                        Button("All rules", action: store.openCurrentRules)
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(HuntColor.signal)
                     }
@@ -130,6 +175,33 @@ struct CreateGameView: View {
             .padding(20)
         }
         .background(HuntColor.ink)
+        .alert("Rename preset", isPresented: Binding(
+            get: { renamingPresetID != nil },
+            set: { if !$0 { renamingPresetID = nil } }
+        )) {
+            TextField("Name", text: $renamePresetDraft)
+            Button("Save") {
+                if let id = renamingPresetID {
+                    store.renamePreset(id: id, to: renamePresetDraft)
+                }
+                renamingPresetID = nil
+            }
+            Button("Cancel", role: .cancel) { renamingPresetID = nil }
+        }
+        .alert("Delete this preset?", isPresented: Binding(
+            get: { deletingPresetID != nil },
+            set: { if !$0 { deletingPresetID = nil } }
+        )) {
+            Button("Delete", role: .destructive) {
+                if let id = deletingPresetID {
+                    store.deletePreset(id: id)
+                }
+                deletingPresetID = nil
+            }
+            Button("Cancel", role: .cancel) { deletingPresetID = nil }
+        } message: {
+            Text("This only removes the saved ruleset.")
+        }
     }
 
     @ViewBuilder

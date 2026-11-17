@@ -99,6 +99,11 @@ class GameSession:
         self._note_input("roles_random", {"hider_count": hiders})
 
     def set_role(self, player_id: UUID, role: str) -> None:
+        if role not in {"hider", "seeker"}:
+            raise GameRuleError(
+                ErrorCode.VALIDATION_FAILED,
+                "Role must be hider or seeker.",
+            )
         player = self.state.players[player_id]
         player.role = role
         self._note_input("role_set", {"player_id": str(player_id), "role": role})

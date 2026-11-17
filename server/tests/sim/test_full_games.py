@@ -1,7 +1,7 @@
 """Primary integration tests: scripted bots over REST plus a WebSocket hello."""
 
 from datetime import timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 
@@ -12,7 +12,10 @@ from tests.engine.helpers import meters, square
 
 
 def _auth(client: TestClient, name: str) -> dict:
-    response = client.post("/v1/auth/dev", json={"display_name": name})
+    response = client.post(
+        "/v1/auth/dev",
+        json={"display_name": name, "installation_id": str(uuid4())},
+    )
     assert response.status_code == 200, response.text
     return response.json()
 
