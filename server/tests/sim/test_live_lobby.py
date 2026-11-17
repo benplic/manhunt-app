@@ -43,19 +43,6 @@ def _next(ws, timeout: float = 2):
         raise AssertionError("expected a websocket frame") from None
 
 
-def _auth(client: TestClient, name: str) -> dict:
-    response = client.post(
-        "/v1/auth/dev",
-        json={"display_name": name, "installation_id": str(uuid4())},
-    )
-    assert response.status_code == 200, response.text
-    return response.json()
-
-
-def _hdr(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
-
-
 def test_join_and_roles_push_a_lobby_view(client: TestClient) -> None:
     host = _auth(client, "Casey")
     guest = _auth(client, "Riley")

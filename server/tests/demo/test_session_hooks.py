@@ -107,9 +107,9 @@ def test_restart_marks_sample_game_abandoned_and_allows_new_park42(tmp_path) -> 
     app = make_test_app(tmp_path)
     with TestClient(app) as client:
         auth = client.post(
-        "/v1/auth/dev",
-        json={"display_name": "Casey", "installation_id": str(uuid4())},
-    ).json()
+            "/v1/auth/dev",
+            json={"display_name": "Casey", "installation_id": str(uuid4())},
+        ).json()
         headers = {"Authorization": f"Bearer {auth['access_token']}"}
         first = client.post("/v1/games/join", headers=headers, json={"join_code": "PARK42"}).json()
         gid = first["id"]
@@ -119,9 +119,9 @@ def test_restart_marks_sample_game_abandoned_and_allows_new_park42(tmp_path) -> 
     with TestClient(restarted) as client:
         assert UUID(gid) not in restarted.state.manager.sessions
         auth2 = client.post(
-        "/v1/auth/dev",
-        json={"display_name": "Morgan", "installation_id": str(uuid4())},
-    ).json()
+            "/v1/auth/dev",
+            json={"display_name": "Morgan", "installation_id": str(uuid4())},
+        ).json()
         headers2 = {"Authorization": f"Bearer {auth2['access_token']}"}
         second = client.post("/v1/games/join", headers=headers2, json={"join_code": "PARK42"})
         assert second.status_code == 200

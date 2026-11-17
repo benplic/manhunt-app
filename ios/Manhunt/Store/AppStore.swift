@@ -1506,16 +1506,8 @@ final class AppStore {
         if view.you.bounds.phase != "inside", view.phase == .active || view.phase == .headStart {
             situation = .outOfBounds
         }
-        // Snapshot banners render in LiveGameView. Do not copy them into `note`
-        // or they ghost after the server clears the banner list.
-        if view.banners.isEmpty, let current = note,
-           current == "The countdown waits until every seeker is inside the spawn zone."
-            || current.hasPrefix("Force tag requires")
-            || current.hasPrefix("Reveal requires")
-        {
-            note = nil
-            noteExpiryTask?.cancel()
-        }
+        // Snapshot banners render in LiveGameView only. Ephemeral toasts use
+        // presentNote() with its own TTL — do not mirror banners into `note`.
     }
 
     private func enterLive() {

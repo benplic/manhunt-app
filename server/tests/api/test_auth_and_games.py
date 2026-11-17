@@ -180,6 +180,21 @@ def test_dev_auth_same_name_different_installs(client: TestClient) -> None:
     assert second.json()["user"]["display_name"] == "Casey"
 
 
+def test_dev_auth_same_install_renames_display_name(client: TestClient) -> None:
+    first = client.post(
+        "/v1/auth/dev",
+        json={"display_name": "Casey", "installation_id": "phone-rename"},
+    )
+    renamed = client.post(
+        "/v1/auth/dev",
+        json={"display_name": "Casey Lee", "installation_id": "phone-rename"},
+    )
+    assert first.status_code == 200
+    assert renamed.status_code == 200
+    assert first.json()["user"]["id"] == renamed.json()["user"]["id"]
+    assert renamed.json()["user"]["display_name"] == "Casey Lee"
+
+
 def test_join_rejects_duplicate_display_name(client: TestClient) -> None:
     host = client.post(
         "/v1/auth/dev",
