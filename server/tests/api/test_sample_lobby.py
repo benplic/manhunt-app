@@ -1,6 +1,6 @@
 """PARK42 is the solo sample lobby: bots, classic rules, a 30s start, then end."""
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 
@@ -20,11 +20,21 @@ def test_generate_skips_the_sample_code() -> None:
 
 
 def _auth(client: TestClient, name: str) -> dict:
-    return client.post("/v1/auth/dev", json={"display_name": name}).json()
+    return client.post(
+        "/v1/auth/dev",
+        json={"display_name": name, "installation_id": str(uuid4())},
+    ).json()
 
 
 def _headers(auth: dict) -> dict:
     return {"Authorization": f"Bearer {auth['access_token']}"}
+
+
+def test_park42_rejects_host_name_matching_a_bot(client: TestClient) -> None:
+    headers = _headers(_auth(client, "Riley Chen"))
+    denied = client.post("/v1/games/join", headers=headers, json={"join_code": "PARK42"})
+    assert denied.status_code == 409
+    assert denied.json()["error"]["code"] == "DISPLAY_NAME_TAKEN"
 
 
 def test_park42_fills_bots_starts_and_can_end(client: TestClient) -> None:

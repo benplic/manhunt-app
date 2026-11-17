@@ -34,7 +34,8 @@ final class FakeGameService: GameService {
         [Arena.sampleSquare(), Arena.riversideSample(), Arena.schoolyardSample()]
     }
 
-    func signIn(displayName: String) async throws -> AuthOut {
+    func signIn(displayName: String, installationId: String) async throws -> AuthOut {
+        _ = installationId
         signInSync(displayName)
     }
 
@@ -173,6 +174,12 @@ final class FakeGameService: GameService {
 
     func setRoleSync(gameID: UUID, playerID: UUID, role: PlayerRole) throws -> PlayerViewDTO {
         guard var game = games[gameID] else { throw ServiceError(code: .gameNotFound, message: "") }
+        guard game.players.contains(where: { $0.isHost && $0.id == signedIn?.id }) else {
+            throw ServiceError(code: .notHost, message: "Only the host can do that.")
+        }
+        guard role == .hider || role == .seeker else {
+            throw ServiceError(code: .validationFailed, message: "Role must be hider or seeker.")
+        }
         guard let index = game.players.firstIndex(where: { $0.id == playerID }) else {
             throw ServiceError(code: .notAMember, message: "")
         }
@@ -428,6 +435,8 @@ final class FakeGameService: GameService {
                 game.phase = .headStart
                 game.lobbyStartsInS = nil
             case .headStart:
+                // Mirror server demo hard-advance: jump elapsed so timers match PARK42.
+                game.gameElapsedS = max(game.gameElapsedS, 60)
                 game.phase = .active
             case .active, .paused:
                 game.phase = .ended

@@ -1,6 +1,7 @@
 """A second phone joining, or a role change, reaches the other phone without a refresh."""
 
 import json
+from uuid import uuid4
 
 import anyio
 from fastapi.testclient import TestClient
@@ -10,7 +11,10 @@ from tests.engine.helpers import square
 
 
 def _auth(client: TestClient, name: str) -> dict:
-    response = client.post("/v1/auth/dev", json={"display_name": name})
+    response = client.post(
+        "/v1/auth/dev",
+        json={"display_name": name, "installation_id": str(uuid4())},
+    )
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -37,16 +41,6 @@ def _next(ws, timeout: float = 2):
         return ws.portal.call(receive)
     except TimeoutError:
         raise AssertionError("expected a websocket frame") from None
-
-
-def _auth(client: TestClient, name: str) -> dict:
-    response = client.post("/v1/auth/dev", json={"display_name": name})
-    assert response.status_code == 200, response.text
-    return response.json()
-
-
-def _hdr(token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
 
 
 def test_join_and_roles_push_a_lobby_view(client: TestClient) -> None:

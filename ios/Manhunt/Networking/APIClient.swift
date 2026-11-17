@@ -163,7 +163,11 @@ struct UwbTagBody: Encodable {
 
 struct DevAuthBody: Encodable {
     var displayName: String
-    enum CodingKeys: String, CodingKey { case displayName = "display_name" }
+    var installationId: String
+    enum CodingKeys: String, CodingKey {
+        case displayName = "display_name"
+        case installationId = "installation_id"
+    }
 }
 
 struct AppleAuthBody: Encodable {

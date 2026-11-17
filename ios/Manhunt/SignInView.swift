@@ -10,18 +10,17 @@ struct SignInView: View {
             TopoField()
             VStack(alignment: .leading, spacing: 20) {
                 Spacer()
-                Text("FIELD GAME")
-                    .font(.caption.weight(.bold))
-                    .tracking(2)
-                    .foregroundStyle(HuntColor.signal)
                 Text("Manhunt")
                     .font(HuntFont.wordmark(68))
                     .foregroundStyle(HuntColor.paper)
+                Text("with friends")
+                    .font(.caption.weight(.bold))
+                    .tracking(2)
+                    .foregroundStyle(HuntColor.signal)
                 VStack(alignment: .leading, spacing: 8) {
-                    rule("The host draws the park.")
                     rule("Hiders run. Seekers hunt.")
-                    rule("The phone only keeps score.")
                 }
+                .padding(.top, 8)
                 .padding(.bottom, 8)
 
                 VStack(alignment: .leading, spacing: 10) {
@@ -76,7 +75,7 @@ struct SignInView: View {
                 .signInWithAppleButtonStyle(.white)
                 .frame(height: 54)
                 .accessibilityIdentifier("sign-in-apple")
-                Text("Precise location stays on during a game. Manhunt does not ask for Always. Display name is for home games; Sign in with Apple is for Azure.")
+                Text("Precise location stays on during a game. Manhunt does not ask for Always. Display name is for home games; Sign in with Apple is for cloud games.")
                     .font(.footnote)
                     .foregroundStyle(HuntColor.muted)
                     .fixedSize(horizontal: false, vertical: true)

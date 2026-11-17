@@ -202,11 +202,20 @@ def _end_phase(session: GameSession) -> None:
         session.start()
         return
     if phase == "head_start":
-        for _ in range(605):
-            if session.state.phase != "head_start":
-                break
-            session.tick()
-            BotDriver.step(session)
+        # Demo host ends head start immediately, even when spawn lock would
+        # hold the real countdown (seekers outside the spawn zone). Jump the
+        # match clock to the head-start duration so later timers (zone shrink,
+        # reveals) behave as if the countdown finished normally.
+        head_start_s = int(session.module_settings("head_start").get("duration", 60))
+        session.state.game_elapsed_s = max(session.state.game_elapsed_s, head_start_s)
+        session.state.phase = "active"
+        session.state.phase_remaining_s = None
+        session.state.banners = [
+            banner
+            for banner in session.state.banners
+            if banner.title != "Stay in spawn"
+        ]
+        session.emit("head_start_ended", {"text": "Head start ended. Seekers released."})
         return
     if phase in {"active", "paused"}:
         session.end("Host ended the demo.", winner="none")

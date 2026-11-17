@@ -4,7 +4,7 @@ import Foundation
 protocol GameService: AnyObject {
     var joinCalls: Int { get }
 
-    func signIn(displayName: String) async throws -> AuthOut
+    func signIn(displayName: String, installationId: String) async throws -> AuthOut
     func signInWithApple(identityToken: String, displayName: String?) async throws -> AuthOut
     func registerDeviceToken(_ token: String) async throws
     func arenas() async throws -> [Arena]

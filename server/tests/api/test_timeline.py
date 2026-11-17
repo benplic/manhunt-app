@@ -1,7 +1,7 @@
 """The results timeline is the ordered non-sensitive event log."""
 
 from datetime import timedelta
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 
@@ -15,7 +15,10 @@ PLAYTEST = ("reveal", "tag", "out_of_bounds", "signal_lost")
 
 
 def _auth(client: TestClient, name: str) -> dict:
-    response = client.post("/v1/auth/dev", json={"display_name": name})
+    response = client.post(
+        "/v1/auth/dev",
+        json={"display_name": name, "installation_id": str(uuid4())},
+    )
     assert response.status_code == 200, response.text
     return response.json()
 

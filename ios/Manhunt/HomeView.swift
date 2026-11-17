@@ -13,10 +13,6 @@ struct HomeView: View {
             VStack(alignment: .leading, spacing: 22) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Ready")
-                            .font(.caption.weight(.bold))
-                            .tracking(1.4)
-                            .foregroundStyle(HuntColor.signal)
                         Text(store.displayName)
                             .font(HuntFont.title(36))
                             .foregroundStyle(HuntColor.paper)

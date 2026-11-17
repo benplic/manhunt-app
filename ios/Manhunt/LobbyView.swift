@@ -53,17 +53,16 @@ struct LobbyView: View {
                                 store.cycleRole(player.id)
                             } label: {
                                 HStack(spacing: 12) {
-                                    Circle()
-                                        .fill(player.role.tint)
-                                        .frame(width: 12, height: 12)
-                                    VStack(alignment: .leading, spacing: 2) {
+                                    PlayerAvatar(name: player.name, playerID: player.id, size: 28)
+                                    HStack(spacing: 6) {
                                         Text(player.isYou ? "\(player.name) (you)" : player.name)
                                             .font(.body.weight(.semibold))
                                             .foregroundStyle(HuntColor.paper)
                                         if player.isHost {
-                                            Text("Host")
-                                                .font(.caption)
-                                                .foregroundStyle(HuntColor.muted)
+                                            Image(systemName: "crown.fill")
+                                                .font(.caption.weight(.bold))
+                                                .foregroundStyle(HuntColor.signal)
+                                                .accessibilityLabel("Host")
                                         }
                                     }
                                     Spacer()
@@ -209,7 +208,7 @@ struct LobbyView: View {
                     )
                     HuntButton(title: "Start hunt", systemImage: "flag.checkered", action: store.startLive)
                         .accessibilityIdentifier("start-hunt")
-                    Text("Tap a player to cycle Hider, Seeker, and Open. Randomize uses the seeker count above. Everyone else hides.")
+                    Text("Tap a player to cycle Hider and Seeker. Randomize uses the seeker count above. Everyone else hides.")
                         .font(.footnote)
                         .foregroundStyle(HuntColor.muted)
                 }

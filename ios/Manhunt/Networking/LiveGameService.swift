@@ -57,8 +57,11 @@ final class LiveGameService: GameService {
         client.baseURL = url
     }
 
-    func signIn(displayName: String) async throws -> AuthOut {
-        let auth: AuthOut = try await client.post("/v1/auth/dev", body: DevAuthBody(displayName: displayName))
+    func signIn(displayName: String, installationId: String) async throws -> AuthOut {
+        let auth: AuthOut = try await client.post(
+            "/v1/auth/dev",
+            body: DevAuthBody(displayName: displayName, installationId: installationId)
+        )
         client.token = auth.accessToken
         refreshToken = auth.refreshToken
         return auth

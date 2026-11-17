@@ -110,7 +110,7 @@ struct HuntMap: View {
                 }
                 ForEach(people) { person in
                     if shouldShow(person) {
-                        Annotation(person.name, coordinate: displayPoint(for: person, now: now).coordinate, anchor: .center) {
+                        Annotation(person.name, coordinate: displayPoint(for: person, now: now).coordinate, anchor: .bottom) {
                             PlayerPin(person: person, fuzzy: fuzzyHiders && person.role == .hider && !person.isYou)
                         }
                     }
@@ -234,8 +234,13 @@ struct HuntMap: View {
                 .foregroundStyle(color.opacity(0.22))
                 .stroke(color, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
         }
-        Annotation(reveal.name, coordinate: reveal.center.coordinate) {
-            RevealPin(name: reveal.name, color: color, fuzzy: reveal.radiusMeters > 0)
+        Annotation(reveal.name, coordinate: reveal.center.coordinate, anchor: .bottom) {
+            RevealPin(
+                name: reveal.name,
+                playerID: reveal.playerID,
+                color: color,
+                fuzzy: reveal.radiusMeters > 0
+            )
         }
     }
 
@@ -250,20 +255,25 @@ struct HuntMap: View {
 
 struct RevealPin: View {
     var name: String
+    var playerID: String
     var color: Color
     var fuzzy: Bool
 
     var body: some View {
+        // Avatar sits above the ground dot; annotation anchor is .bottom so
+        // zoom keeps a steady on-screen size (MapKit annotation points).
         VStack(spacing: 2) {
+            if !fuzzy {
+                PlayerAvatar(name: name, playerID: playerID, size: 22)
+            }
             Circle()
                 .fill(color)
-                .frame(width: fuzzy ? 12 : 16, height: fuzzy ? 12 : 16)
-            Text(name.split(separator: " ").first.map(String.init) ?? name)
-                .font(.caption2.weight(.bold))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(.black.opacity(0.72), in: Capsule())
-                .foregroundStyle(HuntColor.paper)
+                .frame(width: fuzzy ? 12 : 10, height: fuzzy ? 12 : 10)
+                .overlay {
+                    if !fuzzy {
+                        Circle().stroke(HuntColor.paper, lineWidth: 1.5)
+                    }
+                }
         }
     }
 }
@@ -274,24 +284,19 @@ struct PlayerPin: View {
 
     var body: some View {
         VStack(spacing: 2) {
+            if !fuzzy {
+                PlayerAvatar(name: person.name, playerID: person.id, size: 24)
+            }
             ZStack {
                 Circle()
                     .fill(person.role.tint)
-                    .frame(width: fuzzy ? 36 : 18, height: fuzzy ? 36 : 18)
+                    .frame(width: fuzzy ? 36 : 12, height: fuzzy ? 36 : 12)
                     .opacity(fuzzy ? 0.35 : 1)
                 if !fuzzy {
                     Circle()
                         .stroke(HuntColor.paper, lineWidth: 2)
-                        .frame(width: 18, height: 18)
+                        .frame(width: 12, height: 12)
                 }
-            }
-            if !fuzzy {
-                Text(person.isYou ? "You" : person.name.split(separator: " ").first.map(String.init) ?? person.name)
-                    .font(.caption2.weight(.bold))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(.black.opacity(0.72), in: Capsule())
-                    .foregroundStyle(HuntColor.paper)
             }
         }
     }

@@ -1,6 +1,6 @@
 """Tests for POST /v1/games/{id}/demo, build_view demo block, and config gates."""
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi.testclient import TestClient
 
@@ -9,7 +9,10 @@ from app.main import create_app
 
 
 def _auth(client: TestClient, name: str) -> dict:
-    res = client.post("/v1/auth/dev", json={"display_name": name})
+    res = client.post(
+        "/v1/auth/dev",
+        json={"display_name": name, "installation_id": str(uuid4())},
+    )
     assert res.status_code == 200
     return res.json()
 
@@ -202,6 +205,68 @@ def test_demo_view_and_all_host_actions(client: TestClient) -> None:
         )
         assert ended.status_code == 200
         assert ended.json()["phase"] == "ended"
+
+
+def test_end_phase_advances_past_spawn_lock(client: TestClient) -> None:
+    """Demo End head start must reach active even if seekers are outside spawn."""
+    host = _auth(client, "Casey")
+    gid = _join_park(client, host)
+
+    hs = client.post(
+        f"/v1/games/{gid}/demo",
+        headers=_hdr(host),
+        json={"action": "end_phase"},
+    )
+    assert hs.status_code == 200
+    assert hs.json()["phase"] == "head_start"
+
+    # Park the host well outside seeker spawn so the real countdown would hold.
+    outside = client.post(
+        f"/v1/games/{gid}/demo",
+        headers=_hdr(host),
+        json={"action": "move_me", "lat": 40.6700, "lon": -73.9600},
+    )
+    assert outside.status_code == 200
+    if outside.json()["you"]["role"] != "seeker":
+        switched = client.post(
+            f"/v1/games/{gid}/demo",
+            headers=_hdr(host),
+            json={"action": "switch_team", "role": "seeker"},
+        )
+        assert switched.status_code == 200
+
+    active = client.post(
+        f"/v1/games/{gid}/demo",
+        headers=_hdr(host),
+        json={"action": "end_phase"},
+    )
+    assert active.status_code == 200
+    assert active.json()["phase"] == "active"
+    assert all(b.get("title") != "Stay in spawn" for b in active.json().get("banners", []))
+
+    # Force tag / reveal must work once active after a hard advance.
+    revealed = client.post(
+        f"/v1/games/{gid}/demo",
+        headers=_hdr(host),
+        json={"action": "force_reveal"},
+    )
+    assert revealed.status_code == 200
+
+    tagged = client.post(
+        f"/v1/games/{gid}/demo",
+        headers=_hdr(host),
+        json={"action": "force_tag"},
+    )
+    assert tagged.status_code == 200
+
+    # End the sample so later tests can create a fresh PARK42 on this client.
+    ended = client.post(
+        f"/v1/games/{gid}/demo",
+        headers=_hdr(host),
+        json={"action": "end_phase"},
+    )
+    assert ended.status_code == 200
+    assert ended.json()["phase"] == "ended"
 
 
 def test_demo_gate_permissions_normal_game_and_prod_env(client: TestClient, tmp_path) -> None:

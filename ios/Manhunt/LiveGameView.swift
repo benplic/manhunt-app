@@ -187,10 +187,9 @@ struct LiveGameView: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                mapChip("Home", action: store.goHome)
-                    .accessibilityLabel("Home")
-                mapChip("Leaderboard") { showBoard = true }
-                mapChip("Event log") {
+                mapIconChip(systemName: "house.fill", label: "Home", action: store.goHome)
+                mapIconChip(systemName: "trophy.fill", label: "Leaderboard") { showBoard = true }
+                mapIconChip(systemName: "book.closed.fill", label: "Event log") {
                     showLog = true
                     Task { await store.loadTimeline() }
                 }
@@ -236,6 +235,17 @@ struct LiveGameView: View {
                 .background(.black.opacity(0.55), in: Capsule())
         }
         .buttonStyle(.huntPress(.light))
+    }
+
+    private func mapIconChip(systemName: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 14, weight: .bold))
+                .frame(width: 36, height: 32)
+                .background(.black.opacity(0.55), in: Capsule())
+        }
+        .buttonStyle(.huntPress(.light))
+        .accessibilityLabel(label)
     }
 
     private var locationBlock: some View {
@@ -481,7 +491,16 @@ private struct LeaderboardSheet: View {
                             .font(.headline.monospacedDigit())
                             .frame(width: 24, alignment: .leading)
                             .foregroundStyle(HuntColor.signal)
-                        Text(player.isYou ? "\(player.name) (you)" : player.name)
+                        PlayerAvatar(name: player.name, playerID: player.id, size: 24)
+                        HStack(spacing: 4) {
+                            Text(player.isYou ? "\(player.name) (you)" : player.name)
+                            if player.isHost {
+                                Image(systemName: "crown.fill")
+                                    .font(.caption2.weight(.bold))
+                                    .foregroundStyle(HuntColor.signal)
+                                    .accessibilityLabel("Host")
+                            }
+                        }
                         Spacer()
                         Text("\(player.earned)")
                             .font(.headline.monospacedDigit())

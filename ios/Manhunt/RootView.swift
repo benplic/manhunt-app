@@ -9,8 +9,17 @@ struct RootView: View {
             switch store.screen {
             case .signedOut:
                 SignInView()
+                    // Play slides the landing up and away into Home.
+                    .transition(.asymmetric(
+                        insertion: .opacity,
+                        removal: .move(edge: .bottom).combined(with: .opacity)
+                    ))
             case .home:
                 HomeView()
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .offset(y: 12)),
+                        removal: .opacity
+                    ))
             case .createGame:
                 CreateGameView()
             case .lobby:
@@ -25,7 +34,7 @@ struct RootView: View {
                 PresetEditorView()
             }
         }
-        .animation(.snappy(duration: 0.25), value: store.screen)
+        .animation(.snappy(duration: 0.35), value: store.screen)
         .preferredColorScheme(.dark)
         .onChange(of: scenePhase) { _, phase in
             store.handleScenePhase(isBackground: phase == .background)

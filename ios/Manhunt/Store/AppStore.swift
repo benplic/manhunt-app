@@ -79,6 +79,8 @@ final class AppStore {
     var editorFrameID = 0
     private var awaitingEditorFrame = false
     var editingPresetID: String?
+    /// When false, PresetEditorView hides rename/new/saved-list chrome (All rules path).
+    var presetManagementEnabled = true
     var arenaID = SamplePark.riverside.id
     var paused = false
     var modules: [VisualModule] = SamplePark.classicModules()
@@ -94,6 +96,7 @@ final class AppStore {
     var uwbPeers: [UWBPeer] = []
     var uwbDistance: [UUID: Double] = [:]
     private var liveUpdateExpiryTask: Task<Void, Never>?
+    private var noteExpiryTask: Task<Void, Never>?
     private var presetReturn: AppScreen = .home
     private var sentLowBattery = false
     private var lastSentLocation: CLLocation?
@@ -330,6 +333,7 @@ final class AppStore {
             return MapReveal(
                 id: pin.revealId.uuidString,
                 name: name,
+                playerID: pin.playerId.uuidString,
                 colorIndex: RevealPalette.index(for: pin.playerId),
                 center: VisualPoint(latitude: pin.lat, longitude: pin.lon),
                 radiusMeters: pin.radiusM
@@ -387,7 +391,9 @@ final class AppStore {
         if let fake {
             fake.signInSync(displayName)
             session = Session(displayName: displayName, token: "fake")
-            screen = .home
+            withAnimation(.snappy(duration: 0.35)) {
+                screen = .home
+            }
             Task { await registerPendingDeviceTokenIfNeeded() }
             return
         }
@@ -404,7 +410,9 @@ final class AppStore {
                 await registerPendingDeviceTokenIfNeeded()
             }
             session = Session(displayName: displayName, token: "fake")
-            screen = .home
+            withAnimation(.snappy(duration: 0.35)) {
+                screen = .home
+            }
             return
         }
         note = WakeCopy.message
@@ -502,6 +510,20 @@ final class AppStore {
         }
     }
 
+    /// Short-lived toast for demo/errors. Snapshot banners stay on their own UI.
+    func presentNote(_ text: String?, ttlSeconds: Double = 4) {
+        note = text
+        noteExpiryTask?.cancel()
+        guard let text else { return }
+        noteExpiryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(ttlSeconds))
+            guard !Task.isCancelled, let self else { return }
+            if self.note == text {
+                self.note = nil
+            }
+        }
+    }
+
     func signOut() {
         turnOffFlashlight()
         decoyPicking = false
@@ -514,12 +536,15 @@ final class AppStore {
         session = nil
         match = nil
         pingPulse = nil
-        screen = .signedOut
+        withAnimation(.snappy(duration: 0.35)) {
+            screen = .signedOut
+        }
         joinDraft = ""
         joinMessage = nil
         note = nil
         liveUpdate = nil
         liveUpdateExpiryTask?.cancel()
+        noteExpiryTask?.cancel()
     }
 
     /// Leave the current lobby/hunt (POST /leave) then return home.
@@ -541,13 +566,19 @@ final class AppStore {
         note = nil
         liveUpdate = nil
         liveUpdateExpiryTask?.cancel()
+        noteExpiryTask?.cancel()
         guard let gameID else { return }
         Task {
             try? await service.leave(gameID: gameID)
         }
     }
-    func openCreate() { screen = .createGame }
+    func openCreate() {
+        screen = .createGame
+        // Custom preset bubbles need the saved list before the row appears.
+        Task { await refreshPresetEditor() }
+    }
     func openPreset() {
+        presetManagementEnabled = true
         presetReturn = screen == .preset ? presetReturn : screen
         // Load the schema before the form appears. Replacing `modules` under a
         // visible segmented picker crashes SwiftUI with an index-out-of-range trap.
@@ -555,6 +586,21 @@ final class AppStore {
             await refreshPresetEditor()
             screen = .preset
         }
+    }
+
+    /// Opens the current in-memory modules as a rules editor without preset management.
+    func openCurrentRules() {
+        presetManagementEnabled = false
+        presetReturn = screen == .preset ? presetReturn : screen
+        Task {
+            await refreshPresetEditor()
+            screen = .preset
+        }
+    }
+
+    func openNewPreset() {
+        beginNewPreset()
+        openPreset()
     }
 
     func refreshPresetEditor() async {
@@ -599,14 +645,14 @@ final class AppStore {
     }
 
     func applySavedPreset(_ preset: SavedPresetDTO) {
-        loadPreset(preset)
-    }
-
-    func loadPreset(_ preset: SavedPresetDTO) {
         modules = ModuleForm.apply(preset.modules, to: modules)
         presetName = preset.name
         editingPresetID = preset.id
         note = "Loaded \(preset.name)."
+    }
+
+    func loadPreset(_ preset: SavedPresetDTO) {
+        applySavedPreset(preset)
     }
 
     func beginNewPreset() {
@@ -614,6 +660,26 @@ final class AppStore {
         presetName = ""
         modules = ModuleForm.offlineModules()
         note = nil
+        presetManagementEnabled = true
+    }
+
+    func renamePreset(id: String, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let preset = savedPresets.first(where: { $0.id == id }) else { return }
+        Task {
+            do {
+                let saved = try await service.updatePreset(id: id, name: trimmed, modules: preset.modules)
+                if let index = savedPresets.firstIndex(where: { $0.id == id }) {
+                    savedPresets[index] = saved
+                }
+                if editingPresetID == id {
+                    presetName = saved.name
+                }
+                note = "Renamed \(saved.name)."
+            } catch {
+                note = "Could not rename the preset."
+            }
+        }
     }
 
     func deletePreset(id: String) {
@@ -700,6 +766,7 @@ final class AppStore {
         var updated = modules
         preset.apply(to: &updated)
         modules = updated
+        editingPresetID = nil
     }
 
     func join() {
@@ -759,11 +826,11 @@ final class AppStore {
               let index = snapshot.players.firstIndex(where: { $0.playerId == uuid }),
               let gameID = match?.snapshot.gameId
         else { return }
+        // Open / unassigned is no longer assignable from the lobby.
         let next: PlayerRole
         switch snapshot.players[index].role {
         case .hider: next = .seeker
-        case .seeker: next = .unassigned
-        case .unassigned: next = .hider
+        case .seeker, .unassigned: next = .hider
         }
         // Optimistic pill update; the service call is what the server starts from.
         snapshot.players[index].role = next
@@ -1405,6 +1472,7 @@ final class AppStore {
             note = nil
             liveUpdate = nil
             liveUpdateExpiryTask?.cancel()
+            noteExpiryTask?.cancel()
             screen = .results
             Task { await loadTimeline() }
         case .headStart:
@@ -1438,9 +1506,8 @@ final class AppStore {
         if view.you.bounds.phase != "inside", view.phase == .active || view.phase == .headStart {
             situation = .outOfBounds
         }
-        if !view.banners.isEmpty {
-            note = view.banners.last?.detail
-        }
+        // Snapshot banners render in LiveGameView only. Ephemeral toasts use
+        // presentNote() with its own TTL — do not mirror banners into `note`.
     }
 
     private func enterLive() {
@@ -1560,14 +1627,14 @@ final class AppStore {
             let view = try await service.demo(gameID: id, action: action, params: params)
             apply(view)
             if let successNote, view.banners.isEmpty {
-                note = successNote
+                presentNote(successNote)
             }
             return true
         } catch let error as ServiceError {
-            note = error.message
+            presentNote(error.message)
             return false
         } catch {
-            note = "Demo action failed."
+            presentNote("Demo action failed.")
             return false
         }
     }
@@ -1575,7 +1642,10 @@ final class AppStore {
     private func signInRemote() async {
         live?.updateBaseURL(URL(string: serverURL) ?? URL(string: "http://localhost:8000")!)
         do {
-            let auth = try await service.signIn(displayName: displayName)
+            let auth = try await service.signIn(
+                displayName: displayName,
+                installationId: InstallationID.current(keychain: keychain)
+            )
             await finishRemoteAuth(auth)
         } catch {
             lastError = .unreachable
@@ -1607,7 +1677,9 @@ final class AppStore {
         displayName = auth.user.displayName
         note = nil
         if let loaded = try? await service.arenas() { arenas = loaded }
-        screen = .home
+        withAnimation(.snappy(duration: 0.35)) {
+            screen = .home
+        }
         await registerPendingDeviceTokenIfNeeded()
     }
 

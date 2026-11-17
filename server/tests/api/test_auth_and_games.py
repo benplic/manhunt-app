@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 from fastapi.testclient import TestClient
 
 from app.engine.arena import arena_to_dict
@@ -5,7 +7,10 @@ from tests.engine.helpers import meters, square
 
 
 def _auth(client: TestClient, name: str = "Casey") -> dict:
-    response = client.post("/v1/auth/dev", json={"display_name": name})
+    response = client.post(
+        "/v1/auth/dev",
+        json={"display_name": name, "installation_id": str(uuid4())},
+    )
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -21,7 +26,10 @@ def test_apple_rejects_garbage(client: TestClient) -> None:
 
 
 def test_refresh_rotates(client: TestClient) -> None:
-    first = client.post("/v1/auth/dev", json={"display_name": "Casey"})
+    first = client.post(
+        "/v1/auth/dev",
+        json={"display_name": "Casey", "installation_id": str(uuid4())},
+    )
     assert first.status_code == 200
     body = first.json()
     assert body.get("refresh_token")
@@ -153,6 +161,66 @@ def test_me_requires_auth(client: TestClient) -> None:
     me = client.get("/v1/me", headers=_headers(user["access_token"]))
     assert me.status_code == 200
     assert me.json()["display_name"] == "Quinn"
+    assert me.json().get("avatar_url") is None
+
+
+def test_dev_auth_same_name_different_installs(client: TestClient) -> None:
+    first = client.post(
+        "/v1/auth/dev",
+        json={"display_name": "Casey", "installation_id": "phone-alpha"},
+    )
+    second = client.post(
+        "/v1/auth/dev",
+        json={"display_name": "Casey", "installation_id": "phone-bravo"},
+    )
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert first.json()["user"]["id"] != second.json()["user"]["id"]
+    assert first.json()["user"]["display_name"] == "Casey"
+    assert second.json()["user"]["display_name"] == "Casey"
+
+
+def test_dev_auth_same_install_renames_display_name(client: TestClient) -> None:
+    first = client.post(
+        "/v1/auth/dev",
+        json={"display_name": "Casey", "installation_id": "phone-rename"},
+    )
+    renamed = client.post(
+        "/v1/auth/dev",
+        json={"display_name": "Casey Lee", "installation_id": "phone-rename"},
+    )
+    assert first.status_code == 200
+    assert renamed.status_code == 200
+    assert first.json()["user"]["id"] == renamed.json()["user"]["id"]
+    assert renamed.json()["user"]["display_name"] == "Casey Lee"
+
+
+def test_join_rejects_duplicate_display_name(client: TestClient) -> None:
+    host = client.post(
+        "/v1/auth/dev",
+        json={"display_name": "Casey", "installation_id": "host-phone"},
+    ).json()
+    guest = client.post(
+        "/v1/auth/dev",
+        json={"display_name": "casey", "installation_id": "guest-phone"},
+    ).json()
+    arena = client.post(
+        "/v1/arenas",
+        json=arena_to_dict(square()),
+        headers=_headers(host["access_token"]),
+    ).json()
+    game = client.post(
+        "/v1/games",
+        json={"arena_id": arena["id"], "preset_id": "classic", "overrides": {}},
+        headers=_headers(host["access_token"]),
+    ).json()
+    denied = client.post(
+        "/v1/games/join",
+        json={"join_code": game["join_code"]},
+        headers=_headers(guest["access_token"]),
+    )
+    assert denied.status_code == 409
+    assert denied.json()["error"]["code"] == "DISPLAY_NAME_TAKEN"
 
 
 def test_meters_helper_still_imports() -> None:

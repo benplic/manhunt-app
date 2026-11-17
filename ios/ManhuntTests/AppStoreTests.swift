@@ -215,6 +215,63 @@ final class AppStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testCycleRoleNeverAssignsOpen() {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        let id = store.players[0].id
+        store.cycleRole(id) // unassigned -> hider
+        store.cycleRole(id) // hider -> seeker
+        store.cycleRole(id) // seeker -> hider
+        XCTAssertEqual(store.players[0].role, .hider)
+        // Open is no longer in the cycle; seeker flips back to hider.
+        XCTAssertNotEqual(store.players[0].role, .unassigned)
+    }
+
+    @MainActor
+    func testOpenCurrentRulesHidesPresetManagement() async {
+        let store = AppStore.makePreview()
+        store.signInPreview()
+        store.openCurrentRules()
+        // Wait for the async schema refresh + screen change.
+        let deadline = Date().addingTimeInterval(2)
+        while store.screen != .preset, Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        XCTAssertEqual(store.screen, .preset)
+        XCTAssertFalse(store.presetManagementEnabled)
+    }
+
+    @MainActor
+    func testPresentNoteClearsAfterTTL() async {
+        let store = AppStore.makePreview()
+        store.presentNote("Force tag requires the active hunt phase.", ttlSeconds: 0.05)
+        XCTAssertEqual(store.note, "Force tag requires the active hunt phase.")
+        try? await Task.sleep(for: .milliseconds(120))
+        XCTAssertNil(store.note)
+    }
+
+    func testInstallationIDStablePerDefaults() {
+        let defaults = UserDefaults(suiteName: "manhunt.tests.installation.\(UUID().uuidString)")!
+        defer { defaults.removePersistentDomain(forName: defaults.suiteName!) }
+        let first = InstallationID.current(defaults: defaults)
+        let second = InstallationID.current(defaults: defaults)
+        XCTAssertEqual(first, second)
+        XCTAssertFalse(first.isEmpty)
+    }
+
+    func testPlayerAvatarInitialsAndStableColor() {
+        XCTAssertEqual(PlayerAvatar.initials(from: "Casey Lee"), "CL")
+        XCTAssertEqual(PlayerAvatar.initials(from: "Quinn"), "Q")
+        let a = PlayerAvatar.fillColor(for: "player-1")
+        let b = PlayerAvatar.fillColor(for: "player-1")
+        let c = PlayerAvatar.fillColor(for: "player-2")
+        XCTAssertEqual(a, b)
+        XCTAssertNotEqual(a, c)
+    }
+
+    @MainActor
     func testStartBeforeBothRolesSurfacesALobbyNote() {
         let store = AppStore.makePreview()
         store.signInPreview()

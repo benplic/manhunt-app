@@ -12,6 +12,8 @@ from app.errors import ApiError, ErrorCode
 
 class DevAuthIn(BaseModel):
     display_name: str = Field(min_length=1, max_length=40)
+    # Stable per-install id so two phones can share a display name before Apple auth.
+    installation_id: str = Field(min_length=8, max_length=80)
 
 
 class AppleAuthIn(BaseModel):
@@ -26,6 +28,7 @@ class RefreshIn(BaseModel):
 class UserOut(BaseModel):
     id: str
     display_name: str
+    avatar_url: str | None = None
 
 
 class AuthOut(BaseModel):
@@ -35,8 +38,14 @@ class AuthOut(BaseModel):
     refresh_token: str | None = None
 
 
-def _handle(name: str) -> str:
-    return "".join(ch.lower() if ch.isalnum() else "-" for ch in name).strip("-")[:40] or "player"
+def _install_handle(installation_id: str) -> str:
+    cleaned = "".join(ch.lower() if ch.isalnum() else "-" for ch in installation_id).strip("-")
+    return f"install-{(cleaned or 'device')[:64]}"
+
+
+def _user_out(user: User) -> UserOut:
+    # avatar_url is wired for clients; upload is intentionally not implemented yet.
+    return UserOut(id=str(user.id), display_name=user.display_name, avatar_url=None)
 
 
 async def _issue(session: AsyncSession, user: User, settings) -> AuthOut:
@@ -47,7 +56,7 @@ async def _issue(session: AsyncSession, user: User, settings) -> AuthOut:
     return AuthOut(
         access_token=token,
         expires_at=expires.isoformat(),
-        user=UserOut(id=str(user.id), display_name=user.display_name),
+        user=_user_out(user),
         refresh_token=refresh,
     )
 
@@ -60,11 +69,17 @@ def bind_auth_routes(get_session, get_settings, current_user):
         settings = get_settings()
         if not settings.manhunt_dev_auth:
             raise ApiError(ErrorCode.FORBIDDEN, "Dev sign-in is disabled.", status_code=403)
-        handle = _handle(body.display_name)
+        handle = _install_handle(body.installation_id)
+        name = body.display_name.strip()
         user = await session.scalar(select(User).where(User.dev_handle == handle))
         if user is None:
-            user = User(dev_handle=handle, display_name=body.display_name.strip())
+            user = User(dev_handle=handle, display_name=name)
             session.add(user)
+            await session.commit()
+            await session.refresh(user)
+        elif user.display_name != name:
+            # Same install can rename between Play taps; identity stays the install id.
+            user.display_name = name
             await session.commit()
             await session.refresh(user)
         return await _issue(session, user, settings)
@@ -100,7 +115,7 @@ def bind_auth_routes(get_session, get_settings, current_user):
         return AuthOut(
             access_token=access,
             expires_at=expires.isoformat(),
-            user=UserOut(id=str(user.id), display_name=user.display_name),
+            user=_user_out(user),
             refresh_token=new_refresh,
         )
 
@@ -116,7 +131,7 @@ def bind_me_routes(get_session, current_user):
 
     @me_router.get("/me")
     async def me(user=Depends(current_user)) -> dict:
-        return {"id": str(user.id), "display_name": user.display_name}
+        return {"id": str(user.id), "display_name": user.display_name, "avatar_url": None}
 
     @me_router.put("/me/device-token")
     async def save_device_token(

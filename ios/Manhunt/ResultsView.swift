@@ -31,9 +31,18 @@ struct ResultsView: View {
                                 .font(.headline.monospacedDigit())
                                 .frame(width: 24, alignment: .leading)
                                 .foregroundStyle(HuntColor.signal)
+                            PlayerAvatar(name: player.name, playerID: player.id, size: 28)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(player.name)
-                                    .font(.body.weight(.semibold))
+                                HStack(spacing: 4) {
+                                    Text(player.name)
+                                        .font(.body.weight(.semibold))
+                                    if player.isHost {
+                                        Image(systemName: "crown.fill")
+                                            .font(.caption2.weight(.bold))
+                                            .foregroundStyle(HuntColor.signal)
+                                            .accessibilityLabel("Host")
+                                    }
+                                }
                                 Text(player.role.rawValue)
                                     .font(.caption)
                                     .foregroundStyle(HuntColor.muted)
