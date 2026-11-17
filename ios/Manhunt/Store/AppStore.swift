@@ -571,7 +571,11 @@ final class AppStore {
             try? await service.leave(gameID: gameID)
         }
     }
-    func openCreate() { screen = .createGame }
+    func openCreate() {
+        screen = .createGame
+        // Custom preset bubbles need the saved list before the row appears.
+        Task { await refreshPresetEditor() }
+    }
     func openPreset() {
         presetManagementEnabled = true
         presetReturn = screen == .preset ? presetReturn : screen
