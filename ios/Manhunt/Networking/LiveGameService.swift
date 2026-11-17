@@ -5,6 +5,8 @@ final class LiveGameService: GameService {
     private let client: APIClient
     private let socket = GameSocket()
     private(set) var joinCalls = 0
+    /// Sent only on dev sign-in. The home server rejects Play without it.
+    var devAuthSecret: String = ""
     /// Rotating refresh token from the last auth response. Cleared on sign-out.
     var refreshToken: String?
     /// Called when a refresh attempt fails so the store can sign out.
@@ -58,6 +60,7 @@ final class LiveGameService: GameService {
     }
 
     func signIn(displayName: String, installationId: String) async throws -> AuthOut {
+        client.devAuthSecret = devAuthSecret
         let auth: AuthOut = try await client.post(
             "/v1/auth/dev",
             body: DevAuthBody(displayName: displayName, installationId: installationId)

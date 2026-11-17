@@ -64,3 +64,22 @@ def test_join_window_forgets_attempts_older_than_a_minute() -> None:
 
     now[0] = 60.0
     limiter.hit(user_id)
+
+
+def test_same_ip_cannot_rotate_users_to_reset_the_join_cap() -> None:
+    from uuid import uuid4
+
+    import pytest
+
+    from app.errors import ApiError
+    from app.games.join_limit import JoinRateLimiter
+
+    limiter = JoinRateLimiter(ip_limit=3)
+    for index in range(3):
+        limiter.hit(uuid4(), client_ip="203.0.113.5")
+        _ = index
+    with pytest.raises(ApiError) as caught:
+        limiter.hit(uuid4(), client_ip="203.0.113.5")
+    assert caught.value.status_code == 429
+    # A different address still has its own bucket.
+    limiter.hit(uuid4(), client_ip="203.0.113.6")

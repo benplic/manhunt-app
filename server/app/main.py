@@ -59,8 +59,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(_app: FastAPI):
         await create_schema(engine)
         async with factory() as session:
+            from app.crypto import TrailKeyError, load_trail_key, open_inputs
             from app.engine.arena import arena_from_dict
             from app.engine.recovery import rebuild_session
+
+            try:
+                trail_key = load_trail_key(settings.manhunt_trail_key)
+            except TrailKeyError:
+                trail_key = None
 
             rows = (
                 await session.execute(
@@ -77,13 +83,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     row.status = "abandoned"
                     continue
                 if row.inputs:
+                    try:
+                        logged = open_inputs(trail_key, row.inputs)
+                    except TrailKeyError:
+                        log.exception("inputs_unreadable game_id=%s", row.id)
+                        continue
                     game = rebuild_session(
                         game_id=row.id,
                         arena=arena_from_dict(row.arena_snapshot),
                         preset=row.preset_snapshot,
                         seed=row.seed,
                         join_code=row.join_code,
-                        inputs=list(row.inputs),
+                        inputs=logged,
                         qr_key=settings.manhunt_qr_signing_key,
                     )
                     manager.sessions[row.id] = game
@@ -134,7 +145,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             purge_task.cancel()
         await engine.dispose()
 
-    app = FastAPI(title="Manhunt", version="0.1.0", lifespan=lifespan)
+    # The public Azure ingress should not serve the interactive schema.
+    public_docs = None if settings.manhunt_env in {"azure", "prod"} else "/docs"
+    app = FastAPI(
+        title="Manhunt",
+        version="0.1.0",
+        lifespan=lifespan,
+        docs_url=public_docs,
+        redoc_url=None if public_docs is None else "/redoc",
+        openapi_url=None if public_docs is None else "/openapi.json",
+    )
     app.state.settings = settings
     app.state.manager = manager
     app.state.session_factory = factory

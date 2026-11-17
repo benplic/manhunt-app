@@ -135,6 +135,8 @@ class GameService:
         arena_row = await session.get(ArenaRow, arena_id)
         if arena_row is None:
             raise ApiError(ErrorCode.ARENA_NOT_FOUND, "Arena not found.", status_code=404)
+        if arena_row.owner_id != host.id:
+            raise ApiError(ErrorCode.FORBIDDEN, "Not your arena.", status_code=403)
         if preset_id != CLASSIC_ID:
             raise ApiError(ErrorCode.PRESET_NOT_FOUND, "Unknown preset.", status_code=404)
         preset = classic_preset(overrides, validate=True)
@@ -187,9 +189,15 @@ class GameService:
         await session.commit()
         return row
 
-    async def join(self, session: AsyncSession, user: User, code: str) -> GameRow:
+    async def join(
+        self,
+        session: AsyncSession,
+        user: User,
+        code: str,
+        client_ip: str | None = None,
+    ) -> GameRow:
         # Count the attempt before we look the code up, including misses.
-        self.join_limiter.hit(user.id)
+        self.join_limiter.hit(user.id, client_ip=client_ip)
         if not is_valid(code):
             raise ApiError(ErrorCode.INVALID_JOIN_CODE, "Codes are 6 characters.", status_code=422)
         if normalize(code) == SAMPLE_CODE:
@@ -238,13 +246,24 @@ class GameService:
         game = self.manager.get(row.id)
         if game is None and row.inputs:
             # Safety net if lifespan restore missed a row.
+            from app.crypto import TrailKeyError, open_inputs
+
+            key, _key_id = self._trail_material()
+            try:
+                logged = open_inputs(key, row.inputs)
+            except TrailKeyError as exc:
+                raise ApiError(
+                    ErrorCode.INTERNAL,
+                    "This game's replay log could not be opened.",
+                    status_code=500,
+                ) from exc
             game = rebuild_session(
                 game_id=row.id,
                 arena=arena_from_dict(row.arena_snapshot),
                 preset=row.preset_snapshot,
                 seed=row.seed,
                 join_code=row.join_code,
-                inputs=list(row.inputs),
+                inputs=logged,
                 qr_key=self.manager.qr_key,
             )
             self.manager.sessions[row.id] = game
@@ -388,7 +407,30 @@ class GameService:
             await session.delete(member)
         await self.persist_inputs(session, game)
         await session.commit()
+        await self._close_socket(game_id, player_id)
         return game
+
+    async def leave(self, session: AsyncSession, user: User, game_id: UUID) -> GameRow:
+        """Drop the membership row and the live socket. HTTP alone is not enough."""
+        row, member = await self.require_member(session, game_id, user)
+        game = self._live(row)
+        if user.id in game.state.players:
+            game.leave_player(user.id)
+        await session.delete(member)
+        await self.persist_inputs(session, game)
+        await session.commit()
+        await self._close_socket(game_id, user.id)
+        return row
+
+    async def _close_socket(self, game_id: UUID, player_id: UUID) -> None:
+        socket = self.manager.detach(game_id, player_id)
+        if socket is None:
+            return
+        try:
+            await socket.close(code=4403)
+        except Exception:
+            # The phone may already be gone. Detach is what stops the next view.
+            log.warning("socket_close_failed game_id=%s player_id=%s", game_id, player_id)
 
     async def undo_tag(self, session: AsyncSession, user: User, game_id: UUID) -> GameSession:
         row = await self.require_host(session, game_id, user)
@@ -464,10 +506,36 @@ class GameService:
         row.status = game.state.phase
         await session.commit()
 
+    def _trail_material(self) -> tuple[bytes | None, str]:
+        from app.config import get_settings
+        from app.crypto import TrailKeyError, load_trail_key
+
+        settings = get_settings()
+        try:
+            return load_trail_key(settings.manhunt_trail_key), settings.manhunt_trail_key_id
+        except TrailKeyError:
+            return None, settings.manhunt_trail_key_id
+
     async def persist_inputs(self, session: AsyncSession, game: GameSession) -> None:
         row = await session.get(GameRow, game.state.game_id)
         if row is not None:
-            row.inputs = list(game.state.inputs)
+            from app.crypto import TrailKeyError, seal_inputs
+
+            key, key_id = self._trail_material()
+            if key is None:
+                raise ApiError(
+                    ErrorCode.INTERNAL,
+                    "The trail key is not configured.",
+                    status_code=500,
+                )
+            try:
+                row.inputs = seal_inputs(key, list(game.state.inputs), key_id)
+            except TrailKeyError as exc:
+                raise ApiError(
+                    ErrorCode.INTERNAL,
+                    "The replay log could not be sealed.",
+                    status_code=500,
+                ) from exc
             row.status = game.state.phase
             if game.state.result:
                 row.result = {

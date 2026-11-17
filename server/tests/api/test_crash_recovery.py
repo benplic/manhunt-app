@@ -1,5 +1,6 @@
 """Kill the process mid-game and rebuild from games.inputs."""
 
+import sqlite3
 from uuid import UUID
 
 from fastapi.testclient import TestClient
@@ -78,3 +79,16 @@ def test_restart_rebuilds_mid_game_phase_roles_points_and_locations(tmp_path) ->
         view = client.get(f"/v1/games/{gid}", headers=_hdr(host["access_token"]))
         assert view.status_code == 200
         assert view.json()["phase"] == before_phase
+
+
+def test_stored_replay_log_does_not_contain_plaintext_coordinates(tmp_path) -> None:
+    app = make_test_app(tmp_path)
+    with TestClient(app) as client:
+        gid, _host, hider, _seeker, _hider_id, _seeker_id = _open_game(client)
+        _send_fix(client, gid, hider["access_token"], meters(40, 40))
+    raw = sqlite3.connect(tmp_path / "manhunt.db").execute("select inputs from games").fetchone()
+    assert raw is not None
+    text = raw[0]
+    assert '"ct"' in text
+    assert '"kind"' not in text
+    assert '"lat"' not in text

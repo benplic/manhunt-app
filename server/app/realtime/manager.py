@@ -83,8 +83,8 @@ class SessionManager:
     def attach(self, game_id: UUID, player_id: UUID, ws: WebSocket) -> None:
         self.sockets[game_id][player_id] = ws
 
-    def detach(self, game_id: UUID, player_id: UUID) -> None:
-        self.sockets.get(game_id, {}).pop(player_id, None)
+    def detach(self, game_id: UUID, player_id: UUID) -> WebSocket | None:
+        return self.sockets.get(game_id, {}).pop(player_id, None)
 
     def tick_all(self) -> None:
         for session in list(self.sessions.values()):

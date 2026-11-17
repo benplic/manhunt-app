@@ -5,6 +5,8 @@ import Foundation
 final class APIClient: @unchecked Sendable {
     var baseURL: URL
     var token: String?
+    /// Party secret for POST /v1/auth/dev. Empty on local servers that do not require it.
+    var devAuthSecret: String?
     /// Called once per request on 401. Return after rotating access_token.
     var refreshAccessToken: (() async throws -> Void)?
     private let session: URLSession
@@ -87,6 +89,9 @@ final class APIClient: @unchecked Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         if let token {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        if path.contains("/v1/auth/dev"), let devAuthSecret, !devAuthSecret.isEmpty {
+            request.setValue(devAuthSecret, forHTTPHeaderField: "X-Manhunt-Dev-Secret")
         }
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")

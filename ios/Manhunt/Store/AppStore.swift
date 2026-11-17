@@ -56,6 +56,8 @@ final class AppStore {
     var presets: [(id: String, name: String)] = [("classic", "Classic Manhunt")]
     var displayName = "Casey Lee"
     var serverURL: String
+    /// Shared house key for the home server's dev sign-in. Not a per-player password.
+    var devAuthSecret: String
     var joinDraft = ""
     var joinMessage: String?
     var note: String?
@@ -118,6 +120,7 @@ final class AppStore {
     private var pendingDeviceToken: String?
 
     static let serverURLKey = "manhunt.serverURL"
+    static let devAuthSecretKey = "manhunt.devAuthSecret"
 
     init(
         service: GameService,
@@ -137,6 +140,7 @@ final class AppStore {
         } else {
             self.serverURL = serverURL
         }
+        self.devAuthSecret = defaults.string(forKey: Self.devAuthSecretKey) ?? ""
         if let fake {
             arenas = fake.storedArenas
         }
@@ -388,6 +392,7 @@ final class AppStore {
         lastError = nil
         note = nil
         defaults.set(serverURL, forKey: Self.serverURLKey)
+        defaults.set(devAuthSecret, forKey: Self.devAuthSecretKey)
         if let fake {
             fake.signInSync(displayName)
             session = Session(displayName: displayName, token: "fake")
@@ -1641,6 +1646,7 @@ final class AppStore {
 
     private func signInRemote() async {
         live?.updateBaseURL(URL(string: serverURL) ?? URL(string: "http://localhost:8000")!)
+        live?.devAuthSecret = devAuthSecret
         do {
             let auth = try await service.signIn(
                 displayName: displayName,

@@ -47,6 +47,8 @@ struct KeychainStore {
         SecItemDelete(query as CFDictionary)
         var add = query
         add[kSecValueData as String] = data
+        // This device only, so an encrypted backup restore cannot clone the install id.
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         let status = SecItemAdd(add as CFDictionary, nil)
         guard status == errSecSuccess else {
             throw ServiceError(code: .internal, message: "Could not save the session.")

@@ -1,11 +1,17 @@
 FROM python:3.13-slim
 
+# Same uv that produced uv.lock. Install from the lock, not floating ranges.
+COPY --from=ghcr.io/astral-sh/uv:0.13.9 /uv /usr/local/bin/uv
+
 WORKDIR /app
 
-COPY pyproject.toml /app/pyproject.toml
-COPY app /app/app
+COPY pyproject.toml uv.lock /app/
+RUN uv sync --frozen --no-dev --no-install-project
 
-RUN pip install --no-cache-dir .
+COPY app /app/app
+RUN uv sync --frozen --no-dev
+
+ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8000
 

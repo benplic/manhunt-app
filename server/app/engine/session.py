@@ -10,6 +10,7 @@ from uuid import UUID
 from app.engine.arena import Arena
 from app.engine.clock import Clock
 from app.engine.events import GameEvent
+from app.engine.geo import distance_m
 from app.engine.modules import MODULE_TYPES, BaseModule
 from app.engine.modules.base import TagClaim
 from app.engine.modules.tag_policy import TagPolicyModule, require_tag_ok
@@ -298,6 +299,19 @@ class GameSession:
         )
         self._check_win()
 
+    def leave_player(self, player_id: UUID) -> None:
+        """A player dropping out. Replay uses the same input shape as a host remove."""
+        player = self.state.players.pop(player_id, None)
+        if player is None:
+            raise GameRuleError(ErrorCode.NOT_A_MEMBER)
+        self.emit(
+            "player_left",
+            {"text": f"{player.display_name} left."},
+            player_id=player_id,
+        )
+        self._note_input("player_removed", {"player_id": str(player_id)})
+        self._check_win()
+
     def remove_player(self, player_id: UUID) -> None:
         player = self.state.players.pop(player_id, None)
         if player is None:
@@ -435,6 +449,21 @@ class GameSession:
                 self.state.phase = "ended"
                 self.emit("ended", {"text": result.reason, "winner": result.winner})
                 return
+
+
+def movement_too_fast(player: PlayerState, reading: LocationReading) -> bool:
+    """True when a phone could not have walked from its previous fix to this one.
+
+    8 m/s is a fast run. 40 m covers one noisy GPS hop. The engine itself may
+    place a player for a demo or a test; only the socket should call this.
+    """
+    if player.location is None or player.last_location_at is None:
+        return False
+    elapsed = (reading.recorded_at - player.last_location_at).total_seconds()
+    if elapsed <= 0:
+        return False
+    allowed_m = 8.0 * elapsed + 40.0
+    return distance_m(player.location.point, reading.point) > allowed_m
 
 
 def _peer_ids(peers: list[dict[str, str]]) -> set[UUID]:
