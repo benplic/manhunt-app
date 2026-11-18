@@ -95,11 +95,18 @@ final class AppStore {
     var liveUpdate: LiveUpdate?
     var pingPulse: PingPulse?
     var flashlightOn = false
+    /// Opt-in: short system sound when a reveal ping fires. Default off.
+    var pingSoundEnabled = false
+    /// Opt-in: brief torch flash on ping. Default off; manual flashlight still works.
+    var pingFlashlightEnabled = false
+    /// Tests shorten the ping torch pulse so coverage stays fast.
+    var pingTorchFlashSeconds: TimeInterval = 0.25
     var timeline: [TimelineEventDTO] = []
     var uwbPeers: [UWBPeer] = []
     var uwbDistance: [UUID: Double] = [:]
     private var liveUpdateExpiryTask: Task<Void, Never>?
     private var noteExpiryTask: Task<Void, Never>?
+    private var pingTorchTask: Task<Void, Never>?
     private var presetReturn: AppScreen = .home
     private var sentLowBattery = false
     private var lastSentLocation: CLLocation?
@@ -112,6 +119,7 @@ final class AppStore {
     private let location = LocationReporter()
     private let defaults: UserDefaults
     private let torch: TorchControlling
+    private let pingSound: PingSoundPlaying
     /// Last discovery token pushed to the server. Cleared on reconnect so a
     /// rebuilt session gets a fresh publish. Compared by value so a rotated
     /// local token is resent even mid-match.
@@ -136,7 +144,8 @@ final class AppStore {
         service: GameService,
         serverURL: String = AppStore.defaultServerURL(),
         defaults: UserDefaults = .standard,
-        torch: TorchControlling = DeviceTorch()
+        torch: TorchControlling = DeviceTorch(),
+        pingSound: PingSoundPlaying = SystemPingSound()
     ) {
         self.service = service
         self.fake = service as? FakeGameService
@@ -145,6 +154,9 @@ final class AppStore {
         self.ranger = UWBRangers.make(enabled: liveService != nil)
         self.defaults = defaults
         self.torch = torch
+        self.pingSound = pingSound
+        self.pingSoundEnabled = AppSettings.pingSoundEnabled(defaults: defaults)
+        self.pingFlashlightEnabled = AppSettings.pingFlashlightEnabled(defaults: defaults)
         if let stored = defaults.string(forKey: Self.serverURLKey), !stored.isEmpty {
             self.serverURL = stored
         } else {
@@ -447,7 +459,19 @@ final class AppStore {
         }
     }
 
+    func setPingSoundEnabled(_ enabled: Bool) {
+        pingSoundEnabled = enabled
+        AppSettings.setPingSoundEnabled(enabled, defaults: defaults)
+    }
+
+    func setPingFlashlightEnabled(_ enabled: Bool) {
+        pingFlashlightEnabled = enabled
+        AppSettings.setPingFlashlightEnabled(enabled, defaults: defaults)
+    }
+
     func toggleFlashlight() {
+        pingTorchTask?.cancel()
+        pingTorchTask = nil
         let target = !flashlightOn
         do {
             try torch.setOn(target)
@@ -462,6 +486,8 @@ final class AppStore {
     }
 
     func turnOffFlashlight() {
+        pingTorchTask?.cancel()
+        pingTorchTask = nil
         guard flashlightOn else { return }
         flashlightOn = false
         do {
@@ -476,6 +502,31 @@ final class AppStore {
     func tapVoicePlaceholder() {
         // TODO: replace with live radio mute / push-to-talk once audio transport is implemented.
         note = "Voice is coming soon."
+    }
+
+    /// Sound and optional torch flash for a reveal ping. Both are opt-in via AppSettings.
+    func handlePingAlerts() {
+        if pingSoundEnabled {
+            pingSound.play()
+        }
+        guard pingFlashlightEnabled else { return }
+        // Manual flashlight already on — leave it alone.
+        guard !flashlightOn else { return }
+        pingTorchTask?.cancel()
+        do {
+            try torch.setOn(true)
+            flashlightOn = true
+        } catch {
+            flashlightOn = false
+            return
+        }
+        let hold = pingTorchFlashSeconds
+        pingTorchTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(hold))
+            guard let self, !Task.isCancelled else { return }
+            self.pingTorchTask = nil
+            self.turnOffFlashlight()
+        }
     }
 
     func sendFix(from location: CLLocation, isFinal: Bool, battery: Float? = nil) {
@@ -1522,6 +1573,7 @@ final class AppStore {
         clearConnectionHiccup(restoreSituation: true)
         if PingDetector.didPing(previous: match?.snapshot, next: view) {
             pingPulse = PingPulse(role: view.you.role)
+            handlePingAlerts()
         }
         let anchor = ClockLead.anchor(
             previous: match?.snapshot,
