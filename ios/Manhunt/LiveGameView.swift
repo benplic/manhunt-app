@@ -339,8 +339,11 @@ struct LiveGameView: View {
                             store.buyPower(chip)
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(chip.title)
-                                    .font(.subheadline.weight(.semibold))
+                                HStack(spacing: 4) {
+                                    Image(systemName: chip.systemImage)
+                                    Text(chip.title)
+                                        .font(.subheadline.weight(.semibold))
+                                }
                                 Text(cooling > 0 ? "\(cooling)s" : "\(chip.cost) pts")
                                     .font(.caption2)
                             }
@@ -355,6 +358,7 @@ struct LiveGameView: View {
                         }
                         .buttonStyle(.huntPress(.medium))
                         .disabled(!enabled)
+                        .accessibilityLabel(chip.title)
                     }
                 }
             }

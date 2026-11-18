@@ -1228,16 +1228,18 @@ final class AppStore {
         guard let serverList = snapshot.powerUps else {
             return SamplePark.powerUps.filter { $0.role == viewingRole }
         }
-        let details = Dictionary(uniqueKeysWithValues: SamplePark.powerUps.map { ($0.id, $0.detail) })
+        let catalog = Dictionary(uniqueKeysWithValues: SamplePark.powerUps.map { ($0.id, $0) })
         return serverList.compactMap { dto in
             let visual = Self.visualRole(dto.role)
             guard visual == viewingRole else { return nil }
+            let known = catalog[dto.id]
             return PowerChip(
                 id: dto.id,
                 title: dto.title,
-                detail: details[dto.id] ?? "",
+                detail: known?.detail ?? "",
                 cost: dto.cost,
-                role: visual
+                role: visual,
+                systemImage: known?.systemImage ?? "bolt.fill"
             )
         }
     }
