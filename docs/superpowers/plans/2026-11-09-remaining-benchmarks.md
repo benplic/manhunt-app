@@ -45,7 +45,7 @@ Each item is open until the acceptance line is true. Human items stay open until
 
 ### 2026-11-18
 
-- **3.1 Device ranging / UWB (cancelled).** `80e4269`, playtest 2 decision: QR tag only. Nearby Interaction relay, `/tags/uwb`, and iOS ranger removed. Do not treat the two-phone NI cap measurement as done — the feature is gone. Tests: `pytest -q`, `testScanLabelIsAlwaysScanTag`.
+- **3.1 Device ranging / UWB (cancelled).** `25542b9`, playtest 2 decision: QR tag only. Nearby Interaction relay, `/tags/uwb`, and iOS ranger removed. Do not treat the two-phone NI cap measurement as done — the feature is gone. Tests: `pytest -q`, `testScanLabelIsAlwaysScanTag`.
 
 ### 2026-11-09
 
