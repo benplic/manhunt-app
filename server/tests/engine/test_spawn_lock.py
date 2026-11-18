@@ -6,50 +6,6 @@ from app.engine.qr import make_qr_token
 from tests.engine.helpers import gazebo_arena, meters, reading, run_for, two_player_hunt
 
 
-def test_non_finite_uwb_range_is_dropped() -> None:
-    session, clock, hider, seeker = two_player_hunt(
-        overrides={"tag_policy": {"method": "uwb", "radius_m": 2}}
-    )
-    session.record_location(hider, reading(meters(100, 100), clock))
-    session.record_location(seeker, reading(meters(100, 101), clock))
-    session.set_uwb_token(seeker, "s" * 16)
-    session.set_uwb_token(hider, "h" * 16)
-    assert session.report_uwb_range(seeker, hider, float("nan")) is False
-    assert session.report_uwb_range(seeker, hider, float("inf")) is False
-    assert hider not in session.state.players[seeker].uwb_ranges
-
-
-def test_uwb_range_for_a_non_peer_is_dropped() -> None:
-    session, clock, hider, seeker = two_player_hunt(
-        overrides={"tag_policy": {"method": "uwb", "radius_m": 2}}
-    )
-    session.record_location(hider, reading(meters(100, 100), clock))
-    session.record_location(seeker, reading(meters(100, 101), clock))
-    session.set_uwb_token(seeker, "s" * 16)
-    session.set_uwb_token(hider, "h" * 16)
-    stranger = __import__("uuid").uuid4()
-    assert session.report_uwb_range(seeker, stranger, 1) is False
-    assert stranger not in session.state.players[seeker].uwb_ranges
-    session.record_location(hider, reading(meters(100, 160), clock))
-    assert session.report_uwb_range(seeker, hider, 1) is False
-    assert hider not in session.state.players[seeker].uwb_ranges
-
-
-def test_uwb_token_and_range_are_not_inputs() -> None:
-    session, clock, hider, seeker = two_player_hunt(
-        overrides={"tag_policy": {"method": "uwb", "radius_m": 2}}
-    )
-    session.record_location(hider, reading(meters(100, 100), clock))
-    session.record_location(seeker, reading(meters(100, 101), clock))
-    token = "s" * 16
-    session.set_uwb_token(seeker, token)
-    session.set_uwb_token(hider, "h" * 16)
-    session.report_uwb_range(seeker, hider, 1)
-    blob = str(session.state.inputs)
-    assert token not in blob
-    assert "uwb_token" not in blob
-
-
 def test_undo_tag_reverses_others_tagged_award() -> None:
     from uuid import uuid4
 

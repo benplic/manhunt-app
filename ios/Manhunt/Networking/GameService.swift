@@ -29,7 +29,6 @@ protocol GameService: AnyObject {
     func taunt(gameID: UUID) async throws -> PlayerViewDTO
     func view(gameID: UUID) async throws -> PlayerViewDTO
     func claimQR(gameID: UUID, token: String) async throws
-    func claimUWB(gameID: UUID, hiderID: UUID) async throws
     func purchase(
         gameID: UUID,
         powerID: String,

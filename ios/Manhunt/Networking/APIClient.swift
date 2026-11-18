@@ -158,14 +158,6 @@ struct QRBody: Encodable {
     var token: String
 }
 
-struct UwbTagBody: Encodable {
-    var hiderId: UUID
-
-    enum CodingKeys: String, CodingKey {
-        case hiderId = "hider_id"
-    }
-}
-
 struct DevAuthBody: Encodable {
     var displayName: String
     var installationId: String

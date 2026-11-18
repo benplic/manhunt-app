@@ -13,7 +13,7 @@ def test_tag_policy_schema_has_no_uwb_method() -> None:
 
 
 def test_claim_without_qr_token_is_rejected_even_with_ranges() -> None:
-    session, clock, hider, seeker = two_player_hunt({"tag_policy": {"method": "uwb"}})
+    session, clock, hider, seeker = two_player_hunt()
     session.record_location(hider, reading(meters(40, 40), clock))
     session.record_location(seeker, reading(meters(40, 40), clock))
     with pytest.raises(GameRuleError) as exc:

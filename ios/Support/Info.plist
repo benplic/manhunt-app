@@ -41,8 +41,6 @@
 	<string>Manhunt uses your precise location while a game is open to enforce the play area, safe zones, and tags. The app does not request Always access.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Manhunt uses the camera so a seeker can scan a hider's rotating tag code.</string>
-	<key>NSNearbyInteractionUsageDescription</key>
-	<string>Manhunt uses Ultra Wideband to confirm that a tag happened within a few meters.</string>
 	<key>NSLocationDefaultAccuracyReduced</key>
 	<false/>
 	<key>ManhuntAPIBaseURL</key>

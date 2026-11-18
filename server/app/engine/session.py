@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 import random
 from typing import Any
 from uuid import UUID
@@ -15,7 +14,6 @@ from app.engine.modules import MODULE_TYPES, BaseModule
 from app.engine.modules.base import TagClaim
 from app.engine.modules.tag_policy import TagPolicyModule, require_tag_ok
 from app.engine.state import GameState, LocationReading, PlayerState, WinResult
-from app.engine.uwb import UWB_RANGE_FRESH_S, UWB_RANGE_MAX_M, select_uwb_peers, token_ok
 from app.errors import ErrorCode, GameRuleError
 
 
@@ -204,65 +202,6 @@ class GameSession:
             player.last_precise = reading
         for module in self.modules:
             module.on_location(self, player, reading)
-
-    def set_uwb_token(self, player_id: UUID, token: str) -> None:
-        """Store a discovery token. Not logged and not written to the input log."""
-        if player_id not in self.state.players or not token_ok(token):
-            raise GameRuleError(ErrorCode.VALIDATION_FAILED, "Discovery token length is invalid.")
-        self.state.players[player_id].uwb_token = token
-
-    def report_uwb_range(self, player_id: UUID, peer_id: UUID, distance_m: float) -> bool:
-        """Store this phone's own range. Drop it when the peer is not selected.
-
-        The range is not logged. A seeker cannot report the hider's measurement.
-        """
-        player = self.state.players.get(player_id)
-        if (
-            player is None
-            or not math.isfinite(distance_m)
-            or distance_m < 0
-            or distance_m > UWB_RANGE_MAX_M
-        ):
-            return False
-        self.prune_uwb_ranges()
-        allowed = _peer_ids(select_uwb_peers(self.state.players.values()).get(player_id, []))
-        if peer_id not in allowed:
-            player.uwb_ranges.pop(peer_id, None)
-            return False
-        player.uwb_ranges[peer_id] = (float(distance_m), self.state.game_elapsed_s)
-        return True
-
-    def prune_uwb_ranges(self) -> None:
-        """Drop stored ranges for peers who no longer pass the GPS gate."""
-        selected = select_uwb_peers(self.state.players.values())
-        for player_id, player in self.state.players.items():
-            allowed = _peer_ids(selected.get(player_id, []))
-            player.uwb_ranges = {
-                peer_id: sample
-                for peer_id, sample in player.uwb_ranges.items()
-                if peer_id in allowed
-            }
-
-    def claim_uwb(self, seeker_id: UUID, hider_id: UUID) -> None:
-        """Tag from the two stored ranges. The seeker does not supply the hider's.
-
-        Live range reports stay out of the input log. claim_tag records the two
-        distances that were accepted so a restart can replay the tag.
-        """
-        self.prune_uwb_ranges()
-        seeker = self.state.players.get(seeker_id)
-        hider = self.state.players.get(hider_id)
-        if seeker is None or hider is None:
-            raise GameRuleError(ErrorCode.TARGET_NOT_ACTIVE)
-        now = self.state.game_elapsed_s
-        self.claim_tag(
-            TagClaim(
-                seeker_id,
-                hider_id,
-                seeker_range=_fresh_range(seeker.uwb_ranges.get(hider_id), now),
-                hider_range=_fresh_range(hider.uwb_ranges.get(seeker_id), now),
-            )
-        )
 
     def claim_tag(self, claim: TagClaim) -> None:
         require_tag_ok(self, claim)
@@ -471,14 +410,3 @@ def movement_too_fast(player: PlayerState, reading: LocationReading) -> bool:
     return distance_m(player.location.point, reading.point) > allowed_m
 
 
-def _peer_ids(peers: list[dict[str, str]]) -> set[UUID]:
-    return {UUID(peer["player_id"]) for peer in peers}
-
-
-def _fresh_range(sample: tuple[float, int] | None, now_s: int) -> float | None:
-    if sample is None:
-        return None
-    meters, at_s = sample
-    if now_s - at_s > UWB_RANGE_FRESH_S:
-        return None
-    return meters

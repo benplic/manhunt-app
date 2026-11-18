@@ -420,22 +420,13 @@ class BotDriver:
         if candidate is None:
             return
 
-        method = str(session.module_settings("tag_policy").get("method", "qr"))
-        if method == "qr":
-            token = make_qr_token(
-                game_id=session.state.game_id,
-                hider_id=candidate.player_id,
-                expires_at=session.clock.now() + token_ttl(),
-                key=session.qr_signing_key,
-            )
-            claim = TagClaim(seeker.player_id, candidate.player_id, qr_token=token)
-        else:
-            claim = TagClaim(
-                seeker.player_id,
-                candidate.player_id,
-                seeker_range=0.5,
-                hider_range=0.5,
-            )
+        token = make_qr_token(
+            game_id=session.state.game_id,
+            hider_id=candidate.player_id,
+            expires_at=session.clock.now() + token_ttl(),
+            key=session.qr_signing_key,
+        )
+        claim = TagClaim(seeker.player_id, candidate.player_id, qr_token=token)
         try:
             session.claim_tag(claim)
             demo.last_bot_tag_s = now_s

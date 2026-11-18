@@ -634,22 +634,6 @@ class GameService:
             await session.commit()
             self.finalize_persist(game)
 
-    async def uwb_tag(
-        self, session: AsyncSession, user: User, game_id: UUID, hider_id: UUID
-    ) -> None:
-        """Accept a tag from the two phones' stored ranges. The body has no distances."""
-        row, _ = await self.require_member(session, game_id, user)
-        game = self._live(row)
-        try:
-            game.claim_uwb(user.id, hider_id)
-        except GameRuleError as exc:
-            raise _http_for_rule(exc) from exc
-        async with self._persist_lock(game_id):
-            await self._persist_events(session, game)
-            row.status = game.state.phase
-            await session.commit()
-            self.finalize_persist(game)
-
     def _trail_material(self) -> tuple[bytes | None, str]:
         from app.config import get_settings
         from app.crypto import TrailKeyError, load_trail_key

@@ -370,11 +370,6 @@ final class FakeGameService: GameService {
         if token.isEmpty { throw ServiceError(code: .tokenInvalid, message: "Empty token.") }
     }
 
-    func claimUWB(gameID: UUID, hiderID: UUID) async throws {
-        guard games[gameID] != nil else { throw ServiceError(code: .gameNotFound, message: "") }
-        _ = hiderID
-    }
-
     /// Tests hold the preset screen closed until the schema fetch finishes.
     var moduleFetchDelay: Duration = .zero
 

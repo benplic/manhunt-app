@@ -110,8 +110,6 @@ final class AppStore {
     /// Tests shorten the ping torch pulse so coverage stays fast.
     var pingTorchFlashSeconds: TimeInterval = 0.25
     var timeline: [TimelineEventDTO] = []
-    var uwbPeers: [UWBPeer] = []
-    var uwbDistance: [UUID: Double] = [:]
     private var liveUpdateExpiryTask: Task<Void, Never>?
     private var noteExpiryTask: Task<Void, Never>?
     private var pingTorchTask: Task<Void, Never>?
@@ -122,17 +120,11 @@ final class AppStore {
     private let service: GameService
     private let fake: FakeGameService?
     private let live: LiveGameService?
-    private let ranger: UWBRanging
     private let keychain = KeychainStore()
     private let location = LocationReporter()
     private let defaults: UserDefaults
     private let torch: TorchControlling
     private let pingSound: PingSoundPlaying
-    /// Last discovery token pushed to the server. Cleared on reconnect so a
-    /// rebuilt session gets a fresh publish. Compared by value so a rotated
-    /// local token is resent even mid-match.
-    private var lastUWBToken: String?
-    private var lastUWBRangeAt: [UUID: Date] = [:]
     /// APNs device token waiting for auth, then PUT /v1/me/device-token.
     private var pendingDeviceToken: String?
     /// Consecutive WebSocket send failures. Hiccup toast needs ≥2.
@@ -157,9 +149,7 @@ final class AppStore {
     ) {
         self.service = service
         self.fake = service as? FakeGameService
-        let liveService = service as? LiveGameService
-        self.live = liveService
-        self.ranger = UWBRangers.make(enabled: liveService != nil)
+        self.live = service as? LiveGameService
         self.defaults = defaults
         self.torch = torch
         self.pingSound = pingSound
@@ -215,9 +205,6 @@ final class AppStore {
                 self?.handleRemovedFromLobby()
             }
         }
-        live?.onUWBPeers = { [weak self] peers in
-            self?.applyUWBPeers(peers)
-        }
         live?.onSendFailure = { [weak self] _ in
             Task { @MainActor in
                 self?.handleSendFailure()
@@ -248,11 +235,6 @@ final class AppStore {
         location.onStreamFailure = { [weak self] in
             self?.situation = .reconnecting
             self?.note = "Location stream dropped. Reconnecting…"
-        }
-        ranger.onDistance = { [weak self] id, meters in
-            Task { @MainActor in
-                self?.noteUWBDistance(id: id, meters: meters)
-            }
         }
         let seeded = ProcessInfo.processInfo.environment["MANHUNT_SCREEN"]
         if let seeded, let mapped = AppScreen.fromLaunch(seeded) {
@@ -609,7 +591,6 @@ final class AppStore {
         showMoveSafePicker = false
         mapPickPowerID = nil
         demoPicking = false
-        stopUWB()
         live?.disconnect()
         live?.refreshToken = nil
         location.stop()
@@ -643,7 +624,6 @@ final class AppStore {
         showMoveSafePicker = false
         mapPickPowerID = nil
         demoPicking = false
-        stopUWB()
         location.stop()
         live?.disconnect()
         match = nil
@@ -984,7 +964,6 @@ final class AppStore {
             }
         }
         sendFinalPing()
-        stopUWB()
         location.stop()
         live?.disconnect()
         screen = .results
@@ -1636,54 +1615,6 @@ final class AppStore {
         TrackerAvailability.syncEnabled(in: &modules)
     }
 
-    func claimUWB(hiderID: UUID) {
-        tagMessage = nil
-        guard let id = match?.snapshot.gameId else { return }
-        Task {
-            do {
-                try await service.claimUWB(gameID: id, hiderID: hiderID)
-                tagMessage = "Tag accepted."
-            } catch let error as ServiceError {
-                tagMessage = Self.copy(for: error.code)
-            } catch {
-                tagMessage = "Could not send the tag."
-            }
-        }
-    }
-
-    func applyUWBPeers(_ peers: [UWBPeer]) {
-        let ids = Set(peers.map(\.id))
-        uwbDistance = uwbDistance.filter { ids.contains($0.key) }
-        uwbPeers = peers
-        ranger.setPeers(peers)
-    }
-
-    func noteUWBDistance(id: UUID, meters: Double) {
-        uwbDistance[id] = meters
-        // Match the server drop rate of 2 per second so NI callbacks do not spam.
-        let now = Date()
-        if let last = lastUWBRangeAt[id], now.timeIntervalSince(last) < 0.5 {
-            return
-        }
-        lastUWBRangeAt[id] = now
-        live?.sendUWBRange(peerID: id, distanceM: meters)
-    }
-
-    private func publishUWBTokenIfNeeded() {
-        guard let live, match?.snapshot.tagMethod == "uwb" else { return }
-        guard let token = ranger.localToken(), token != lastUWBToken else { return }
-        live.sendUWBToken(token)
-        lastUWBToken = token
-    }
-
-    private func stopUWB() {
-        ranger.stop()
-        uwbPeers = []
-        uwbDistance = [:]
-        lastUWBToken = nil
-        lastUWBRangeAt = [:]
-    }
-
     func submitQR(_ token: String) {
         tagMessage = nil
         guard let id = match?.snapshot.gameId else { return }
@@ -1702,7 +1633,6 @@ final class AppStore {
     static func copy(for code: ErrorCode) -> String {
         switch code {
         case .notInPairingRange: return "Get closer. GPS says you are too far to tag."
-        case .notInRange: return "Ultra Wideband says you are still out of tag range."
         case .targetShielded: return "That hider has a shield up."
         case .targetInSafeZone: return "They are in a safe zone."
         case .tokenInvalid, .tokenExpired: return "That code is stale. Scan again."
@@ -1727,7 +1657,6 @@ final class AppStore {
             now: now
         )
         match = MatchHandle(snapshot: view, qrToken: match?.qrToken, clockAnchorAt: anchor)
-        publishUWBTokenIfNeeded()
         switch view.phase {
         case .ended:
             pingPulse = nil
@@ -1927,8 +1856,6 @@ final class AppStore {
     func handleReconnect(_ reconnecting: Bool) {
         guard reconnecting else { return }
         situation = .reconnecting
-        // Server restart drops tokens. Force a republish on the next view.
-        lastUWBToken = nil
         if reconnectingSince == nil {
             reconnectingSince = Date()
         }
@@ -1945,7 +1872,6 @@ final class AppStore {
         showMoveSafePicker = false
         mapPickPowerID = nil
         demoPicking = false
-        stopUWB()
         location.stop()
         live?.disconnect()
         match = nil

@@ -332,10 +332,6 @@ struct LiveGameView: View {
             case let .headStartWaiting(title, subtitle):
                 waitingCard(title: title, subtitle: subtitle)
             case .activeTagging:
-                if store.match?.snapshot.tagMethod == "uwb" {
-                    uwbTags
-                }
-                // Spec §5.6: QR stays available as the UWB fallback (and the default when method is qr).
                 scanTagButton
                 if let tagMessage = store.tagMessage {
                     Text(tagMessage)
@@ -454,31 +450,6 @@ struct LiveGameView: View {
             Text("Scan the hider's rotating code. Both phones have to be within pairing range.")
                 .font(.caption2)
                 .foregroundStyle(HuntColor.muted)
-        }
-    }
-
-    private var uwbTags: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if store.uwbPeers.isEmpty {
-                Text("No hider in Ultra Wideband range.")
-                    .font(.caption)
-                    .foregroundStyle(HuntColor.muted)
-            }
-            ForEach(store.uwbPeers) { peer in
-                Button {
-                    store.claimUWB(hiderID: peer.id)
-                } label: {
-                    let distance = store.uwbDistance[peer.id].map { String(format: "%.1f m", $0) }
-                    Text(distance.map { "Tag \(peer.name) · \($0)" } ?? "Tag \(peer.name)")
-                        .font(.title3.weight(.bold))
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 52)
-                        .background(HuntColor.seeker, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .foregroundStyle(HuntColor.paper)
-                }
-                .buttonStyle(.huntPress(.medium))
-                .accessibilityIdentifier("uwb-tag")
-            }
         }
     }
 

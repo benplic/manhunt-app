@@ -24,10 +24,6 @@ Each item is open until the acceptance line is true. Human items stay open until
 - **2.8 APNs.** Start and invite record notifications (`test_start_and_invite_record_notifications`). HTTP/2 send runs when the Key Vault `.p8` is set. Still open until a phone receives “game starting” and invite pushes. Needs the paid Apple team and a key that is not in the repo.
 - **2.9 App Insights.** Bicep creates an Insights component on the 1 GB/day Log Analytics workspace and injects `APPLICATIONINSIGHTS_CONNECTION_STRING`. Deploy waits on `/v1/readyz`. Still open until a human deploy shows the resource in the portal.
 
-### Phase 3
-
-- **3.1 Device ranging (human).** The relay and the phone ranger are in. Still open until two iPhone 11 or newer, in the same place, confirm a tag and measure `NIError.Code.activeSessionsLimitExceeded`. The code cap stays 5 until that measurement (`UWB_MAX_PEERS`, `NearbyUWBRanger.maxPeers`).
-
 ### Phase 5
 
 - **5.6 TestFlight (human).** `.github/workflows/testflight.yml` archives with manual signing and uploads with `xcrun altool` when the `prod` environment has `BUILD_CERTIFICATE_BASE64`, `BUILD_PROVISION_PROFILE_BASE64`, `P12_PASSWORD`, `APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`, and `APP_STORE_CONNECT_API_KEY`. Acceptance: a human with the signing credentials runs that workflow and the build appears in TestFlight. Stays open until that person does it.
@@ -46,6 +42,10 @@ Each item is open until the acceptance line is true. Human items stay open until
 6. Do not mark a parent phase done while any of its items are still open.
 
 ## Closed
+
+### 2026-11-18
+
+- **3.1 Device ranging / UWB (cancelled).** `80e4269`, playtest 2 decision: QR tag only. Nearby Interaction relay, `/tags/uwb`, and iOS ranger removed. Do not treat the two-phone NI cap measurement as done — the feature is gone. Tests: `pytest -q`, `testScanLabelIsAlwaysScanTag`.
 
 ### 2026-11-09
 
