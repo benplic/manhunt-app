@@ -88,6 +88,46 @@ final class LiveHudAndPresetsTests: XCTestCase {
         XCTAssertEqual(newer.timers?.zone?.shrinksInS, 345)
     }
 
+    func testPlayerViewDecodesWithoutConvertedFromHider() throws {
+        // Overnight Rescue added converted_from_hider. Home servers that have
+        // not redeployed omit it; Swift still required the key with a default.
+        let json = """
+        {
+          "game_id": "00000000-0000-0000-0000-000000000010",
+          "join_code": "TACO42",
+          "phase": "lobby",
+          "phase_remaining_s": null,
+          "game_elapsed_s": 0,
+          "time_limit_remaining_s": null,
+          "you": {
+            "player_id": "00000000-0000-0000-0000-000000000011",
+            "role": "seeker",
+            "status": "active",
+            "is_host": true,
+            "bounds": {"phase": "inside", "remaining_s": null},
+            "safe_zone": null,
+            "points": 0
+          },
+          "players": [
+            {
+              "player_id": "00000000-0000-0000-0000-000000000011",
+              "display_name": "Ben",
+              "role": "seeker",
+              "status": "active",
+              "is_host": true,
+              "points": 0
+            }
+          ],
+          "reveals": [],
+          "banners": [],
+          "result": null
+        }
+        """
+        let view = try JSONDecoder().decode(PlayerViewDTO.self, from: Data(json.utf8))
+        XCTAssertEqual(view.players.first?.convertedFromHider, false)
+        XCTAssertEqual(view.players.first?.displayName, "Ben")
+    }
+
     func testOfflineSchemaIncludesZoneShrink() {
         let modules = ModuleForm.offlineModules()
         let shrink = modules.first { $0.id == "zone_shrink" }

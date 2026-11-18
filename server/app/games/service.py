@@ -218,6 +218,16 @@ class GameService:
                     GameRow.status.notin_(["ended", "abandoned"]),
                 )
             )
+            # PARK42 is a singleton demo code. Once the sample leaves lobby,
+            # new phones cannot sit down (WRONG_PHASE). Retire that hunt and
+            # mint a fresh lobby unless this user is already on the roster.
+            if existing is not None:
+                membership = await session.get(GamePlayerRow, (existing.id, user.id))
+                live = self.manager.get(existing.id)
+                phase = live.state.phase if live is not None else existing.status
+                if membership is None and phase != "lobby":
+                    await self._retire_sample(session, existing, live)
+                    existing = None
             if existing is None:
                 return await self._create_sample(session, user)
         row = await session.scalar(
@@ -755,6 +765,22 @@ class GameService:
                     _name_taken_message(user.display_name),
                     status_code=409,
                 )
+
+    async def _retire_sample(
+        self,
+        session: AsyncSession,
+        row: GameRow,
+        live: GameSession | None,
+    ) -> None:
+        """End an in-progress PARK42 so the reserved code can open a new lobby."""
+        if live is not None and live.state.phase != "ended":
+            live.end("Sample lobby recycled for a new PARK42 join.", winner="none")
+            await self._persist_events(session, live)
+            self.finalize_persist(live)
+        row.status = "ended"
+        if row.ended_at is None:
+            row.ended_at = datetime.now(UTC)
+        await session.commit()
 
     async def _create_sample(self, session: AsyncSession, host: User) -> GameRow:
         """PARK42: the host, five stable bots, classic rules, start after 30 lobby seconds."""
