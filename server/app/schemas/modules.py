@@ -197,11 +197,11 @@ SCHEMAS: dict[str, dict[str, Any]] = {
     "tag_policy": {
         "version": 1,
         "title": "Tag",
-        "blurb": "Ultra Wideband confirms the tag. A rotating code is the fallback.",
+        "blurb": "Seekers scan a rotating QR code while GPS pairing is satisfied.",
         "locked": True,
         "field_order": ["method", "radius_m", "result", "pairing_m"],
         "fields": {
-            "method": _enum("Method", ["qr", "uwb"], "qr", ["QR code", "Ultra Wideband"]),
+            "method": _enum("Method", ["qr"], "qr", ["QR code"]),
             "radius_m": _number("Radius", 1, 5, 2, step=0.5, suffix="m"),
             "result": _enum(
                 "Result",

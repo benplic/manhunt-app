@@ -178,7 +178,7 @@
     "tag_policy": {
       "version": 1,
       "title": "Tag",
-      "blurb": "Ultra Wideband confirms the tag. A rotating code is the fallback.",
+      "blurb": "Seekers scan a rotating QR code while GPS pairing is satisfied.",
       "locked": true,
       "field_order": [
         "method",
@@ -191,13 +191,11 @@
           "type": "enum",
           "title": "Method",
           "values": [
-            "qr",
-            "uwb"
+            "qr"
           ],
           "default": "qr",
           "labels": [
-            "QR code",
-            "Ultra Wideband"
+            "QR code"
           ]
         },
         "radius_m": {

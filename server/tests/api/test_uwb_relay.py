@@ -93,5 +93,5 @@ def test_relay_tag_ignores_a_forged_range_and_drops_a_non_peer(client: TestClien
         json={"hider_id": hider_id, "hider_range": 99, "seeker_range": 99},
         headers=_hdr(seeker["access_token"]),
     )
-    assert response.status_code == 200, response.text
-    assert game.state.players[UUID(hider_id)].status == "eliminated"
+    assert response.status_code == 401, response.text
+    assert game.state.players[UUID(hider_id)].status == "active"
