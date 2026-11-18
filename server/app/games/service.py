@@ -42,7 +42,7 @@ from app.errors import ApiError, ErrorCode, GameRuleError
 from app.games.join_code import SAMPLE_CODE, generate, is_valid, normalize
 from app.games.join_limit import JoinRateLimiter
 from app.presets.classic import CLASSIC_ID, classic_preset
-from app.realtime.manager import SessionManager
+from app.realtime.manager import SessionManager, envelope
 
 log = logging.getLogger("manhunt.games")
 
@@ -422,7 +422,8 @@ class GameService:
             await session.delete(member)
         await self.persist_inputs(session, game)
         await session.commit()
-        await self._close_socket(game_id, player_id)
+        await self._close_socket(game_id, player_id, removed_reason="host_removed")
+        await self.manager.broadcast(game_id)
         return game
 
     async def leave(self, session: AsyncSession, user: User, game_id: UUID) -> GameRow:
@@ -437,11 +438,15 @@ class GameService:
         await self._close_socket(game_id, user.id)
         return row
 
-    async def _close_socket(self, game_id: UUID, player_id: UUID) -> None:
+    async def _close_socket(
+        self, game_id: UUID, player_id: UUID, *, removed_reason: str | None = None
+    ) -> None:
         socket = self.manager.detach(game_id, player_id)
         if socket is None:
             return
         try:
+            if removed_reason is not None:
+                await socket.send_json(envelope("removed", {"reason": removed_reason}))
             await socket.close(code=4403)
         except Exception:
             # The phone may already be gone. Detach is what stops the next view.

@@ -18,6 +18,7 @@ final class LiveGameService: GameService {
     var onEvent: ((BannerDTO) -> Void)?
     var onReconnect: ((Bool) -> Void)?
     var onUWBPeers: (([UWBPeer]) -> Void)?
+    var onRemoved: (() -> Void)?
     var onSendFailure: ((String) -> Void)? {
         get { socket.onSendFailure }
         set { socket.onSendFailure = newValue }
@@ -30,6 +31,7 @@ final class LiveGameService: GameService {
         socket.onEvent = { [weak self] banner in self?.onEvent?(banner) }
         socket.onReconnect = { [weak self] reconnecting in self?.onReconnect?(reconnecting) }
         socket.onUWBPeers = { [weak self] peers in self?.onUWBPeers?(peers) }
+        socket.onRemoved = { [weak self] in self?.onRemoved?() }
         client.refreshAccessToken = { [weak self] in
             try await self?.rotateAccessToken()
         }
