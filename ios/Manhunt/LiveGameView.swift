@@ -73,10 +73,12 @@ struct LiveGameView: View {
                    let banner = store.match?.snapshot.banners.last {
                     self.banner(title: banner.title, detail: banner.detail, tint: tone(banner.tone))
                         .transition(.move(edge: .top).combined(with: .opacity))
+                        .allowsHitTesting(false)
                 }
                 if store.situation == .reconnecting {
                     banner(title: "Reconnecting", detail: "The last event will catch up when the socket returns.", tint: HuntColor.paper)
                         .transition(.move(edge: .top).combined(with: .opacity))
+                        .allowsHitTesting(false)
                 }
                 if store.situation == .outOfBounds {
                     let remaining = store.match?.snapshot.you.bounds.remainingS
@@ -86,6 +88,7 @@ struct LiveGameView: View {
                         tint: HuntColor.warning
                     )
                     .transition(.move(edge: .top).combined(with: .opacity))
+                    .allowsHitTesting(false)
                 }
                 if store.decoyPicking {
                     // Hide the dock while picking so HuntMap's Drop point stays tappable.
@@ -117,6 +120,7 @@ struct LiveGameView: View {
                 } else if HeadStartChrome.showsFloatingNotice(chrome),
                           let update = store.liveUpdate {
                     LiveUpdatePill(triggerKey: update.id.uuidString, text: update.text, tone: update.tone)
+                        .allowsHitTesting(false)
                 } else if HeadStartChrome.showsFloatingNotice(chrome),
                           store.match?.snapshot.banners.isEmpty != false,
                           store.situation != .reconnecting,
@@ -124,8 +128,10 @@ struct LiveGameView: View {
                           !store.paused,
                           let note = store.note {
                     LiveUpdatePill(triggerKey: "note:\(note)", text: note, tone: "info")
+                        .allowsHitTesting(false)
                 }
                 Spacer()
+                    .allowsHitTesting(false)
                 if !store.decoyPicking && !store.demoPicking {
                     LiveControls(
                         flashlightOn: store.flashlightOn,
@@ -503,6 +509,7 @@ struct LiveGameView: View {
         .background(HuntColor.ink.opacity(0.88), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .foregroundStyle(HuntColor.paper)
         .transition(.move(edge: .top).combined(with: .opacity))
+        .allowsHitTesting(action != nil)
     }
 
     private func tone(_ raw: String) -> Color {
