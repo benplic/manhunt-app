@@ -293,9 +293,10 @@ final class ArenaEditorModel {
             if let center = pendingCircleCenter {
                 snapshot()
                 let radius = ArenaGeometry.meters(from: center, to: point)
+                let nextIndex = zones.filter { $0.kind == .safe }.count + 1
                 var zone = ArenaZone(
                     id: UUID(),
-                    name: "Safe zone",
+                    name: "Safe \(nextIndex)",
                     kind: .safe,
                     shape: .circle(center: center, radiusMeters: radius)
                 )

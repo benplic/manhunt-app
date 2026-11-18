@@ -387,6 +387,27 @@ def test_create_safe_adds_zone_and_rejects_wrong_role_or_outside() -> None:
     assert exc.value.code == ErrorCode.TARGET_OUTSIDE
 
 
+def test_create_safe_numbers_zone_names() -> None:
+    session, clock, hider, seeker = two_player_hunt(
+        {"power_ups": {"create_safe_radius_m": 20}}
+    )
+    session.record_location(hider, reading(meters(100, 100), clock))
+    session.state.players[hider].points = 400
+    before = len([z for z in session.state.arena.zones if z.kind.value == "safe"])
+    p1 = meters(80, 80)
+    session.purchase(hider, "create_safe", lat=p1.lat, lon=p1.lon)
+    first = [z for z in session.state.arena.zones if z.kind.value == "safe"][-1]
+    assert first.name == f"Safe {before + 1}"
+
+    session.state.players[hider].cooldowns.pop("create_safe", None)
+    p2 = meters(120, 80)
+    session.purchase(hider, "create_safe", lat=p2.lat, lon=p2.lon)
+    second = [z for z in session.state.arena.zones if z.kind.value == "safe"][-1]
+    assert second.name == f"Safe {before + 2}"
+    names = [z.name for z in session.state.arena.zones if z.kind.value == "safe"]
+    assert len(names) == len(set(names))
+
+
 def test_shrink_now_fires_next_shrink_and_shifts_schedule() -> None:
     center = meters(500, 500)
     arena = Arena(
