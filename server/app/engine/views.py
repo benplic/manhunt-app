@@ -122,7 +122,7 @@ def build_view(
 
 
 def _power_ups_for(session: GameSession, viewer: PlayerState) -> list[dict]:
-    from app.engine.modules.power_ups import CATALOG
+    from app.engine.modules.power_ups import CATALOG, tracker_allowed
 
     settings = session.module_settings("power_ups")
     if not bool(settings.get("enabled", True)):
@@ -137,18 +137,24 @@ def _power_ups_for(session: GameSession, viewer: PlayerState) -> list[dict]:
         "tracker": "Tracker",
         "lockdown": "Lockdown",
     }
+    tracker_ok = tracker_allowed(session=session)
     rows = []
     for power_id, base in CATALOG.items():
         if base["role"] != viewer.role:
             continue
         if not bool(settings.get(f"{power_id}_enabled", True)):
             continue
+        # Still list a forbidden Tracker so the dock can grey it with a clear denial.
+        available = True
+        if power_id == "tracker" and not tracker_ok:
+            available = False
         rows.append(
             {
                 "id": power_id,
                 "title": titles[power_id],
                 "cost": int(settings.get(f"{power_id}_cost", base["cost"])),
                 "role": base["role"],
+                "available": available,
             }
         )
     return rows

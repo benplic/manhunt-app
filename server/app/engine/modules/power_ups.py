@@ -38,6 +38,26 @@ CATALOG: dict[str, dict[str, Any]] = {
 }
 
 
+def tracker_allowed(
+    reveal: dict[str, Any] | None = None,
+    *,
+    session: GameSession | None = None,
+) -> bool:
+    """Tracker is timed hot/cold. Forbid when hints already run always or pins never expire."""
+    settings = reveal
+    if settings is None:
+        if session is None:
+            return True
+        settings = session.module_settings("reveal_fuzzy")
+    mode = str(settings.get("location_mode", "fuzzy"))
+    persistence = str(settings.get("persistence", "timed"))
+    if mode == "hot_cold":
+        return False
+    if persistence == "persistent":
+        return False
+    return True
+
+
 def resolve_power(s: GameSession, power_id: str) -> dict[str, Any]:
     base = CATALOG.get(power_id)
     if base is None:
@@ -47,6 +67,11 @@ def resolve_power(s: GameSession, power_id: str) -> dict[str, Any]:
         raise GameRuleError(ErrorCode.WRONG_PHASE, "Power-ups are off.")
     if not bool(settings.get(f"{power_id}_enabled", True)):
         raise GameRuleError(ErrorCode.WRONG_PHASE, "That power-up is off.")
+    if power_id == "tracker" and not tracker_allowed(session=s):
+        raise GameRuleError(
+            ErrorCode.WRONG_PHASE,
+            "Tracker needs timed Fuzzy or Precise location (not Hot/cold or Persistent).",
+        )
     spec = dict(base)
     spec["cost"] = int(settings.get(f"{power_id}_cost", base["cost"]))
     return spec

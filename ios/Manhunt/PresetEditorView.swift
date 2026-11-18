@@ -107,52 +107,72 @@ struct PresetEditorView: View {
 
     @ViewBuilder
     private func rowControl(row: Binding<VisualRow>) -> some View {
-        switch row.wrappedValue.control {
-        case .toggle:
-            Toggle(row.wrappedValue.title, isOn: row.flag)
-                .tint(HuntColor.signal)
-                .foregroundStyle(HuntColor.paper)
-        case let .stepper(min, max, step, suffix, _):
-            if row.wrappedValue.stepperRangeIsUsable {
-                Stepper(
-                    value: Binding(
-                        get: { Swift.min(max, Swift.max(min, row.wrappedValue.number)) },
-                        set: { row.wrappedValue.number = Swift.min(max, Swift.max(min, $0)) }
-                    ),
-                    in: min...max,
-                    step: step
-                ) {
-                    HStack {
-                        Text(row.wrappedValue.title)
-                        Spacer()
-                        Text(stepperLabel(row.wrappedValue.number, suffix: suffix))
-                            .foregroundStyle(HuntColor.signal)
-                            .monospacedDigit()
-                    }
+        let help = RevealFormVisibility.help(rowID: row.wrappedValue.id, modules: store.modules)
+        let trackerLocked = row.wrappedValue.id == "tracker_enabled"
+            && !TrackerAvailability.isAllowed(modules: store.modules)
+        VStack(alignment: .leading, spacing: 4) {
+            switch row.wrappedValue.control {
+            case .toggle:
+                Toggle(row.wrappedValue.title, isOn: row.flag)
+                    .tint(HuntColor.signal)
                     .foregroundStyle(HuntColor.paper)
-                }
-            } else {
-                Text("\(row.wrappedValue.title) \(stepperLabel(row.wrappedValue.number, suffix: suffix))")
-                    .foregroundStyle(HuntColor.paper)
-            }
-        case let .options(display, values):
-            let labels = display.count == values.count ? display : values
-            VStack(alignment: .leading, spacing: 6) {
-                Text(row.wrappedValue.title)
-                    .font(.subheadline)
-                    .foregroundStyle(HuntColor.muted)
-                if values.isEmpty {
-                    Text("No choices")
-                        .font(.footnote)
-                        .foregroundStyle(HuntColor.muted)
-                } else {
-                    Picker(row.wrappedValue.title, selection: optionSelection(row: row, values: values)) {
-                        ForEach(Array(values.enumerated()), id: \.offset) { index, value in
-                            Text(index < labels.count ? labels[index] : value).tag(value)
+                    .disabled(trackerLocked)
+                    .onChange(of: row.wrappedValue.flag) { _, _ in
+                        if row.wrappedValue.id == "hints_enabled" {
+                            store.syncTrackerAvailability()
                         }
                     }
-                    .pickerStyle(.segmented)
+            case let .stepper(min, max, step, suffix, _):
+                if row.wrappedValue.stepperRangeIsUsable {
+                    Stepper(
+                        value: Binding(
+                            get: { Swift.min(max, Swift.max(min, row.wrappedValue.number)) },
+                            set: { row.wrappedValue.number = Swift.min(max, Swift.max(min, $0)) }
+                        ),
+                        in: min...max,
+                        step: step
+                    ) {
+                        HStack {
+                            Text(row.wrappedValue.title)
+                            Spacer()
+                            Text(stepperLabel(row.wrappedValue.number, suffix: suffix))
+                                .foregroundStyle(HuntColor.signal)
+                                .monospacedDigit()
+                        }
+                        .foregroundStyle(HuntColor.paper)
+                    }
+                } else {
+                    Text("\(row.wrappedValue.title) \(stepperLabel(row.wrappedValue.number, suffix: suffix))")
+                        .foregroundStyle(HuntColor.paper)
                 }
+            case let .options(display, values):
+                let labels = display.count == values.count ? display : values
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(row.wrappedValue.title)
+                        .font(.subheadline)
+                        .foregroundStyle(HuntColor.muted)
+                    if values.isEmpty {
+                        Text("No choices")
+                            .font(.footnote)
+                            .foregroundStyle(HuntColor.muted)
+                    } else {
+                        Picker(row.wrappedValue.title, selection: optionSelection(row: row, values: values)) {
+                            ForEach(Array(values.enumerated()), id: \.offset) { index, value in
+                                Text(index < labels.count ? labels[index] : value).tag(value)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                }
+            }
+            if let help, !help.isEmpty {
+                Text(help)
+                    .font(.caption)
+                    .foregroundStyle(HuntColor.muted)
+            } else if trackerLocked {
+                Text("Unavailable for Hot/cold or Persistent location.")
+                    .font(.caption)
+                    .foregroundStyle(HuntColor.muted)
             }
         }
     }
@@ -167,6 +187,9 @@ struct PresetEditorView: View {
             set: { newValue in
                 if let index = values.firstIndex(of: newValue) {
                     row.wrappedValue.choice = index
+                }
+                if ["location_mode", "persistence"].contains(row.wrappedValue.id) {
+                    store.syncTrackerAvailability()
                 }
             }
         )

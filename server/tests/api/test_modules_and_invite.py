@@ -33,6 +33,9 @@ def test_modules_schema_lists_classic_ids(client: TestClient) -> None:
     assert {"roles", "head_start", "power_ups", "reveal_fuzzy", "zone_shrink"} <= ids
     location_mode = body["modules"]["reveal_fuzzy"]["fields"]["location_mode"]
     assert location_mode["values"] == ["fuzzy", "precise", "hot_cold"]
+    assert "Hot/cold" in location_mode["help"]
+    assert "Precise never" in body["modules"]["reveal_fuzzy"]["fields"]["hints_enabled"]["help"]
+    assert "Persistent" in body["modules"]["power_ups"]["fields"]["tracker_enabled"]["help"]
     # The preset editor renders this document. Order and bounds are part of it.
     assert body["order"][0] == "roles"
     assert set(body["modules"]["zone_shrink"]["fields"]) == {

@@ -226,6 +226,39 @@ final class GameRulesTests: XCTestCase {
 
         request.targetInsidePlayArea = false
         XCTAssertEqual(PowerUpRules.decide(request), .denied(.targetOutside))
+
+        request.targetInsidePlayArea = true
+        request.requiresTarget = false
+        request.hasTarget = false
+        request.available = false
+        XCTAssertEqual(PowerUpRules.decide(request), .denied(.unavailable))
+        XCTAssertFalse(PowerUpRules.chipIsTappable(request))
+        XCTAssertTrue(PowerUpRules.chipShowsDenialOnTap(request))
+    }
+
+    func testTrackerAvailabilityForbidsHotColdAndPersistent() {
+        XCTAssertFalse(TrackerAvailability.isAllowed(locationMode: "hot_cold", persistence: "timed"))
+        XCTAssertFalse(TrackerAvailability.isAllowed(locationMode: "fuzzy", persistence: "persistent"))
+        XCTAssertTrue(TrackerAvailability.isAllowed(locationMode: "fuzzy", persistence: "timed"))
+        XCTAssertTrue(TrackerAvailability.isAllowed(locationMode: "precise", persistence: "timed"))
+
+        var modules = ModuleForm.offlineModules()
+        if let mIdx = modules.firstIndex(where: { $0.id == "reveal_fuzzy" }),
+           let rIdx = modules[mIdx].rows.firstIndex(where: { $0.id == "location_mode" }),
+           case let .options(_, values) = modules[mIdx].rows[rIdx].control,
+           let hotCold = values.firstIndex(of: "hot_cold") {
+            modules[mIdx].rows[rIdx].choice = hotCold
+        }
+        if let pIdx = modules.firstIndex(where: { $0.id == "power_ups" }),
+           let tIdx = modules[pIdx].rows.firstIndex(where: { $0.id == "tracker_enabled" }) {
+            modules[pIdx].rows[tIdx].flag = true
+        }
+        XCTAssertTrue(TrackerAvailability.syncEnabled(in: &modules))
+        let trackerOn = modules
+            .first { $0.id == "power_ups" }?
+            .rows.first { $0.id == "tracker_enabled" }?
+            .flag
+        XCTAssertEqual(trackerOn, false)
     }
 
     func testDecoyChipIsTappableWhenOnlyNeedsTarget() {

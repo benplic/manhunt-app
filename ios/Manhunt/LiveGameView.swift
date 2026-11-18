@@ -346,7 +346,9 @@ struct LiveGameView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(store.dockPowerChips()) { chip in
-                        let enabled = store.chipIsTappable(chip)
+                        let request = store.purchaseRequest(for: chip)
+                        let enabled = request.map(PowerUpRules.chipIsTappable) ?? false
+                        let explainDenied = request.map(PowerUpRules.chipShowsDenialOnTap) ?? false
                         let cooling = store.match?.snapshot.you.cooldowns?[chip.id] ?? 0
                         Button {
                             store.buyPower(chip)
@@ -370,7 +372,7 @@ struct LiveGameView: View {
                             .animation(.easeOut(duration: 0.2), value: enabled)
                         }
                         .buttonStyle(.huntPress(.medium))
-                        .disabled(!enabled)
+                        .disabled(!enabled && !explainDenied)
                         .accessibilityLabel(chip.title)
                     }
                 }

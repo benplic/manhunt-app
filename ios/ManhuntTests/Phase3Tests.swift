@@ -20,6 +20,16 @@ final class Phase3Tests: XCTestCase {
         XCTAssertEqual(HintCopy.line(role: .hider, hint: hint), "Warmth is hidden from you.")
     }
 
+    func testHintHelpMatchesRevealMode() {
+        XCTAssertEqual(HintCopy.hintsHelp(locationMode: "hot_cold", hintsEnabled: false), "Hints are always on in Hot/cold.")
+        XCTAssertEqual(HintCopy.hintsHelp(locationMode: "precise", hintsEnabled: true), "Hints are off in Precise.")
+        XCTAssertEqual(HintCopy.hintsHelp(locationMode: "fuzzy", hintsEnabled: true), "Hints are on with Fuzzy.")
+        XCTAssertEqual(
+            HintCopy.hintsHelp(locationMode: "fuzzy", hintsEnabled: false),
+            "Hints are off while the Fuzzy Hints toggle is off."
+        )
+    }
+
     func testHeadStartChrome() {
         XCTAssertEqual(
             HeadStartChrome.kind(phase: .headStart, role: .seeker, seekerLock: "locked_map"),

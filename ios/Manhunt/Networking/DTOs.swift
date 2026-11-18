@@ -101,9 +101,11 @@ struct PowerUpDTO: Codable, Equatable, Identifiable {
     var title: String
     var cost: Int
     var role: PlayerRole
+    /// Nil on older servers means available. False greys the chip with a denial.
+    var available: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, title, cost, role
+        case id, title, cost, role, available
     }
 }
 

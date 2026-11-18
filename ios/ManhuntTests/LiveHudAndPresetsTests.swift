@@ -168,6 +168,17 @@ final class LiveHudAndPresetsTests: XCTestCase {
         XCTAssertFalse(RevealFormVisibility.shows(rowID: "persistence", modules: edited))
         XCTAssertFalse(RevealFormVisibility.shows(rowID: "hints_enabled", modules: edited))
         XCTAssertTrue(RevealFormVisibility.shows(rowID: "hints_interval", modules: edited))
+        XCTAssertEqual(
+            RevealFormVisibility.help(rowID: "hints_enabled", modules: edited),
+            "Hints are always on in Hot/cold."
+        )
+        let offline = ModuleForm.offlineModules()
+        XCTAssertEqual(
+            RevealFormVisibility.help(rowID: "hints_enabled", modules: offline),
+            "Hints are on with Fuzzy."
+        )
+        XCTAssertNotNil(offline.first { $0.id == "reveal_fuzzy" }?.rows.first { $0.id == "location_mode" }?.help)
+        XCTAssertNotNil(offline.first { $0.id == "power_ups" }?.rows.first { $0.id == "tracker_enabled" }?.help)
     }
 
     func testPresetOverridesGatesZoneShrinkToCircleArenas() {

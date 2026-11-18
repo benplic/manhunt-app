@@ -4,6 +4,7 @@ import Foundation
 struct SchemaFieldDTO: Decodable, Equatable {
     var type: String
     var title: String
+    var help: String?
     var min: Double?
     var max: Double?
     var step: Double?
@@ -15,7 +16,7 @@ struct SchemaFieldDTO: Decodable, Equatable {
     var defaultString: String?
 
     enum CodingKeys: String, CodingKey {
-        case type, title, min, max, step, suffix, values, labels
+        case type, title, help, min, max, step, suffix, values, labels
         case defaultValue = "default"
     }
 
@@ -23,6 +24,7 @@ struct SchemaFieldDTO: Decodable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         type = try container.decode(String.self, forKey: .type)
         title = try container.decodeIfPresent(String.self, forKey: .title) ?? type
+        help = try container.decodeIfPresent(String.self, forKey: .help)
         min = try container.decodeIfPresent(Double.self, forKey: .min)
         max = try container.decodeIfPresent(Double.self, forKey: .max)
         step = try container.decodeIfPresent(Double.self, forKey: .step)
@@ -150,6 +152,9 @@ enum ModuleForm {
             if field.title == field.type {
                 field.title = bundledField.title
             }
+            if field.help == nil {
+                field.help = bundledField.help
+            }
             if field.labels.count != field.values.count,
                bundledField.labels.count == bundledField.values.count,
                bundledField.values == field.values {
@@ -164,7 +169,7 @@ enum ModuleForm {
         _ saved: [String: [String: RuleValue]],
         to modules: [VisualModule]
     ) -> [VisualModule] {
-        modules.map { module in
+        var applied = modules.map { module in
             var copy = module
             guard let fields = saved[module.id] else { return copy }
             if copy.tracksEnabled, let enabled = fields["enabled"], case let .bool(flag) = enabled {
@@ -177,6 +182,8 @@ enum ModuleForm {
             }
             return copy
         }
+        TrackerAvailability.syncEnabled(in: &applied)
+        return applied
     }
 
     private static func module(id: String, schema: ModuleSchemaDTO) -> VisualModule? {
@@ -227,6 +234,7 @@ enum ModuleForm {
         return VisualRow(
             id: id,
             title: field.title,
+            help: field.help,
             control: control,
             number: number,
             choice: choice,
@@ -270,5 +278,40 @@ enum RevealFormVisibility {
         default:
             return true
         }
+    }
+
+    /// Live help under a reveal or power-up row. Prefers schema help; falls back to HintCopy.
+    static func help(rowID: String, modules: [VisualModule]) -> String? {
+        if let row = modules.flatMap(\.rows).first(where: { $0.id == rowID }),
+           let schemaHelp = row.help,
+           !schemaHelp.isEmpty {
+            if rowID == "hints_enabled" {
+                let mode = revealChoice("location_mode", in: modules) ?? "fuzzy"
+                let enabled = modules
+                    .first(where: { $0.id == "reveal_fuzzy" })?
+                    .rows.first(where: { $0.id == "hints_enabled" })?
+                    .flag ?? true
+                return HintCopy.hintsHelp(locationMode: mode, hintsEnabled: enabled)
+            }
+            return schemaHelp
+        }
+        if rowID == "hints_enabled" {
+            let mode = revealChoice("location_mode", in: modules) ?? "fuzzy"
+            let enabled = modules
+                .first(where: { $0.id == "reveal_fuzzy" })?
+                .rows.first(where: { $0.id == "hints_enabled" })?
+                .flag ?? true
+            return HintCopy.hintsHelp(locationMode: mode, hintsEnabled: enabled)
+        }
+        return nil
+    }
+
+    private static func revealChoice(_ id: String, in modules: [VisualModule]) -> String? {
+        guard let reveal = modules.first(where: { $0.id == "reveal_fuzzy" }),
+              let row = reveal.rows.first(where: { $0.id == id }),
+              case let .options(_, values) = row.control,
+              values.indices.contains(row.choice)
+        else { return nil }
+        return values[row.choice]
     }
 }
