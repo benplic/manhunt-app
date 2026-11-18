@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import random
 from datetime import UTC, datetime
@@ -123,6 +124,15 @@ class GameService:
         self.manager = manager
         # Fresh limiter per process. Tests build a new app, so counters do not leak.
         self.join_limiter = join_limiter or JoinRateLimiter()
+        # Serialize persist+commit per live game so tick and HTTP cannot double-insert.
+        self._persist_locks: dict[UUID, asyncio.Lock] = {}
+
+    def _persist_lock(self, game_id: UUID) -> asyncio.Lock:
+        lock = self._persist_locks.get(game_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._persist_locks[game_id] = lock
+        return lock
 
     async def create(
         self,
@@ -333,22 +343,24 @@ class GameService:
             raise _http_for_rule(exc) from exc
         row.status = game.state.phase
         row.started_at = datetime.now(UTC)
-        await self._persist_events(session, game)
-        from app.notify import notifier
+        async with self._persist_lock(game_id):
+            await self._persist_events(session, game)
+            from app.notify import notifier
 
-        for player in game.state.players.values():
-            if player.player_id != user.id:
-                token_row = await session.get(DeviceToken, player.player_id)
-                notifier.notify(
-                    player.player_id,
-                    "Game starting",
-                    "The hunt is starting. Open Manhunt.",
-                    {
-                        "game_id": str(game_id),
-                        "device_token": token_row.token if token_row else None,
-                    },
-                )
-        await session.commit()
+            for player in game.state.players.values():
+                if player.player_id != user.id:
+                    token_row = await session.get(DeviceToken, player.player_id)
+                    notifier.notify(
+                        player.player_id,
+                        "Game starting",
+                        "The hunt is starting. Open Manhunt.",
+                        {
+                            "game_id": str(game_id),
+                            "device_token": token_row.token if token_row else None,
+                        },
+                    )
+            await session.commit()
+            self.finalize_persist(game)
         # The host already has this view from the HTTP response. Everyone else
         # is still on the lobby socket, and the tick loop is off in tests.
         await self.manager.broadcast(game_id)
@@ -383,13 +395,16 @@ class GameService:
     async def end(self, session: AsyncSession, user: User, game_id: UUID) -> GameSession:
         row = await self.require_host(session, game_id, user)
         game = self._live(row)
-        game.end("The host ended the hunt.", winner="none")
-        row.status = "ended"
-        row.ended_at = datetime.now(UTC)
-        # The results screen reads the event log. Tick events (reveal, bounds,
-        # signal loss) live in memory until something flushes them.
-        await self._persist_events(session, game)
-        await session.commit()
+        async with self._persist_lock(game_id):
+            game.end("The host ended the hunt.", winner="none")
+            row.status = "ended"
+            if row.ended_at is None:
+                row.ended_at = datetime.now(UTC)
+            # The results screen reads the event log. Tick events (reveal, bounds,
+            # signal loss) live in memory until something flushes them.
+            await self._persist_events(session, game)
+            await session.commit()
+            self.finalize_persist(game)
         await self.manager.broadcast(game_id)
         return game
 
@@ -488,9 +503,11 @@ class GameService:
             game.claim_tag(TagClaim(user.id, hider_id, qr_token=token))
         except GameRuleError as exc:
             raise _http_for_rule(exc) from exc
-        await self._persist_events(session, game)
-        row.status = game.state.phase
-        await session.commit()
+        async with self._persist_lock(game_id):
+            await self._persist_events(session, game)
+            row.status = game.state.phase
+            await session.commit()
+            self.finalize_persist(game)
 
     async def uwb_tag(
         self, session: AsyncSession, user: User, game_id: UUID, hider_id: UUID
@@ -502,9 +519,11 @@ class GameService:
             game.claim_uwb(user.id, hider_id)
         except GameRuleError as exc:
             raise _http_for_rule(exc) from exc
-        await self._persist_events(session, game)
-        row.status = game.state.phase
-        await session.commit()
+        async with self._persist_lock(game_id):
+            await self._persist_events(session, game)
+            row.status = game.state.phase
+            await session.commit()
+            self.finalize_persist(game)
 
     def _trail_material(self) -> tuple[bytes | None, str]:
         from app.config import get_settings
@@ -543,12 +562,25 @@ class GameService:
                     "reason": game.state.result.reason,
                 }
 
-    async def persist_game(self, session: AsyncSession, game: GameSession) -> None:
-        await self._persist_events(session, game)
+    async def persist_game(
+        self, session: AsyncSession, game: GameSession, *, commit: bool = False
+    ) -> None:
+        async with self._persist_lock(game.state.game_id):
+            await self._persist_events(session, game)
+            if commit:
+                await session.commit()
+                self.finalize_persist(game)
+
+    def finalize_persist(self, game: GameSession) -> None:
+        """Advance the watermark and drain pending only after a successful commit."""
+        high = getattr(game, "_persist_high_seq", None)
+        if high is not None and high > game.last_persisted_seq:
+            game.last_persisted_seq = int(high)
+        game._persist_high_seq = None
+        game.drain_events()
 
     async def _persist_events(self, session: AsyncSession, game: GameSession) -> None:
-        from sqlalchemy import func, select
-
+        """Stage new game_events. Caller must hold `_persist_lock` through commit."""
         from app.config import get_settings
         from app.crypto import encrypt_payload, load_trail_key
 
@@ -557,30 +589,45 @@ class GameService:
             key = load_trail_key(settings.manhunt_trail_key)
         except Exception:
             key = None
-        last = await session.scalar(
-            select(func.max(GameEventRow.seq)).where(GameEventRow.game_id == game.state.game_id)
-        )
-        last = int(last or 0)
+        floor = int(game.last_persisted_seq or 0)
         # Persist from the full log so a WebSocket broadcast that drained
         # _pending cannot drop sensitive location events.
+        rows: list[dict[str, Any]] = []
+        high = floor
         for event in game.state.event_log:
-            if event.seq <= last:
+            if event.seq <= floor:
                 continue
             payload: dict = {"text": event.text, "tone": event.tone}
             if event.sensitive:
                 if key is None:
                     continue
                 payload = encrypt_payload(key, event.payload, settings.manhunt_trail_key_id)
-            session.add(
-                GameEventRow(
-                    game_id=game.state.game_id,
-                    seq=event.seq,
-                    type=event.type,
-                    payload=payload,
-                    sensitive=event.sensitive,
-                )
+            rows.append(
+                {
+                    "game_id": game.state.game_id,
+                    "seq": event.seq,
+                    "type": event.type,
+                    "payload": payload,
+                    "sensitive": event.sensitive,
+                }
             )
-        game.drain_events()
+            if event.seq > high:
+                high = event.seq
+        if rows:
+            bind = session.get_bind()
+            dialect_name = bind.dialect.name
+            if dialect_name == "sqlite":
+                from sqlalchemy.dialects.sqlite import insert as dialect_insert
+            else:
+                from sqlalchemy.dialects.postgresql import insert as dialect_insert
+            stmt = (
+                dialect_insert(GameEventRow)
+                .values(rows)
+                .on_conflict_do_nothing(index_elements=["game_id", "seq"])
+            )
+            await session.execute(stmt)
+        game._persist_high_seq = high
+        # Drain only after the caller's successful commit via finalize_persist.
         await self.persist_inputs(session, game)
 
     async def read_trail(self, session: AsyncSession, user: User, game_id: UUID) -> dict:

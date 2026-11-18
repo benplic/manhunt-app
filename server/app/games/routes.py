@@ -221,8 +221,7 @@ def bind_game_routes(get_session, current_user, service: GameService):
         # not have written reveal / bounds / signal-loss rows yet.
         live = service.manager.get(game_id)
         if live is not None:
-            await service.persist_game(session, live)
-            await session.commit()
+            await service.persist_game(session, live, commit=True)
         from sqlalchemy import select as sel
 
         from app.db.models import GameEventRow
