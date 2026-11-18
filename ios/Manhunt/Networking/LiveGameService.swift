@@ -17,10 +17,9 @@ final class LiveGameService: GameService {
     var onQR: ((String) -> Void)?
     var onEvent: ((BannerDTO) -> Void)?
     var onReconnect: ((Bool) -> Void)?
-    /// Fired when the server removes this player (`type: removed`). Kick lane wires the socket.
+    /// Fired when the server removes this player (`type: removed` or close 4403).
     var onRemoved: (() -> Void)?
     var onUWBPeers: (([UWBPeer]) -> Void)?
-    var onRemoved: (() -> Void)?
     var onSendFailure: ((String) -> Void)? {
         get { socket.onSendFailure }
         set { socket.onSendFailure = newValue }
