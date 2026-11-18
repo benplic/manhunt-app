@@ -190,6 +190,9 @@ class BotDriver:
                 if not _in_play(pt, arena):
                     pt = center
             session.set_synthetic_location(player.player_id, _reading(pt, session))
+            # Spawn lock needs two consecutive in-spawn fixes before the clock runs.
+            if player.role == "seeker" and spawn is not None:
+                session.set_synthetic_location(player.player_id, _reading(pt, session))
 
     @staticmethod
     def step(session: GameSession) -> None:

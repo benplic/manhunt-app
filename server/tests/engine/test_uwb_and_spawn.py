@@ -211,6 +211,7 @@ def test_seeker_inside_the_spawn_zone_is_not_locked_out() -> None:
     )
     session.state.arena = arena
     session.record_location(seeker, reading(meters(10, 10), clock))
+    session.record_location(seeker, reading(meters(10, 10), clock))
     run_for(session, clock, 1)
     assert not any(b.title == "Stay in spawn" for b in session.state.banners)
     from app.engine.views import build_view
