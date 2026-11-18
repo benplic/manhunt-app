@@ -92,26 +92,29 @@ struct HuntMap: View {
                 ForEach(zones.filter { $0.kind == .outOfBounds }) { zone in
                     zoneContent(zone)
                 }
-                ForEach(reveals) { reveal in
+                ForEach(visibleReveals) { reveal in
                     revealContent(reveal)
                 }
                 if emphasizeSpawn {
                     ForEach(zones.filter { $0.kind == .spawn }) { zone in
                         if let anchor = zone.points.first {
-                            Annotation("Locked spawn", coordinate: anchor.coordinate) {
+                            Annotation("", coordinate: anchor.coordinate) {
                                 Image(systemName: "lock.fill")
                                     .font(.caption.weight(.bold))
                                     .padding(6)
                                     .background(HuntColor.ink, in: Circle())
                                     .foregroundStyle(HuntColor.paper)
+                                    .accessibilityLabel("Locked spawn")
                             }
                         }
                     }
                 }
-                ForEach(people) { person in
+                ForEach(visiblePeople) { person in
                     if shouldShow(person) {
-                        Annotation(person.name, coordinate: displayPoint(for: person, now: now).coordinate, anchor: .bottom) {
+                        // Empty title: PlayerPin owns the visual; MapKit titles would double the name.
+                        Annotation("", coordinate: displayPoint(for: person, now: now).coordinate, anchor: .bottom) {
                             PlayerPin(person: person, fuzzy: fuzzyHiders && person.role == .hider && !person.isYou)
+                                .accessibilityLabel(person.name)
                         }
                     }
                 }
@@ -185,6 +188,26 @@ struct HuntMap: View {
         return person.isYou
     }
 
+    /// Prefer reveal pins for others; keep the local `isYou` pin once when both lists have them.
+    private var revealPlayerIDs: Set<String> {
+        Set(reveals.map(\.playerID))
+    }
+
+    private var youPlayerID: String? {
+        people.first(where: \.isYou)?.id
+    }
+
+    private var visiblePeople: [VisualPlayer] {
+        people.filter { person in
+            person.isYou || !revealPlayerIDs.contains(person.id)
+        }
+    }
+
+    private var visibleReveals: [MapReveal] {
+        guard let youPlayerID else { return reveals }
+        return reveals.filter { $0.playerID != youPlayerID }
+    }
+
     /// Fuzzy pins are offset so the picture reads as "approximate", not exact.
     private func displayPoint(for person: VisualPlayer, now: Date) -> VisualPoint {
         let base = glidePeople ? (glide.point(for: person.id, at: now) ?? person.point) : person.point
@@ -214,13 +237,15 @@ struct HuntMap: View {
         if !zone.name.isEmpty,
            zone.kind == .safe || zone.kind == .outOfBounds || zone.kind == .spawn,
            let anchor = zone.points.first {
-            Annotation(zone.name, coordinate: anchor.coordinate) {
+            // Empty title: Text below is the only label; MapKit titles would double it.
+            Annotation("", coordinate: anchor.coordinate) {
                 Text(zone.name)
                     .font(.caption2.weight(.bold))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(.black.opacity(0.72), in: Capsule())
                     .foregroundStyle(HuntColor.paper)
+                    .accessibilityLabel(zone.name)
             }
         }
     }
@@ -234,13 +259,15 @@ struct HuntMap: View {
                 .foregroundStyle(color.opacity(0.22))
                 .stroke(color, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
         }
-        Annotation(reveal.name, coordinate: reveal.center.coordinate, anchor: .bottom) {
+        // Empty title: RevealPin owns the visual; MapKit titles would double the name.
+        Annotation("", coordinate: reveal.center.coordinate, anchor: .bottom) {
             RevealPin(
                 name: reveal.name,
                 playerID: reveal.playerID,
                 color: color,
                 fuzzy: reveal.radiusMeters > 0
             )
+            .accessibilityLabel(reveal.name)
         }
     }
 
