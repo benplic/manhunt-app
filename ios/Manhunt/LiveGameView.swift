@@ -19,8 +19,16 @@ struct LiveGameView: View {
             seekerLock: snapshot?.seekerLock
         )
         let spawnZones = snapshot?.spawnLock?.zones.map { $0.asVisual() } ?? []
-        let known = Set(store.liveZones.map(\.id))
-        let zones = store.liveZones + spawnZones.filter { !known.contains($0.id) }
+        let liveZones = store.liveZones
+        // spawnLock can re-send seeker spawn with a different id; drop by id or geometry.
+        let zones = liveZones + spawnZones.filter { spawn in
+            !liveZones.contains { existing in
+                existing.id == spawn.id
+                    || (existing.kind == spawn.kind
+                        && existing.points == spawn.points
+                        && existing.radiusMeters == spawn.radiusMeters)
+            }
+        }
         return ZStack(alignment: .top) {
             HuntMap(
                 boundary: store.mapArena.boundary,
