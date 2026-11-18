@@ -261,6 +261,9 @@ def test_rescue_converts_tagged_seeker_and_grants_immunity() -> None:
     session.claim_tag(TagClaim(seeker, tagged, qr_token=token))
     assert session.state.players[tagged].role == "seeker"
     assert session.state.players[tagged].converted_from_hider is True
+    view = build_view(session, hider)
+    tagged_row = next(p for p in view["players"] if p["player_id"] == str(tagged))
+    assert tagged_row["converted_from_hider"] is True
 
     session.state.players[hider].points = 200
     session.purchase(hider, "rescue", target_player_id=str(tagged))

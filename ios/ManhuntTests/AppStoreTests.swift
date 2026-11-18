@@ -608,4 +608,65 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(store.note, "You were removed from the lobby.")
         XCTAssertNotEqual(store.situation, .reconnecting)
     }
+
+    @MainActor
+    func testRescueWithOneTargetPurchasesImmediately() async throws {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.randomizeRoles(seekerCount: 1)
+        _ = store.startMatch()
+        guard let gameID = store.match?.snapshot.gameId,
+              let youID = store.match?.snapshot.you.playerId
+        else {
+            return XCTFail("Expected a match")
+        }
+        _ = try fake.setRoleSync(gameID: gameID, playerID: youID, role: .hider)
+        var view = try fake.advanceToActive(gameID: gameID)
+        store.apply(view)
+        let other = store.match!.snapshot.players.first { $0.playerId != youID }!
+        view = try fake.markConvertedFromHider(gameID: gameID, playerID: other.playerId)
+        store.apply(view)
+        view = try fake.grantPoints(gameID: gameID, points: 200)
+        store.apply(view)
+        guard let chip = store.dockPowerChips().first(where: { $0.id == "rescue" }) else {
+            return XCTFail("Expected rescue chip")
+        }
+        store.buyPower(chip)
+        XCTAssertFalse(store.showRescuePicker)
+        let deadline = Date().addingTimeInterval(1)
+        while store.note?.contains("Rescue") != true, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(store.note?.contains("Rescue"), true)
+    }
+
+    @MainActor
+    func testMoveSafeBeginsMapPickForSingleCircleSafe() async throws {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.riversideSample().id, presetID: "classic")
+        store.randomizeRoles(seekerCount: 1)
+        _ = store.startMatch()
+        guard let gameID = store.match?.snapshot.gameId,
+              let youID = store.match?.snapshot.you.playerId
+        else {
+            return XCTFail("Expected a match")
+        }
+        _ = try fake.setRoleSync(gameID: gameID, playerID: youID, role: .seeker)
+        var view = try fake.advanceToActive(gameID: gameID)
+        store.apply(view)
+        view = try fake.grantPoints(gameID: gameID, points: 200)
+        store.apply(view)
+        XCTAssertFalse(store.movableSafeZones.isEmpty, "Riverside should expose a circle safe")
+        guard let chip = store.dockPowerChips().first(where: { $0.id == "move_safe" }) else {
+            return XCTFail("Expected move_safe chip")
+        }
+        store.buyPower(chip)
+        XCTAssertTrue(store.decoyPicking)
+        XCTAssertEqual(store.mapPickPowerID, "move_safe")
+        XCTAssertNotNil(store.moveSafeZoneId)
+    }
 }

@@ -33,6 +33,8 @@ def build_view(
                 "is_host": player.is_host,
                 "points": player.points,
                 "points_earned": player.points_earned,
+                # Hiders need this to pick a Rescue target; seekers gain nothing sensitive.
+                "converted_from_hider": bool(player.converted_from_hider),
                 "location": _visible_location(state, viewer, player),
             }
         )

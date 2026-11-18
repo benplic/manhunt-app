@@ -3,7 +3,9 @@ services:
     image: postgres:16
     environment:
       POSTGRES_USER: manhunt
-      POSTGRES_PASSWORD: manhunt
+      # .env supplies this for the home server. The default keeps
+      # `docker compose --profile test` working when POSTGRES_PASSWORD is unset.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-manhunt}
       POSTGRES_DB: manhunt
     ports:
       # Loopback only. The published password used to be reachable on every
@@ -53,7 +55,7 @@ services:
     environment:
       MANHUNT_ENV: test
       MANHUNT_DEV_AUTH: "true"
-      MANHUNT_DATABASE_URL: postgresql+psycopg://manhunt:manhunt@db:5432/manhunt
+      MANHUNT_DATABASE_URL: postgresql+psycopg://manhunt:${POSTGRES_PASSWORD:-manhunt}@db:5432/manhunt
       MANHUNT_SESSION_SIGNING_KEY: test-session-signing-key-change-me
       MANHUNT_QR_SIGNING_KEY: test-qr-signing-key-change-me
       MANHUNT_TICK_LOOP: "false"

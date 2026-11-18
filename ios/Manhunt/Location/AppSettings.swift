@@ -16,9 +16,11 @@ enum AppSettings {
     }
 
     @MainActor
-    static func open(_ application: UIApplication = .shared) {
+    static func open() {
         guard let url else { return }
-        application.open(url)
+        // Read .shared inside the method. A default argument is nonisolated and
+        // cannot touch the main-actor UIApplication.
+        UIApplication.shared.open(url)
     }
 
     static func pingSoundEnabled(defaults: UserDefaults = .standard) -> Bool {

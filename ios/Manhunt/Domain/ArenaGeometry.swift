@@ -127,8 +127,7 @@ enum ArenaGeometry {
 
     private static func distanceToSegment(_ p: GeoPoint, _ a: GeoPoint, _ b: GeoPoint) -> Double {
         let lat0 = a.latitude * .pi / 180
-        let ax = 0.0
-        let ay = 0.0
+        // Segment start is the local origin, so only the end and the test point are projected.
         let bx = (b.longitude - a.longitude) * metersPerDegree * cos(lat0)
         let by = (b.latitude - a.latitude) * metersPerDegree
         let px = (p.longitude - a.longitude) * metersPerDegree * cos(lat0)

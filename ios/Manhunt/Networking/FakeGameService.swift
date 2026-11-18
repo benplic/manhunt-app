@@ -556,6 +556,26 @@ final class FakeGameService: GameService {
         return game.view()
     }
 
+    /// Test helper: mark a player as a convert-tag seeker for Rescue picker coverage.
+    func markConvertedFromHider(gameID: UUID, playerID: UUID) throws -> PlayerViewDTO {
+        try mutate(gameID) { game in
+            guard let index = game.players.firstIndex(where: { $0.id == playerID }) else { return }
+            game.players[index].role = .seeker
+            game.players[index].convertedFromHider = true
+        }
+    }
+
+    /// Test helper: give the signed-in player enough points for expensive power-ups.
+    func grantPoints(gameID: UUID, points: Int) throws -> PlayerViewDTO {
+        try mutate(gameID) { game in
+            guard let youID = signedIn?.id,
+                  let index = game.players.firstIndex(where: { $0.id == youID })
+            else { return }
+            game.players[index].points = points
+            game.players[index].pointsEarned = max(game.players[index].pointsEarned, points)
+        }
+    }
+
     private func mutate(_ gameID: UUID, _ body: (inout FakeGame) -> Void) throws -> PlayerViewDTO {
         guard var game = games[gameID] else { throw ServiceError(code: .gameNotFound, message: "") }
         body(&game)
@@ -574,6 +594,8 @@ private struct FakePlayer {
     var status: PlayerStatus = .active
     var points: Int = 0
     var pointsEarned: Int = 0
+    /// Mirrors server `converted_from_hider` for Rescue picker tests.
+    var convertedFromHider = false
 }
 
 private struct FakeGame {
@@ -659,6 +681,7 @@ private struct FakeGame {
                     isHost: $0.isHost,
                     points: $0.points,
                     pointsEarned: $0.pointsEarned,
+                    convertedFromHider: $0.convertedFromHider,
                     location: nil
                 )
             },

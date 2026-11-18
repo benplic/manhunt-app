@@ -191,6 +191,30 @@ struct LiveGameView: View {
             Button("Leave", role: .destructive, action: store.goHome)
             Button("Cancel", role: .cancel) {}
         }
+        .confirmationDialog(
+            "Rescue whom?",
+            isPresented: $store.showRescuePicker,
+            titleVisibility: .visible
+        ) {
+            ForEach(store.rescueablePlayers) { player in
+                Button(player.displayName) {
+                    store.confirmRescue(playerID: player.playerId.uuidString)
+                }
+            }
+            Button("Cancel", role: .cancel, action: store.cancelRescuePicker)
+        }
+        .confirmationDialog(
+            "Move which safe zone?",
+            isPresented: $store.showMoveSafePicker,
+            titleVisibility: .visible
+        ) {
+            ForEach(store.movableSafeZones) { zone in
+                Button(zone.name.isEmpty ? "Safe zone" : zone.name) {
+                    store.beginMoveSafe(zoneID: zone.id)
+                }
+            }
+            Button("Cancel", role: .cancel, action: store.cancelMoveSafePicker)
+        }
         .onChange(of: store.situation) { _, situation in
             if situation == .outOfBounds {
                 UINotificationFeedbackGenerator().notificationOccurred(.warning)

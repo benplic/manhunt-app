@@ -65,10 +65,16 @@ final class AppStore {
     var seekerCount = 1
     var editor = ArenaEditorModel()
     var situation: LiveSituation = .active
-    /// Map-target purchase step (decoy / create_safe): pan and drop before POST.
+    /// Map-target purchase step (decoy / create_safe / move_safe): pan and drop before POST.
     var decoyPicking = false
-    /// Which power-up opened `decoyPicking` (`decoy` or `create_safe`).
+    /// Which power-up opened `decoyPicking` (`decoy`, `create_safe`, or `move_safe`).
     var mapPickPowerID: String?
+    /// Zone chosen for `move_safe` before the map drop.
+    var moveSafeZoneId: String?
+    /// Shows the Rescue target chooser (tagged seekers with `convertedFromHider`).
+    var showRescuePicker = false
+    /// Shows the Move-safe zone chooser when more than one circle safe exists.
+    var showMoveSafePicker = false
     /// Demo walk target picker: pan the map and drop a destination for `move_me`.
     var demoPicking = false
     var tool: ArenaTool = .playArea
@@ -598,6 +604,9 @@ final class AppStore {
     func signOut() {
         turnOffFlashlight()
         decoyPicking = false
+        moveSafeZoneId = nil
+        showRescuePicker = false
+        showMoveSafePicker = false
         mapPickPowerID = nil
         demoPicking = false
         stopUWB()
@@ -629,6 +638,9 @@ final class AppStore {
         let gameID = match?.snapshot.gameId
         turnOffFlashlight()
         decoyPicking = false
+        moveSafeZoneId = nil
+        showRescuePicker = false
+        showMoveSafePicker = false
         mapPickPowerID = nil
         demoPicking = false
         stopUWB()
@@ -1230,7 +1242,7 @@ final class AppStore {
         if isSavingArena { return }
         let trimmed = editor.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = trimmed.isEmpty ? "New arena" : trimmed
-        var prepared = editor.preparedForSave()
+        let prepared = editor.preparedForSave()
         if !prepared.blocking.isEmpty {
             let text = issueCopy(prepared.blocking[0])
             editor.notice = text
@@ -1410,19 +1422,38 @@ final class AppStore {
         }
         guard PowerUpRules.chipIsTappable(request) else { return }
         if chip.id == "decoy" || chip.id == "create_safe" {
-            demoPicking = false
-            decoyPicking = true
-            mapPickPowerID = chip.id
+            beginMapPick(powerID: chip.id)
             note = chip.id == "decoy"
                 ? "Pan the map, then drop a decoy inside the play area."
                 : "Pan the map, then drop a safe zone inside the play area."
             return
         }
-        // TODO: rescue needs a tagged-seeker picker; move_safe needs zone + map point UI.
-        if chip.id == "rescue" || chip.id == "move_safe" {
-            note = chip.id == "rescue"
-                ? "Pick a tagged seeker to rescue."
-                : "Pick a safe zone, then a new spot on the map."
+        if chip.id == "rescue" {
+            let targets = rescueablePlayers
+            if targets.isEmpty {
+                note = "No tagged seekers to rescue."
+                return
+            }
+            if targets.count == 1 {
+                confirmRescue(playerID: targets[0].playerId.uuidString)
+                return
+            }
+            showRescuePicker = true
+            note = "Pick a tagged seeker to rescue."
+            return
+        }
+        if chip.id == "move_safe" {
+            let zones = movableSafeZones
+            if zones.isEmpty {
+                note = "No circle safe zones to move."
+                return
+            }
+            if zones.count == 1 {
+                beginMoveSafe(zoneID: zones[0].id)
+                return
+            }
+            showMoveSafePicker = true
+            note = "Pick a safe zone, then a new spot on the map."
             return
         }
         guard decision == .allowed else {
@@ -1432,9 +1463,61 @@ final class AppStore {
         submitPurchase(chip, extra: [:])
     }
 
+    /// Seekers who were converted from hiders and can be rescued.
+    var rescueablePlayers: [PlayerDTO] {
+        guard let match else { return [] }
+        return match.snapshot.players.filter {
+            $0.role == .seeker && $0.status == .active && $0.convertedFromHider
+        }
+    }
+
+    /// Circle safe zones the seeker can relocate with Move safe.
+    var movableSafeZones: [VisualZone] {
+        liveZones.filter { $0.kind == .safe && $0.radiusMeters != nil }
+    }
+
+    func confirmRescue(playerID: String) {
+        showRescuePicker = false
+        guard let chip = dockPowerChips().first(where: { $0.id == "rescue" }) else { return }
+        let decision = powerChipDecision(for: chip, hasTarget: true)
+        guard decision == .allowed else {
+            note = denialNote(for: decision)
+            return
+        }
+        submitPurchase(chip, extra: [:], targetPlayerId: playerID)
+    }
+
+    func beginMoveSafe(zoneID: String) {
+        showMoveSafePicker = false
+        moveSafeZoneId = zoneID
+        beginMapPick(powerID: "move_safe")
+        let name = movableSafeZones.first(where: { $0.id == zoneID })?.name ?? "safe zone"
+        note = "Pan the map, then drop a new spot for \(name)."
+    }
+
+    func cancelRescuePicker() {
+        showRescuePicker = false
+        if note == "Pick a tagged seeker to rescue." { note = nil }
+    }
+
+    func cancelMoveSafePicker() {
+        showMoveSafePicker = false
+        moveSafeZoneId = nil
+        if note == "Pick a safe zone, then a new spot on the map." { note = nil }
+    }
+
+    private func beginMapPick(powerID: String) {
+        demoPicking = false
+        showRescuePicker = false
+        showMoveSafePicker = false
+        decoyPicking = true
+        mapPickPowerID = powerID
+    }
+
     func cancelDecoyPick() {
         decoyPicking = false
         mapPickPowerID = nil
+        moveSafeZoneId = nil
         note = nil
     }
 
@@ -1453,6 +1536,19 @@ final class AppStore {
         )
         guard decision == .allowed else {
             note = denialNote(for: decision)
+            return
+        }
+        if powerID == "move_safe" {
+            guard let zoneId = moveSafeZoneId else {
+                note = "Pick a safe zone first."
+                return
+            }
+            submitPurchase(
+                chip,
+                extra: ["lat": point.latitude, "lon": point.longitude],
+                clearingDecoyPick: true,
+                zoneId: zoneId
+            )
             return
         }
         submitPurchase(chip, extra: ["lat": point.latitude, "lon": point.longitude], clearingDecoyPick: true)
@@ -1488,6 +1584,7 @@ final class AppStore {
                 if clearingDecoyPick {
                     decoyPicking = false
                     mapPickPowerID = nil
+                    moveSafeZoneId = nil
                 }
                 note = "\(chip.title) armed. \(chip.detail)."
             } catch let error as ServiceError {
@@ -1637,6 +1734,9 @@ final class AppStore {
             pingPulse = nil
             turnOffFlashlight()
             decoyPicking = false
+            moveSafeZoneId = nil
+            showRescuePicker = false
+            showMoveSafePicker = false
             mapPickPowerID = nil
             demoPicking = false
             location.stop()
@@ -1768,6 +1868,9 @@ final class AppStore {
 
     func beginDemoMovePick() {
         decoyPicking = false
+        moveSafeZoneId = nil
+        showRescuePicker = false
+        showMoveSafePicker = false
         mapPickPowerID = nil
         demoPicking = true
         note = "Pan the map, then drop where you want to walk."
@@ -1838,6 +1941,9 @@ final class AppStore {
         clearConnectionHiccup(restoreSituation: true)
         turnOffFlashlight()
         decoyPicking = false
+        moveSafeZoneId = nil
+        showRescuePicker = false
+        showMoveSafePicker = false
         mapPickPowerID = nil
         demoPicking = false
         stopUWB()
