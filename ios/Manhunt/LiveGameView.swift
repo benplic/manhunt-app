@@ -8,6 +8,7 @@ struct LiveGameView: View {
     @State private var showBoard = false
     @State private var showLog = false
     @State private var showDemo = false
+    @State private var confirmLeave = false
 
     var body: some View {
         @Bindable var store = store
@@ -19,8 +20,14 @@ struct LiveGameView: View {
             seekerLock: snapshot?.seekerLock
         )
         let spawnZones = snapshot?.spawnLock?.zones.map { $0.asVisual() } ?? []
-        let known = Set(store.liveZones.map(\.id))
-        let zones = store.liveZones + spawnZones.filter { !known.contains($0.id) }
+        let emphasizeSpawn = chrome == .spawnZone
+        let zones = LiveMapZones.visible(
+            liveZones: store.liveZones,
+            spawnZones: spawnZones,
+            phase: snapshot?.phase ?? .active,
+            emphasizeSpawn: emphasizeSpawn
+        )
+        let lockdownActive = snapshot?.you.effects?.contains("lockdown") == true
         return ZStack(alignment: .top) {
             HuntMap(
                 boundary: store.mapArena.boundary,
@@ -37,9 +44,10 @@ struct LiveGameView: View {
                 onDrop: store.decoyPicking
                     ? { store.dropDecoy(at: $0) }
                     : (store.demoPicking ? { store.dropDemoMove(at: $0) } : nil),
-                emphasizeSpawn: chrome == .spawnZone,
+                emphasizeSpawn: emphasizeSpawn,
                 glidePeople: true,
-                zoneShrink: store.zoneShrinkClock
+                zoneShrink: store.zoneShrinkClock,
+                lockdownActive: lockdownActive
             )
             .ignoresSafeArea()
 
@@ -121,7 +129,11 @@ struct LiveGameView: View {
                 if !store.decoyPicking && !store.demoPicking {
                     LiveControls(
                         flashlightOn: store.flashlightOn,
+                        pingSoundEnabled: store.pingSoundEnabled,
+                        pingFlashlightEnabled: store.pingFlashlightEnabled,
                         onToggleFlashlight: store.toggleFlashlight,
+                        onTogglePingSound: store.setPingSoundEnabled,
+                        onTogglePingFlashlight: store.setPingFlashlightEnabled,
                         onTapSpeaker: store.tapVoicePlaceholder,
                         onTapMic: store.tapVoicePlaceholder
                     )
@@ -175,6 +187,34 @@ struct LiveGameView: View {
             Button("End game", role: .destructive, action: store.endLive)
             Button("Cancel", role: .cancel) {}
         }
+        .alert("Leave this hunt?", isPresented: $confirmLeave) {
+            Button("Leave", role: .destructive, action: store.goHome)
+            Button("Cancel", role: .cancel) {}
+        }
+        .confirmationDialog(
+            "Rescue whom?",
+            isPresented: $store.showRescuePicker,
+            titleVisibility: .visible
+        ) {
+            ForEach(store.rescueablePlayers) { player in
+                Button(player.displayName) {
+                    store.confirmRescue(playerID: player.playerId.uuidString)
+                }
+            }
+            Button("Cancel", role: .cancel, action: store.cancelRescuePicker)
+        }
+        .confirmationDialog(
+            "Move which safe zone?",
+            isPresented: $store.showMoveSafePicker,
+            titleVisibility: .visible
+        ) {
+            ForEach(store.movableSafeZones) { zone in
+                Button(zone.name.isEmpty ? "Safe zone" : zone.name) {
+                    store.beginMoveSafe(zoneID: zone.id)
+                }
+            }
+            Button("Cancel", role: .cancel, action: store.cancelMoveSafePicker)
+        }
         .onChange(of: store.situation) { _, situation in
             if situation == .outOfBounds {
                 UINotificationFeedbackGenerator().notificationOccurred(.warning)
@@ -187,7 +227,7 @@ struct LiveGameView: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                mapIconChip(systemName: "house.fill", label: "Home", action: store.goHome)
+                mapIconChip(systemName: "house.fill", label: "Home") { confirmLeave = true }
                 mapIconChip(systemName: "trophy.fill", label: "Leaderboard") { showBoard = true }
                 mapIconChip(systemName: "book.closed.fill", label: "Event log") {
                     showLog = true
@@ -333,14 +373,19 @@ struct LiveGameView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(store.dockPowerChips()) { chip in
-                        let enabled = store.chipIsTappable(chip)
+                        let request = store.purchaseRequest(for: chip)
+                        let enabled = request.map(PowerUpRules.chipIsTappable) ?? false
+                        let explainDenied = request.map(PowerUpRules.chipShowsDenialOnTap) ?? false
                         let cooling = store.match?.snapshot.you.cooldowns?[chip.id] ?? 0
                         Button {
                             store.buyPower(chip)
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(chip.title)
-                                    .font(.subheadline.weight(.semibold))
+                                HStack(spacing: 4) {
+                                    Image(systemName: chip.systemImage)
+                                    Text(chip.title)
+                                        .font(.subheadline.weight(.semibold))
+                                }
                                 Text(cooling > 0 ? "\(cooling)s" : "\(chip.cost) pts")
                                     .font(.caption2)
                             }
@@ -354,7 +399,8 @@ struct LiveGameView: View {
                             .animation(.easeOut(duration: 0.2), value: enabled)
                         }
                         .buttonStyle(.huntPress(.medium))
-                        .disabled(!enabled)
+                        .disabled(!enabled && !explainDenied)
+                        .accessibilityLabel(chip.title)
                     }
                 }
             }

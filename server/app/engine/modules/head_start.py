@@ -7,10 +7,12 @@ from app.engine.arena import ZoneKind
 from app.engine.geo import ACCURACY_CUTOFF_M
 from app.engine.modules.base import BaseModule
 from app.engine.modules.zone_policy import _covered_by_out_zone, _in_zone
-from app.engine.state import Banner, PlayerState
+from app.engine.state import Banner, LocationReading, PlayerState
 
 if TYPE_CHECKING:
     from app.engine.session import GameSession
+
+_SPAWN_STREAK_REQUIRED = 2
 
 
 class HeadStartModule(BaseModule):
@@ -31,6 +33,22 @@ class HeadStartModule(BaseModule):
         else:
             s.state.phase = "active"
             s.state.phase_remaining_s = None
+
+    def on_location(self, s: GameSession, p: PlayerState, r: LocationReading) -> None:
+        # Count lobby fixes too so seekers who confirm in spawn before start are ready.
+        if s.state.phase not in {"lobby", "head_start"}:
+            return
+        if self.settings.get("seeker_lock") != "spawn_zone":
+            return
+        if p.role != "seeker" or p.status != "active":
+            return
+        spawns = [z for z in s.state.arena.zones if z.kind == ZoneKind.SEEKER_SPAWN]
+        if not spawns:
+            return
+        if _raw_seeker_in_spawn(p, spawns, s.state.arena.zones):
+            p.spawn_in_streak += 1
+        else:
+            p.spawn_in_streak = 0
 
     def on_tick(self, s: GameSession) -> None:
         if s.state.phase != "head_start":
@@ -77,9 +95,10 @@ class HeadStartModule(BaseModule):
 def spawn_clock_held(s: GameSession) -> bool:
     """True while the head-start countdown must not run.
 
-    Spawn lock waits until every active seeker has a precise fix inside a
-    spawn zone. An out zone on that same ground does not count. Leaving
-    pauses the clock. Locked-map head start, and a map with no spawn, run now.
+    Spawn lock waits until every active seeker has two consecutive precise
+    fixes inside a spawn zone. An out zone on that same ground does not
+    count. Leaving pauses the clock. Locked-map head start, and a map with
+    no spawn, run now.
     """
     if s.state.phase != "head_start":
         return False
@@ -98,7 +117,7 @@ def spawn_clock_held(s: GameSession) -> bool:
     return any(not _seeker_in_spawn(player, spawns, s.state.arena.zones) for player in seekers)
 
 
-def _seeker_in_spawn(player: PlayerState, spawns: list, zones: list) -> bool:
+def _raw_seeker_in_spawn(player: PlayerState, spawns: list, zones: list) -> bool:
     reading = player.location
     if reading is None or reading.accuracy_m > ACCURACY_CUTOFF_M:
         return False
@@ -107,3 +126,9 @@ def _seeker_in_spawn(player: PlayerState, spawns: list, zones: list) -> bool:
     if _covered_by_out_zone(point, zones):
         return False
     return any(_in_zone(point, zone) for zone in spawns)
+
+
+def _seeker_in_spawn(player: PlayerState, spawns: list, zones: list) -> bool:
+    if player.spawn_in_streak < _SPAWN_STREAK_REQUIRED:
+        return False
+    return _raw_seeker_in_spawn(player, spawns, zones)

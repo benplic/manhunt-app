@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -54,10 +54,12 @@ def bind_game_routes(get_session, current_user, service: GameService):
     @router.post("/games/join")
     async def join_game(
         body: JoinIn,
+        request: Request,
         session: AsyncSession = Depends(get_session),
         user=Depends(current_user),
     ) -> dict:
-        row = await service.join(session, user, body.join_code)
+        client_ip = request.client.host if request.client else None
+        row = await service.join(session, user, body.join_code, client_ip=client_ip)
         return {"id": str(row.id), "join_code": row.join_code, "status": row.status}
 
     @router.get("/games/{game_id}")
@@ -111,15 +113,21 @@ def bind_game_routes(get_session, current_user, service: GameService):
     ) -> dict:
         return _view(service, await service.end(session, user, game_id), user.id)
 
+    @router.post("/games/{game_id}/rematch")
+    async def rematch(
+        game_id: UUID,
+        session: AsyncSession = Depends(get_session),
+        user=Depends(current_user),
+    ) -> dict:
+        return _view(service, await service.rematch(session, user, game_id), user.id)
+
     @router.post("/games/{game_id}/leave")
     async def leave(
         game_id: UUID,
         session: AsyncSession = Depends(get_session),
         user=Depends(current_user),
     ) -> dict:
-        row, member = await service.require_member(session, game_id, user)
-        await session.delete(member)
-        await session.commit()
+        row = await service.leave(session, user, game_id)
         return {"ok": True, "game_id": str(row.id)}
 
     @router.post("/games/{game_id}/tags/qr")
@@ -221,8 +229,7 @@ def bind_game_routes(get_session, current_user, service: GameService):
         # not have written reveal / bounds / signal-loss rows yet.
         live = service.manager.get(game_id)
         if live is not None:
-            await service.persist_game(session, live)
-            await session.commit()
+            await service.persist_game(session, live, commit=True)
         from sqlalchemy import select as sel
 
         from app.db.models import GameEventRow

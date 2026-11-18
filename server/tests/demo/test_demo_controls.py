@@ -155,19 +155,19 @@ def test_demo_view_and_all_host_actions(client: TestClient) -> None:
     assert moved.status_code == 200
     assert moved.json()["demo"]["virtual_location"] is not None
 
-    # Switch to hider so at least 2 active hiders exist, then force_tag leaves >= 1 active.
-    if switched.json()["you"]["role"] != "hider":
-        as_hider = client.post(
-            f"/v1/games/{gid}/demo",
-            headers=_hdr(host),
-            json={"action": "switch_team", "role": "hider"},
-        )
-        assert as_hider.status_code == 200
-
+    # Keep host as seeker (set above for reveals). Tag an explicit active hider so
+    # we never depend on random sole-seeker assignment or a stale switch_team body.
+    before_tag = client.get(f"/v1/games/{gid}", headers=_hdr(host)).json()
+    assert before_tag["you"]["role"] == "seeker"
+    hider_target = next(
+        p
+        for p in before_tag["players"]
+        if p["role"] == "hider" and p["status"] == "active"
+    )
     tagged = client.post(
         f"/v1/games/{gid}/demo",
         headers=_hdr(host),
-        json={"action": "force_tag"},
+        json={"action": "force_tag", "hider_id": hider_target["player_id"]},
     )
     assert tagged.status_code == 200
     assert tagged.json()["phase"] == "active"

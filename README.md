@@ -93,6 +93,14 @@ cd ios && xcodebuild test -project Manhunt.xcodeproj -scheme Manhunt -destinatio
 
 On GitHub Actions macOS runners, CI picks an available iPhone 16 Pro simulator automatically (see `.github/workflows/ci.yml`).
 
+## Horizon
+
+Plans only — not in the MVP build:
+
+- **Capture the flag** — objective / flag-based park mode
+- **Senior assassin** — longer-cycle elimination among a cohort
+- **Persistent** — friends-at-college intermittent location pings; denser pings and clues near frequent places (e.g. a favorite coffee shop)
+
 ## License
 
 [MIT](LICENSE)

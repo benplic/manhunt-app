@@ -8,7 +8,11 @@ final class FakeGameService: GameService {
     private(set) var lastDeviceToken: String?
     private(set) var appleSignIns = 0
     private(set) var refreshCalls = 0
+    private(set) var signInCalls = 0
+    private(set) var lastSignInDisplayName: String?
     private var signedIn: UserDTO?
+
+    var currentUser: UserDTO? { signedIn }
     private(set) var storedArenas: [Arena]
     private var games: [UUID: FakeGame] = [:]
     private var presetsSaved: [SavedPresetDTO] = []
@@ -36,7 +40,7 @@ final class FakeGameService: GameService {
 
     func signIn(displayName: String, installationId: String) async throws -> AuthOut {
         _ = installationId
-        signInSync(displayName)
+        return signInSync(displayName)
     }
 
     func signInWithApple(identityToken: String, displayName: String?) async throws -> AuthOut {
@@ -55,6 +59,8 @@ final class FakeGameService: GameService {
 
     @discardableResult
     func signInSync(_ displayName: String) -> AuthOut {
+        signInCalls += 1
+        lastSignInDisplayName = displayName
         let user = UserDTO(id: signedIn?.id ?? UUID(), displayName: displayName)
         signedIn = user
         issuedRefresh = "fake-refresh-\(user.id.uuidString.prefix(8))"
@@ -64,6 +70,13 @@ final class FakeGameService: GameService {
             user: user,
             refreshToken: issuedRefresh
         )
+    }
+
+    func me() async throws -> UserDTO {
+        guard let signedIn else {
+            throw ServiceError(code: .unauthorized, message: "Not signed in.")
+        }
+        return signedIn
     }
 
     func refresh(refreshToken: String) async throws -> AuthOut {
@@ -219,6 +232,36 @@ final class FakeGameService: GameService {
         try mutate(gameID) { $0.phase = .ended }
     }
 
+    func rematch(gameID: UUID) async throws -> PlayerViewDTO {
+        try rematchSync(gameID: gameID)
+    }
+
+    func rematchSync(gameID: UUID) throws -> PlayerViewDTO {
+        guard let old = games[gameID] else {
+            throw ServiceError(code: .gameNotFound, message: "Game not found.")
+        }
+        guard old.youAreHost else {
+            throw ServiceError(code: .notHost, message: "Only the host can do that.")
+        }
+        guard old.phase == .ended else {
+            throw ServiceError(code: .wrongPhase, message: "Rematch is only available after the hunt ends.")
+        }
+        let you = signedIn
+        let hostID = you?.id ?? old.players.first(where: \.isHost)?.id ?? UUID()
+        let hostName = you?.displayName ?? old.players.first(where: \.isHost)?.name ?? "You"
+        let id = UUID()
+        let game = FakeGame(
+            id: id,
+            joinCode: JoinCode.generate(using: &rng),
+            youAreHost: true,
+            players: [
+                FakePlayer(id: hostID, name: hostName, role: .unassigned, isHost: true),
+            ]
+        )
+        games[id] = game
+        return game.view()
+    }
+
     /// Test helper: jump past head start so power-ups / taunt can fire.
     func advanceToActive(gameID: UUID) throws -> PlayerViewDTO {
         try mutate(gameID) { $0.phase = .active }
@@ -336,17 +379,29 @@ final class FakeGameService: GameService {
         presetsSaved
     }
 
-    func purchase(gameID: UUID, powerID: String, extra: [String: Double]) async throws -> PlayerViewDTO {
+    func purchase(
+        gameID: UUID,
+        powerID: String,
+        extra: [String: Double],
+        targetPlayerId: String?,
+        zoneId: String?
+    ) async throws -> PlayerViewDTO {
         guard let game = games[gameID] else { throw ServiceError(code: .gameNotFound, message: "") }
         // Mirror the server play-area gate so decoy UI tests can assert TARGET_OUTSIDE.
-        if powerID == "decoy" {
+        if powerID == "decoy" || powerID == "create_safe" || powerID == "move_safe" {
             guard let lat = extra["lat"], let lon = extra["lon"] else {
-                throw ServiceError(code: .needsTarget, message: "Decoy needs a point.")
+                throw ServiceError(code: .needsTarget, message: "Needs a map point.")
+            }
+            if powerID == "move_safe", zoneId == nil {
+                throw ServiceError(code: .needsTarget, message: "Move safe needs a zone.")
             }
             let point = GeoPoint(latitude: lat, longitude: lon)
             if !ArenaGeometry.contains(point, in: Arena.sampleSquare().boundary) {
                 throw ServiceError(code: .targetOutside, message: "Outside play area.")
             }
+        }
+        if powerID == "rescue", targetPlayerId == nil {
+            throw ServiceError(code: .needsTarget, message: "Rescue needs a player.")
         }
         return game.view()
     }
@@ -501,6 +556,26 @@ final class FakeGameService: GameService {
         return game.view()
     }
 
+    /// Test helper: mark a player as a convert-tag seeker for Rescue picker coverage.
+    func markConvertedFromHider(gameID: UUID, playerID: UUID) throws -> PlayerViewDTO {
+        try mutate(gameID) { game in
+            guard let index = game.players.firstIndex(where: { $0.id == playerID }) else { return }
+            game.players[index].role = .seeker
+            game.players[index].convertedFromHider = true
+        }
+    }
+
+    /// Test helper: give the signed-in player enough points for expensive power-ups.
+    func grantPoints(gameID: UUID, points: Int) throws -> PlayerViewDTO {
+        try mutate(gameID) { game in
+            guard let youID = signedIn?.id,
+                  let index = game.players.firstIndex(where: { $0.id == youID })
+            else { return }
+            game.players[index].points = points
+            game.players[index].pointsEarned = max(game.players[index].pointsEarned, points)
+        }
+    }
+
     private func mutate(_ gameID: UUID, _ body: (inout FakeGame) -> Void) throws -> PlayerViewDTO {
         guard var game = games[gameID] else { throw ServiceError(code: .gameNotFound, message: "") }
         body(&game)
@@ -519,6 +594,8 @@ private struct FakePlayer {
     var status: PlayerStatus = .active
     var points: Int = 0
     var pointsEarned: Int = 0
+    /// Mirrors server `converted_from_hider` for Rescue picker tests.
+    var convertedFromHider = false
 }
 
 private struct FakeGame {
@@ -604,6 +681,7 @@ private struct FakeGame {
                     isHost: $0.isHost,
                     points: $0.points,
                     pointsEarned: $0.pointsEarned,
+                    convertedFromHider: $0.convertedFromHider,
                     location: nil
                 )
             },

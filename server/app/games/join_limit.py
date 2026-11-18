@@ -18,6 +18,13 @@ JOIN_LIMIT = 10
 JOIN_WINDOW_S = 60.0
 
 
+# A new dev-auth install is a new user id, so the per-user cap alone does not
+# hold. The IP cap is the backstop. It is higher than the per-user cap so a
+# few phones behind one NAT can still miss a code.
+JOIN_IP_LIMIT = 40
+DEV_AUTH_IP_LIMIT = 30
+
+
 class JoinRateLimiter:
     """In-memory sliding window. One process, one event loop, so no lock."""
 
@@ -25,23 +32,60 @@ class JoinRateLimiter:
         self,
         *,
         limit: int = JOIN_LIMIT,
+        ip_limit: int = JOIN_IP_LIMIT,
+        window_s: float = JOIN_WINDOW_S,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.limit = limit
+        self.ip_limit = ip_limit
+        self.window_s = window_s
+        self.clock = clock
+        self._hits: dict[UUID, list[float]] = defaultdict(list)
+        self._ip_hits: dict[str, list[float]] = defaultdict(list)
+
+    def hit(self, user_id: UUID, client_ip: str | None = None) -> None:
+        self._charge(self._hits, user_id, self.limit, f"user_id={user_id}")
+        if client_ip:
+            self._charge(self._ip_hits, client_ip, self.ip_limit, f"ip={client_ip}")
+
+    def _charge(self, store: dict, key, limit: int, label: str) -> None:
+        now = self.clock()
+        recent = [stamp for stamp in store[key] if now - stamp < self.window_s]
+        recent.append(now)
+        store[key] = recent
+        if len(recent) > limit:
+            log.warning("join_rate_limited %s", label)
+            raise ApiError(
+                ErrorCode.RATE_LIMITED,
+                "Too many join attempts. Wait a minute and try again.",
+                status_code=429,
+            )
+
+
+class DevAuthRateLimiter:
+    """Caps POST /v1/auth/dev per client address."""
+
+    def __init__(
+        self,
+        *,
+        limit: int = DEV_AUTH_IP_LIMIT,
         window_s: float = JOIN_WINDOW_S,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.limit = limit
         self.window_s = window_s
         self.clock = clock
-        self._hits: dict[UUID, list[float]] = defaultdict(list)
+        self._hits: dict[str, list[float]] = defaultdict(list)
 
-    def hit(self, user_id: UUID) -> None:
+    def hit(self, client_ip: str) -> None:
         now = self.clock()
-        recent = [stamp for stamp in self._hits[user_id] if now - stamp < self.window_s]
+        recent = [stamp for stamp in self._hits[client_ip] if now - stamp < self.window_s]
         recent.append(now)
-        self._hits[user_id] = recent
+        self._hits[client_ip] = recent
         if len(recent) > self.limit:
-            log.warning("join_rate_limited user_id=%s", user_id)
+            log.warning("dev_auth_rate_limited ip=%s", client_ip)
             raise ApiError(
                 ErrorCode.RATE_LIMITED,
-                "Too many join attempts. Wait a minute and try again.",
+                "Too many sign-in attempts. Wait a minute and try again.",
                 status_code=429,
             )

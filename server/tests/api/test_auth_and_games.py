@@ -164,6 +164,54 @@ def test_me_requires_auth(client: TestClient) -> None:
     assert me.json().get("avatar_url") is None
 
 
+def test_other_player_cannot_create_a_game_on_your_arena(client: TestClient) -> None:
+    host = _auth(client, "Casey")
+    guest = _auth(client, "Riley")
+    created = client.post(
+        "/v1/arenas",
+        json=arena_to_dict(square()),
+        headers=_headers(host["access_token"]),
+    )
+    assert created.status_code == 200, created.text
+    stolen = client.post(
+        "/v1/games",
+        json={"arena_id": created.json()["id"], "preset_id": "classic"},
+        headers=_headers(guest["access_token"]),
+    )
+    assert stolen.status_code == 403
+    assert stolen.json()["error"]["code"] == "FORBIDDEN"
+
+
+def test_leave_drops_the_player_from_the_live_roster(client: TestClient) -> None:
+    host = _auth(client, "Casey")
+    guest = _auth(client, "Riley")
+    created = client.post(
+        "/v1/arenas",
+        json=arena_to_dict(square()),
+        headers=_headers(host["access_token"]),
+    )
+    game = client.post(
+        "/v1/games",
+        json={"arena_id": created.json()["id"], "preset_id": "classic"},
+        headers=_headers(host["access_token"]),
+    )
+    assert game.status_code == 200, game.text
+    game_id = game.json()["id"]
+    joined = client.post(
+        "/v1/games/join",
+        json={"join_code": game.json()["join_code"]},
+        headers=_headers(guest["access_token"]),
+    )
+    assert joined.status_code == 200
+    left = client.post(f"/v1/games/{game_id}/leave", headers=_headers(guest["access_token"]))
+    assert left.status_code == 200, left.text
+    view = client.get(f"/v1/games/{game_id}", headers=_headers(host["access_token"]))
+    names = [player["display_name"] for player in view.json()["players"]]
+    assert names == ["Casey"]
+    gone = client.get(f"/v1/games/{game_id}", headers=_headers(guest["access_token"]))
+    assert gone.status_code == 403
+
+
 def test_dev_auth_same_name_different_installs(client: TestClient) -> None:
     first = client.post(
         "/v1/auth/dev",

@@ -148,6 +148,10 @@ final class LiveHudAndPresetsTests: XCTestCase {
         }
         XCTAssertEqual(modules.first { $0.id == "power_ups" }?.locked, false)
         XCTAssertNotNil(modules.first { $0.id == "power_ups" }?.rows.first { $0.id == "scan_cost" })
+        XCTAssertNotNil(modules.first { $0.id == "power_ups" }?.rows.first { $0.id == "scan_radius_m" })
+        XCTAssertNotNil(modules.first { $0.id == "power_ups" }?.rows.first { $0.id == "scan_count" })
+        XCTAssertNotNil(modules.first { $0.id == "zone_policy" }?.rows.first { $0.id == "safe_remove_after" })
+        XCTAssertNotNil(modules.first { $0.id == "zone_policy" }?.rows.first { $0.id == "safe_visit" })
         var edited = modules
         if let mIdx = edited.firstIndex(where: { $0.id == "reveal_fuzzy" }),
            let rIdx = edited[mIdx].rows.firstIndex(where: { $0.id == "location_mode" }),
@@ -168,6 +172,17 @@ final class LiveHudAndPresetsTests: XCTestCase {
         XCTAssertFalse(RevealFormVisibility.shows(rowID: "persistence", modules: edited))
         XCTAssertFalse(RevealFormVisibility.shows(rowID: "hints_enabled", modules: edited))
         XCTAssertTrue(RevealFormVisibility.shows(rowID: "hints_interval", modules: edited))
+        XCTAssertEqual(
+            RevealFormVisibility.help(rowID: "hints_enabled", modules: edited),
+            "Hints are always on in Hot/cold."
+        )
+        let offline = ModuleForm.offlineModules()
+        XCTAssertEqual(
+            RevealFormVisibility.help(rowID: "hints_enabled", modules: offline),
+            "Hints are on with Fuzzy."
+        )
+        XCTAssertNotNil(offline.first { $0.id == "reveal_fuzzy" }?.rows.first { $0.id == "location_mode" }?.help)
+        XCTAssertNotNil(offline.first { $0.id == "power_ups" }?.rows.first { $0.id == "tracker_enabled" }?.help)
     }
 
     func testPresetOverridesGatesZoneShrinkToCircleArenas() {

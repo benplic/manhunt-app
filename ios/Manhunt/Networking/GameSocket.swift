@@ -10,12 +10,15 @@ final class GameSocket: @unchecked Sendable {
     var onReconnect: ((Bool) -> Void)?
     var onUWBPeers: (([UWBPeer]) -> Void)?
     var onSendFailure: ((String) -> Void)?
+    /// Host kicked this phone. Stops reconnect; the store routes home.
+    var onRemoved: (() -> Void)?
     var lastSeq: Int?
+    /// True after disconnect or a host remove / 4403 close.
+    private(set) var isStopped = false
 
     private var task: URLSessionWebSocketTask?
     private var pingTask: Task<Void, Never>?
     private var runTask: Task<Void, Never>?
-    private var stopped = false
     private let session: URLSession
 
     init(session: URLSession = .shared) {
@@ -23,7 +26,7 @@ final class GameSocket: @unchecked Sendable {
     }
 
     func connect(url: URL, token: String) {
-        stopped = false
+        isStopped = false
         runTask?.cancel()
         runTask = Task { [weak self] in
             await self?.run(url: url, token: token)
@@ -62,26 +65,33 @@ final class GameSocket: @unchecked Sendable {
     }
 
     func disconnect() {
-        stopped = true
+        isStopped = true
         pingTask?.cancel()
         runTask?.cancel()
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
     }
 
+    /// Applies a server close code. 4403 means not a member — do not reconnect.
+    func noteServerClosed(code: Int) {
+        if code == 4403 {
+            markRemoved()
+        }
+    }
+
     private func run(url: URL, token: String) async {
         var delay: TimeInterval = 1
         var first = true
-        while !stopped, !Task.isCancelled {
+        while !isStopped, !Task.isCancelled {
             onReconnect?( !first )
             let ok = await open(url: url, token: token, timeout: first ? 60 : 15)
             first = false
-            if stopped { return }
+            if isStopped { return }
             if ok {
                 delay = 1
                 await listen()
             }
-            if stopped { return }
+            if isStopped { return }
             let jitter = Double.random(in: 0...0.4)
             try? await Task.sleep(nanoseconds: UInt64((delay + jitter) * 1_000_000_000))
             delay = delay >= 15 ? 15 : min(delay * 2, 15)
@@ -114,7 +124,7 @@ final class GameSocket: @unchecked Sendable {
 
     private func listen() async {
         guard let task else { return }
-        while !stopped, !Task.isCancelled {
+        while !isStopped, !Task.isCancelled {
             do {
                 let message = try await task.receive()
                 let data: Data
@@ -125,13 +135,14 @@ final class GameSocket: @unchecked Sendable {
                 }
                 handle(data)
             } catch {
+                noteServerClosed(code: task.closeCode.rawValue)
                 break
             }
         }
         pingTask?.cancel()
     }
 
-    private func handle(_ data: Data) {
+    func handle(_ data: Data) {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = obj["type"] as? String
         else { return }
@@ -170,15 +181,25 @@ final class GameSocket: @unchecked Sendable {
                 if let seq = dict["seq"] as? Int { lastSeq = seq }
                 onEvent?(banner)
             }
+        case "removed":
+            markRemoved()
         default:
             break
         }
     }
 
+    private func markRemoved() {
+        guard !isStopped else { return }
+        isStopped = true
+        pingTask?.cancel()
+        runTask?.cancel()
+        onRemoved?()
+    }
+
     private func startPings() {
         pingTask?.cancel()
         pingTask = Task { [weak self] in
-            while !(self?.stopped ?? true), !Task.isCancelled {
+            while !(self?.isStopped ?? true), !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 15_000_000_000)
                 self?.sendJSON(["type": "ping", "data": [:]])
             }

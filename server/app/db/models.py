@@ -71,7 +71,10 @@ class GameRow(Base):
     arena_snapshot: Mapped[dict] = mapped_column(JSON().with_variant(SQLITE_JSON, "sqlite"))
     preset_snapshot: Mapped[dict] = mapped_column(JSON().with_variant(SQLITE_JSON, "sqlite"))
     seed: Mapped[int] = mapped_column(Integer)
-    inputs: Mapped[list] = mapped_column(JSON().with_variant(SQLITE_JSON, "sqlite"), default=list)
+    # A list is a legacy plaintext log. New writes are a sealed {"ct","nonce","kid"} blob.
+    inputs: Mapped[list | dict] = mapped_column(
+        JSON().with_variant(SQLITE_JSON, "sqlite"), default=list
+    )
     result: Mapped[dict | None] = mapped_column(
         JSON().with_variant(SQLITE_JSON, "sqlite"), nullable=True
     )

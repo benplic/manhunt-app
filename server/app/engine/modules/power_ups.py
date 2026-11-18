@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar
-from uuid import uuid4
+from uuid import UUID, uuid4
 
+from app.engine.arena import ArenaZone, CircleShape, ZoneKind, clip_arena
 from app.engine.geo import GeoPoint, contains
 from app.engine.modules.base import BaseModule, TagClaim
 from app.engine.modules.effects import add_effect, has_effect
+from app.engine.modules.zone_shrink import advance_shrink_schedule, apply_scheduled_shrink
 from app.engine.state import RevealPin
 from app.errors import ErrorCode, GameRuleError
 
@@ -16,10 +18,33 @@ if TYPE_CHECKING:
 
 CATALOG: dict[str, dict[str, Any]] = {
     "ghost": {"role": "hider", "cost": 20, "duration": None, "cooldown": 20, "needs_target": False},
-    "decoy": {"role": "hider", "cost": 40, "duration": None, "cooldown": 30, "needs_target": True},
+    "decoy": {
+        "role": "hider",
+        "cost": 40,
+        "duration": None,
+        "cooldown": 30,
+        "needs_target": True,
+        "target": "point",
+    },
     "radar": {"role": "hider", "cost": 40, "duration": 20, "cooldown": 40, "needs_target": False},
     "jammer": {"role": "hider", "cost": 55, "duration": 60, "cooldown": 90, "needs_target": False},
     "shield": {"role": "hider", "cost": 70, "duration": 30, "cooldown": 60, "needs_target": False},
+    "rescue": {
+        "role": "hider",
+        "cost": 120,
+        "duration": 60,
+        "cooldown": 90,
+        "needs_target": True,
+        "target": "player",
+    },
+    "create_safe": {
+        "role": "hider",
+        "cost": 110,
+        "duration": None,
+        "cooldown": 90,
+        "needs_target": True,
+        "target": "point",
+    },
     "scan": {"role": "seeker", "cost": 25, "duration": None, "cooldown": 30, "needs_target": False},
     "tracker": {
         "role": "seeker",
@@ -35,7 +60,42 @@ CATALOG: dict[str, dict[str, Any]] = {
         "cooldown": 120,
         "needs_target": False,
     },
+    "move_safe": {
+        "role": "seeker",
+        "cost": 110,
+        "duration": None,
+        "cooldown": 90,
+        "needs_target": True,
+        "target": "zone_point",
+    },
+    "shrink_now": {
+        "role": "seeker",
+        "cost": 100,
+        "duration": None,
+        "cooldown": 120,
+        "needs_target": False,
+    },
 }
+
+
+def tracker_allowed(
+    reveal: dict[str, Any] | None = None,
+    *,
+    session: GameSession | None = None,
+) -> bool:
+    """Tracker is timed hot/cold. Forbid when hints already run always or pins never expire."""
+    settings = reveal
+    if settings is None:
+        if session is None:
+            return True
+        settings = session.module_settings("reveal_fuzzy")
+    mode = str(settings.get("location_mode", "fuzzy"))
+    persistence = str(settings.get("persistence", "timed"))
+    if mode == "hot_cold":
+        return False
+    if persistence == "persistent":
+        return False
+    return True
 
 
 def resolve_power(s: GameSession, power_id: str) -> dict[str, Any]:
@@ -47,8 +107,15 @@ def resolve_power(s: GameSession, power_id: str) -> dict[str, Any]:
         raise GameRuleError(ErrorCode.WRONG_PHASE, "Power-ups are off.")
     if not bool(settings.get(f"{power_id}_enabled", True)):
         raise GameRuleError(ErrorCode.WRONG_PHASE, "That power-up is off.")
+    if power_id == "tracker" and not tracker_allowed(session=s):
+        raise GameRuleError(
+            ErrorCode.WRONG_PHASE,
+            "Tracker needs timed Fuzzy or Precise location (not Hot/cold or Persistent).",
+        )
     spec = dict(base)
     spec["cost"] = int(settings.get(f"{power_id}_cost", base["cost"]))
+    if power_id == "rescue":
+        spec["duration"] = int(settings.get("rescue_duration", base["duration"]))
     return spec
 
 
@@ -80,13 +147,20 @@ def apply_purchase(s: GameSession, player_id, power_id: str, **kwargs: Any) -> N
         raise GameRuleError(ErrorCode.COOLING_DOWN)
     if player.points < spec["cost"]:
         raise GameRuleError(ErrorCode.INSUFFICIENT_POINTS)
-    if spec["needs_target"] and kwargs.get("lat") is None:
-        raise GameRuleError(ErrorCode.NEEDS_TARGET)
+    _require_target(spec, kwargs)
     if power_id == "decoy":
         point = GeoPoint(lat=float(kwargs["lat"]), lon=float(kwargs["lon"]))
         if not contains(point, s.state.arena.boundary):
             raise GameRuleError(ErrorCode.TARGET_OUTSIDE)
         player.decoy_point = point
+    elif power_id == "rescue":
+        _rescue(s, kwargs)
+    elif power_id == "create_safe":
+        _create_safe(s, kwargs)
+    elif power_id == "move_safe":
+        _move_safe(s, kwargs)
+    elif power_id == "shrink_now":
+        _shrink_now(s)
     player.points -= spec["cost"]
     cooldown = int(spec["cooldown"] or 0)
     player.cooldowns[power_id] = s.state.game_elapsed_s + cooldown
@@ -114,7 +188,112 @@ def apply_purchase(s: GameSession, player_id, power_id: str, **kwargs: Any) -> N
     s._note_input("purchase", {"player_id": str(player_id), "power_id": power_id, **kwargs})
 
 
+def _require_target(spec: dict[str, Any], kwargs: dict[str, Any]) -> None:
+    if not spec["needs_target"]:
+        return
+    kind = spec.get("target", "point")
+    if kind == "player":
+        if kwargs.get("target_player_id") is None:
+            raise GameRuleError(ErrorCode.NEEDS_TARGET)
+    elif kind == "zone_point":
+        if kwargs.get("zone_id") is None or kwargs.get("lat") is None or kwargs.get("lon") is None:
+            raise GameRuleError(ErrorCode.NEEDS_TARGET)
+    elif kwargs.get("lat") is None or kwargs.get("lon") is None:
+        raise GameRuleError(ErrorCode.NEEDS_TARGET)
+
+
+def _rescue(s: GameSession, kwargs: dict[str, Any]) -> None:
+    target_id = UUID(str(kwargs["target_player_id"]))
+    target = s.state.players.get(target_id)
+    if target is None or target.role != "seeker" or not target.converted_from_hider:
+        raise GameRuleError(ErrorCode.TARGET_NOT_ACTIVE)
+    if target.status != "active":
+        raise GameRuleError(ErrorCode.TARGET_NOT_ACTIVE)
+    settings = s.module_settings("power_ups")
+    immunity_s = int(settings.get("rescue_duration", CATALOG["rescue"]["duration"]))
+    target.role = "hider"
+    target.converted_from_hider = False
+    target.shield_until_s = s.state.game_elapsed_s + immunity_s
+    add_effect(s, owner_id=target_id, type="shield", duration_s=immunity_s)
+    s.emit(
+        "rescue",
+        {"text": f"{target.display_name} was rescued.", "player_id": str(target_id)},
+        player_id=target_id,
+        tone="success",
+    )
+
+
+def _create_safe(s: GameSession, kwargs: dict[str, Any]) -> None:
+    point = GeoPoint(lat=float(kwargs["lat"]), lon=float(kwargs["lon"]))
+    if not contains(point, s.state.arena.boundary):
+        raise GameRuleError(ErrorCode.TARGET_OUTSIDE)
+    settings = s.module_settings("power_ups")
+    radius_m = float(settings.get("create_safe_radius_m", 30))
+    zone = ArenaZone(
+        id=uuid4(),
+        name="New safe",
+        kind=ZoneKind.SAFE,
+        shape=CircleShape(center=point, radius_m=radius_m),
+    )
+    arena = s.state.arena
+    arena.zones = list(arena.zones) + [zone]
+    s.state.arena = clip_arena(arena)
+    kept = next((z for z in s.state.arena.zones if z.id == zone.id), None)
+    if kept is None:
+        raise GameRuleError(ErrorCode.TARGET_OUTSIDE, "Safe zone could not fit in the play area.")
+    s.emit(
+        "safe_created",
+        {
+            "text": "A new safe zone appeared.",
+            "zone_id": str(zone.id),
+            "lat": point.lat,
+            "lon": point.lon,
+            "radius_m": radius_m,
+        },
+        tone="info",
+    )
+
+
+def _move_safe(s: GameSession, kwargs: dict[str, Any]) -> None:
+    zone_id = UUID(str(kwargs["zone_id"]))
+    point = GeoPoint(lat=float(kwargs["lat"]), lon=float(kwargs["lon"]))
+    if not contains(point, s.state.arena.boundary):
+        raise GameRuleError(ErrorCode.TARGET_OUTSIDE)
+    zone = next((z for z in s.state.arena.zones if z.id == zone_id), None)
+    if zone is None or zone.kind != ZoneKind.SAFE:
+        raise GameRuleError(ErrorCode.VALIDATION_FAILED, "Unknown safe zone.")
+    if not isinstance(zone.shape, CircleShape):
+        # TODO: translate polygon safe zones when the editor supports live reshape.
+        raise GameRuleError(ErrorCode.VALIDATION_FAILED, "Only circle safe zones can move.")
+    radius_m = zone.shape.radius_m
+    zone.shape = CircleShape(center=point, radius_m=radius_m)
+    s.state.arena = clip_arena(s.state.arena)
+    kept = next((z for z in s.state.arena.zones if z.id == zone_id), None)
+    if kept is None:
+        raise GameRuleError(ErrorCode.TARGET_OUTSIDE, "Safe zone could not fit in the play area.")
+    s.emit(
+        "safe_moved",
+        {
+            "text": f"{zone.name} moved.",
+            "zone_id": str(zone_id),
+            "lat": point.lat,
+            "lon": point.lon,
+            "radius_m": radius_m,
+        },
+        tone="info",
+    )
+
+
+def _shrink_now(s: GameSession) -> None:
+    if not advance_shrink_schedule(s):
+        raise GameRuleError(ErrorCode.WRONG_PHASE, "No zone shrink is available.")
+    apply_scheduled_shrink(s, emit_warning=False)
+
+
 def _scan(s: GameSession, seeker_id) -> None:
+    settings = s.module_settings("power_ups")
+    radius_m = float(settings.get("scan_radius_m", 30))
+    pin_count = max(1, int(settings.get("scan_count", 1)))
     hiders = [
         p
         for p in s.state.players.values()
@@ -122,17 +301,17 @@ def _scan(s: GameSession, seeker_id) -> None:
     ]
     if not hiders:
         return
-    target = hiders[s.rng.randrange(len(hiders))]
-    reading = target.last_precise or target.location
-    assert reading is not None
-    fuzz = float(s.module_settings("reveal_fuzzy").get("fuzz", 30))
-    s.state.reveals.append(
-        RevealPin(
-            reveal_id=uuid4(),
-            player_id=target.player_id,
-            lat=reading.lat,
-            lon=reading.lon,
-            radius_m=fuzz,
-            expires_at_game_s=s.state.game_elapsed_s + 10,
+    picks = s.rng.sample(hiders, min(pin_count, len(hiders)))
+    for target in picks:
+        reading = target.last_precise or target.location
+        assert reading is not None
+        s.state.reveals.append(
+            RevealPin(
+                reveal_id=uuid4(),
+                player_id=target.player_id,
+                lat=reading.lat,
+                lon=reading.lon,
+                radius_m=radius_m,
+                expires_at_game_s=s.state.game_elapsed_s + 10,
+            )
         )
-    )

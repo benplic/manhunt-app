@@ -135,6 +135,7 @@ struct VisualModule: Identifiable {
 struct VisualRow: Identifiable {
     var id: String
     var title: String
+    var help: String? = nil
     var control: Control
     var number: Double
     var choice: Int
@@ -210,6 +211,9 @@ struct PowerChip: Identifiable {
     var detail: String
     var cost: Int
     var role: VisualRole
+    var systemImage: String
+    /// False when the current reveal mode forbids this power (still shown greyed).
+    var available: Bool = true
 }
 
 enum SamplePark {
@@ -291,14 +295,18 @@ enum SamplePark {
     ]
 
     static let powerUps: [PowerChip] = [
-        PowerChip(id: "ghost", title: "Ghost", detail: "Skip the next reveal", cost: 20, role: .hider),
-        PowerChip(id: "decoy", title: "Decoy", detail: "Next pin is a fake", cost: 40, role: .hider),
-        PowerChip(id: "radar", title: "Radar", detail: "See seekers for 20s", cost: 40, role: .hider),
-        PowerChip(id: "jammer", title: "Jammer", detail: "Mute hot / cold hints", cost: 55, role: .hider),
-        PowerChip(id: "shield", title: "Shield", detail: "Untaggable for 30s", cost: 70, role: .hider),
-        PowerChip(id: "scan", title: "Scan", detail: "Reveal one hider now", cost: 25, role: .seeker),
-        PowerChip(id: "tracker", title: "Tracker", detail: "Hot / cold for 3 min", cost: 50, role: .seeker),
-        PowerChip(id: "lockdown", title: "Lockdown", detail: "Safe zones off", cost: 75, role: .seeker),
+        PowerChip(id: "ghost", title: "Ghost", detail: "Skip the next reveal", cost: 20, role: .hider, systemImage: "eye.slash"),
+        PowerChip(id: "decoy", title: "Decoy", detail: "Next pin is a fake", cost: 40, role: .hider, systemImage: "person.fill.questionmark"),
+        PowerChip(id: "radar", title: "Radar", detail: "See seekers for 20s", cost: 40, role: .hider, systemImage: "dot.radiowaves.left.and.right"),
+        PowerChip(id: "jammer", title: "Jammer", detail: "Mute hot / cold hints", cost: 55, role: .hider, systemImage: "waveform.slash"),
+        PowerChip(id: "shield", title: "Shield", detail: "Untaggable for 30s", cost: 70, role: .hider, systemImage: "shield.fill"),
+        PowerChip(id: "rescue", title: "Rescue", detail: "Bring a tagged seeker back", cost: 120, role: .hider, systemImage: "arrow.uturn.backward.circle"),
+        PowerChip(id: "create_safe", title: "Create safe", detail: "Drop a new safe zone", cost: 110, role: .hider, systemImage: "plus.circle"),
+        PowerChip(id: "scan", title: "Scan", detail: "Reveal one hider now", cost: 25, role: .seeker, systemImage: "viewfinder"),
+        PowerChip(id: "tracker", title: "Tracker", detail: "Hot / cold for 3 min (timed Fuzzy/Precise)", cost: 50, role: .seeker, systemImage: "location.magnifyingglass"),
+        PowerChip(id: "lockdown", title: "Lockdown", detail: "Safe zones off", cost: 75, role: .seeker, systemImage: "lock.shield.fill"),
+        PowerChip(id: "move_safe", title: "Move safe", detail: "Relocate a safe zone", cost: 110, role: .seeker, systemImage: "arrow.up.and.down.and.arrow.left.and.right"),
+        PowerChip(id: "shrink_now", title: "Shrink now", detail: "Fire the next zone shrink", cost: 100, role: .seeker, systemImage: "arrow.down.right.and.arrow.up.left"),
     ]
 
     static func classicModules() -> [VisualModule] {

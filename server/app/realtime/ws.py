@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import math
 import time
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.auth.tokens import parse_token
+from app.engine.session import movement_too_fast
 from app.engine.state import LocationReading
 from app.errors import ApiError, GameRuleError
 from app.realtime.manager import SessionManager, envelope
@@ -96,15 +98,43 @@ def bind_ws(manager: SessionManager, get_settings, persist_location=None):
                     if now - last_loc < 0.5:
                         continue
                     last_loc = now
+                    try:
+                        lat = float(payload["lat"])
+                        lon = float(payload["lon"])
+                        accuracy_m = float(payload["accuracy_m"])
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    if not (
+                        math.isfinite(lat) and math.isfinite(lon) and math.isfinite(accuracy_m)
+                    ):
+                        continue
                     reading = LocationReading(
-                        lat=float(payload["lat"]),
-                        lon=float(payload["lon"]),
-                        accuracy_m=float(payload["accuracy_m"]),
+                        lat=lat,
+                        lon=lon,
+                        accuracy_m=accuracy_m,
                         recorded_at=session.clock.now(),
                         battery=payload.get("battery"),
                         flag=str(payload.get("flag", "normal")),
                     )
-                    session.record_location(user_id, reading)
+                    player = session.state.players.get(user_id)
+                    if player is not None and movement_too_fast(player, reading):
+                        await ws.send_json(
+                            envelope(
+                                "error",
+                                {
+                                    "code": "VALIDATION_FAILED",
+                                    "message": "That move is too fast.",
+                                },
+                            )
+                        )
+                        continue
+                    try:
+                        session.record_location(user_id, reading)
+                    except GameRuleError as exc:
+                        await ws.send_json(
+                            envelope("error", {"code": exc.code.value, "message": exc.message})
+                        )
+                        continue
                     if persist_location is not None:
                         await persist_location(session)
                     await manager.broadcast(game_id)

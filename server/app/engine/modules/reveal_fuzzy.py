@@ -28,7 +28,8 @@ class RevealFuzzyModule(BaseModule):
         now = s.state.game_elapsed_s
         live = [r for r in s.state.reveals if r.expires_at_game_s > now]
         s.state.reveals = live
-        if s.state.phase not in {"active", "head_start"}:
+        # No location pings or hot-cold pulses during head start.
+        if s.state.phase != "active":
             return
 
         settings = self.settings

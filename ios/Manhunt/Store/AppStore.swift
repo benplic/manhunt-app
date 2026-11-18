@@ -1,5 +1,6 @@
 import CoreLocation
 import Foundation
+import SwiftUI
 import UIKit
 
 enum AppScreen: String, Equatable {
@@ -56,14 +57,24 @@ final class AppStore {
     var presets: [(id: String, name: String)] = [("classic", "Classic Manhunt")]
     var displayName = "Casey Lee"
     var serverURL: String
+    /// Shared house key for the home server's dev sign-in. Not a per-player password.
+    var devAuthSecret: String
     var joinDraft = ""
     var joinMessage: String?
     var note: String?
     var seekerCount = 1
     var editor = ArenaEditorModel()
     var situation: LiveSituation = .active
-    /// Decoy purchase step: pan the map and drop a pin before POST.
+    /// Map-target purchase step (decoy / create_safe / move_safe): pan and drop before POST.
     var decoyPicking = false
+    /// Which power-up opened `decoyPicking` (`decoy`, `create_safe`, or `move_safe`).
+    var mapPickPowerID: String?
+    /// Zone chosen for `move_safe` before the map drop.
+    var moveSafeZoneId: String?
+    /// Shows the Rescue target chooser (tagged seekers with `convertedFromHider`).
+    var showRescuePicker = false
+    /// Shows the Move-safe zone chooser when more than one circle safe exists.
+    var showMoveSafePicker = false
     /// Demo walk target picker: pan the map and drop a destination for `move_me`.
     var demoPicking = false
     var tool: ArenaTool = .playArea
@@ -92,11 +103,18 @@ final class AppStore {
     var liveUpdate: LiveUpdate?
     var pingPulse: PingPulse?
     var flashlightOn = false
+    /// Opt-in: short system sound when a reveal ping fires. Default off.
+    var pingSoundEnabled = false
+    /// Opt-in: brief torch flash on ping. Default off; manual flashlight still works.
+    var pingFlashlightEnabled = false
+    /// Tests shorten the ping torch pulse so coverage stays fast.
+    var pingTorchFlashSeconds: TimeInterval = 0.25
     var timeline: [TimelineEventDTO] = []
     var uwbPeers: [UWBPeer] = []
     var uwbDistance: [UUID: Double] = [:]
     private var liveUpdateExpiryTask: Task<Void, Never>?
     private var noteExpiryTask: Task<Void, Never>?
+    private var pingTorchTask: Task<Void, Never>?
     private var presetReturn: AppScreen = .home
     private var sentLowBattery = false
     private var lastSentLocation: CLLocation?
@@ -109,6 +127,7 @@ final class AppStore {
     private let location = LocationReporter()
     private let defaults: UserDefaults
     private let torch: TorchControlling
+    private let pingSound: PingSoundPlaying
     /// Last discovery token pushed to the server. Cleared on reconnect so a
     /// rebuilt session gets a fresh publish. Compared by value so a rotated
     /// local token is resent even mid-match.
@@ -116,14 +135,25 @@ final class AppStore {
     private var lastUWBRangeAt: [UUID: Date] = [:]
     /// APNs device token waiting for auth, then PUT /v1/me/device-token.
     private var pendingDeviceToken: String?
+    /// Consecutive WebSocket send failures. Hiccup toast needs ≥2.
+    private var consecutiveSendFailures = 0
+    /// When continuous reconnecting started; toast after `hiccupDebounceSeconds`.
+    private var reconnectingSince: Date?
+    private var hiccupDebounceTask: Task<Void, Never>?
+    /// Tests shorten this so debounce coverage stays fast.
+    var hiccupDebounceSeconds: TimeInterval = 3
+    static let connectionHiccupNote = "Connection hiccup. Retrying…"
+    static let removedFromLobbyNote = "You were removed from the lobby."
 
     static let serverURLKey = "manhunt.serverURL"
+    static let devAuthSecretKey = "manhunt.devAuthSecret"
 
     init(
         service: GameService,
         serverURL: String = AppStore.defaultServerURL(),
         defaults: UserDefaults = .standard,
-        torch: TorchControlling = DeviceTorch()
+        torch: TorchControlling = DeviceTorch(),
+        pingSound: PingSoundPlaying = SystemPingSound()
     ) {
         self.service = service
         self.fake = service as? FakeGameService
@@ -132,11 +162,15 @@ final class AppStore {
         self.ranger = UWBRangers.make(enabled: liveService != nil)
         self.defaults = defaults
         self.torch = torch
+        self.pingSound = pingSound
+        self.pingSoundEnabled = AppSettings.pingSoundEnabled(defaults: defaults)
+        self.pingFlashlightEnabled = AppSettings.pingFlashlightEnabled(defaults: defaults)
         if let stored = defaults.string(forKey: Self.serverURLKey), !stored.isEmpty {
             self.serverURL = stored
         } else {
             self.serverURL = serverURL
         }
+        self.devAuthSecret = defaults.string(forKey: Self.devAuthSecretKey) ?? ""
         if let fake {
             arenas = fake.storedArenas
         }
@@ -173,10 +207,12 @@ final class AppStore {
         }
         live?.onReconnect = { [weak self] reconnecting in
             Task { @MainActor in
-                guard let self, reconnecting else { return }
-                self.situation = .reconnecting
-                // Server restart drops tokens. Force a republish on the next view.
-                self.lastUWBToken = nil
+                self?.handleReconnect(reconnecting)
+            }
+        }
+        live?.onRemoved = { [weak self] in
+            Task { @MainActor in
+                self?.handleRemovedFromLobby()
             }
         }
         live?.onUWBPeers = { [weak self] peers in
@@ -184,8 +220,7 @@ final class AppStore {
         }
         live?.onSendFailure = { [weak self] _ in
             Task { @MainActor in
-                self?.situation = .reconnecting
-                self?.note = "Connection hiccup. Retrying…"
+                self?.handleSendFailure()
             }
         }
         live?.onRefreshFailed = { [weak self] in
@@ -207,6 +242,8 @@ final class AppStore {
         }
         if let live, let storedAccess = keychain.readToken() {
             live.token = storedAccess
+            // Pull display_name from /v1/me so Home is not stuck on "Casey Lee".
+            Task { await restoreSessionFromStoredToken() }
         }
         location.onStreamFailure = { [weak self] in
             self?.situation = .reconnecting
@@ -388,6 +425,7 @@ final class AppStore {
         lastError = nil
         note = nil
         defaults.set(serverURL, forKey: Self.serverURLKey)
+        defaults.set(devAuthSecret, forKey: Self.devAuthSecretKey)
         if let fake {
             fake.signInSync(displayName)
             session = Session(displayName: displayName, token: "fake")
@@ -429,7 +467,19 @@ final class AppStore {
         }
     }
 
+    func setPingSoundEnabled(_ enabled: Bool) {
+        pingSoundEnabled = enabled
+        AppSettings.setPingSoundEnabled(enabled, defaults: defaults)
+    }
+
+    func setPingFlashlightEnabled(_ enabled: Bool) {
+        pingFlashlightEnabled = enabled
+        AppSettings.setPingFlashlightEnabled(enabled, defaults: defaults)
+    }
+
     func toggleFlashlight() {
+        pingTorchTask?.cancel()
+        pingTorchTask = nil
         let target = !flashlightOn
         do {
             try torch.setOn(target)
@@ -444,6 +494,8 @@ final class AppStore {
     }
 
     func turnOffFlashlight() {
+        pingTorchTask?.cancel()
+        pingTorchTask = nil
         guard flashlightOn else { return }
         flashlightOn = false
         do {
@@ -458,6 +510,31 @@ final class AppStore {
     func tapVoicePlaceholder() {
         // TODO: replace with live radio mute / push-to-talk once audio transport is implemented.
         note = "Voice is coming soon."
+    }
+
+    /// Sound and optional torch flash for a reveal ping. Both are opt-in via AppSettings.
+    func handlePingAlerts() {
+        if pingSoundEnabled {
+            pingSound.play()
+        }
+        guard pingFlashlightEnabled else { return }
+        // Manual flashlight already on — leave it alone.
+        guard !flashlightOn else { return }
+        pingTorchTask?.cancel()
+        do {
+            try torch.setOn(true)
+            flashlightOn = true
+        } catch {
+            flashlightOn = false
+            return
+        }
+        let hold = pingTorchFlashSeconds
+        pingTorchTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(hold))
+            guard let self, !Task.isCancelled else { return }
+            self.pingTorchTask = nil
+            self.turnOffFlashlight()
+        }
     }
 
     func sendFix(from location: CLLocation, isFinal: Bool, battery: Float? = nil) {
@@ -527,6 +604,10 @@ final class AppStore {
     func signOut() {
         turnOffFlashlight()
         decoyPicking = false
+        moveSafeZoneId = nil
+        showRescuePicker = false
+        showMoveSafePicker = false
+        mapPickPowerID = nil
         demoPicking = false
         stopUWB()
         live?.disconnect()
@@ -536,6 +617,7 @@ final class AppStore {
         session = nil
         match = nil
         pingPulse = nil
+        clearConnectionHiccup(restoreSituation: true)
         withAnimation(.snappy(duration: 0.35)) {
             screen = .signedOut
         }
@@ -556,6 +638,10 @@ final class AppStore {
         let gameID = match?.snapshot.gameId
         turnOffFlashlight()
         decoyPicking = false
+        moveSafeZoneId = nil
+        showRescuePicker = false
+        showMoveSafePicker = false
+        mapPickPowerID = nil
         demoPicking = false
         stopUWB()
         location.stop()
@@ -745,9 +831,13 @@ final class AppStore {
         self.arenaID = arenaID.uuidString
         guard let fake else {
             let overrides = PresetOverrides.from(modules: modules, arena: selected)
-            Task { await createMatchRemote(arenaID: arenaID, presetID: presetID, overrides: overrides) }
+            Task {
+                await syncDisplayNameBeforeMatchIfNeeded()
+                await createMatchRemote(arenaID: arenaID, presetID: presetID, overrides: overrides)
+            }
             return
         }
+        syncDisplayNameBeforeMatchIfNeededSync()
         do {
             let view = try fake.createGameSync(arenaID: arenaID, presetID: presetID)
             apply(view)
@@ -784,9 +874,13 @@ final class AppStore {
         }
         guard let fake else {
             joinDraft = normalized
-            Task { await joinRemote(normalized) }
+            Task {
+                await syncDisplayNameBeforeMatchIfNeeded()
+                await joinRemote(normalized)
+            }
             return nil
         }
+        syncDisplayNameBeforeMatchIfNeededSync()
         do {
             let view = try fake.joinSync(code: normalized)
             apply(view)
@@ -981,6 +1075,46 @@ final class AppStore {
         screen = .home
     }
 
+    /// Host-only: open a new lobby copying the ended hunt's arena + rules.
+    func rematch() {
+        guard isHost, let id = match?.snapshot.gameId else { return }
+        lastError = nil
+        if let fake {
+            do {
+                let view = try fake.rematchSync(gameID: id)
+                timeline = []
+                note = nil
+                apply(view)
+                screen = .lobby
+            } catch let error as ServiceError {
+                lastError = .service(error.code)
+                note = error.message
+            } catch {
+                lastError = .service(.internal)
+                note = "Could not start a rematch."
+            }
+            return
+        }
+        Task { await rematchRemote(gameID: id) }
+    }
+
+    private func rematchRemote(gameID: UUID) async {
+        do {
+            let view = try await service.rematch(gameID: gameID)
+            timeline = []
+            note = nil
+            apply(view)
+            screen = .lobby
+            live?.connect(gameID: view.gameId)
+        } catch let error as ServiceError {
+            lastError = .service(error.code)
+            note = error.message
+        } catch {
+            lastError = .unreachable
+            note = "Is the home server running?"
+        }
+    }
+
     func editArena(_ id: String) {
         arenaID = id
         if let uuid = UUID(uuidString: id), let arena = arenas.first(where: { $0.id == uuid }) {
@@ -1108,7 +1242,7 @@ final class AppStore {
         if isSavingArena { return }
         let trimmed = editor.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = trimmed.isEmpty ? "New arena" : trimmed
-        var prepared = editor.preparedForSave()
+        let prepared = editor.preparedForSave()
         if !prepared.blocking.isEmpty {
             let text = issueCopy(prepared.blocking[0])
             editor.notice = text
@@ -1223,16 +1357,19 @@ final class AppStore {
         guard let serverList = snapshot.powerUps else {
             return SamplePark.powerUps.filter { $0.role == viewingRole }
         }
-        let details = Dictionary(uniqueKeysWithValues: SamplePark.powerUps.map { ($0.id, $0.detail) })
+        let catalog = Dictionary(uniqueKeysWithValues: SamplePark.powerUps.map { ($0.id, $0) })
         return serverList.compactMap { dto in
             let visual = Self.visualRole(dto.role)
             guard visual == viewingRole else { return nil }
+            let known = catalog[dto.id]
             return PowerChip(
                 id: dto.id,
                 title: dto.title,
-                detail: details[dto.id] ?? "",
+                detail: known?.detail ?? "",
                 cost: dto.cost,
-                role: visual
+                role: visual,
+                systemImage: known?.systemImage ?? "bolt.fill",
+                available: dto.available ?? true
             )
         }
     }
@@ -1251,9 +1388,10 @@ final class AppStore {
             role: snapshot.you.role,
             requiredRole: chip.role == .hider ? .hider : .seeker,
             status: snapshot.you.status,
-            requiresTarget: chip.id == "decoy",
+            requiresTarget: PowerUpRules.requiresTarget(powerID: chip.id),
             hasTarget: hasTarget,
-            targetInsidePlayArea: targetInsidePlayArea
+            targetInsidePlayArea: targetInsidePlayArea,
+            available: chip.available
         )
     }
 
@@ -1276,14 +1414,48 @@ final class AppStore {
     }
 
     func buyPower(_ chip: PowerChip) {
-        guard chipIsTappable(chip) else { return }
-        if chip.id == "decoy" {
-            demoPicking = false
-            decoyPicking = true
-            note = "Pan the map, then drop a decoy inside the play area."
+        guard let request = purchaseRequest(for: chip) else { return }
+        let decision = PowerUpRules.decide(request)
+        if case .denied(.unavailable) = decision {
+            note = denialNote(for: decision)
             return
         }
-        let decision = powerChipDecision(for: chip)
+        guard PowerUpRules.chipIsTappable(request) else { return }
+        if chip.id == "decoy" || chip.id == "create_safe" {
+            beginMapPick(powerID: chip.id)
+            note = chip.id == "decoy"
+                ? "Pan the map, then drop a decoy inside the play area."
+                : "Pan the map, then drop a safe zone inside the play area."
+            return
+        }
+        if chip.id == "rescue" {
+            let targets = rescueablePlayers
+            if targets.isEmpty {
+                note = "No tagged seekers to rescue."
+                return
+            }
+            if targets.count == 1 {
+                confirmRescue(playerID: targets[0].playerId.uuidString)
+                return
+            }
+            showRescuePicker = true
+            note = "Pick a tagged seeker to rescue."
+            return
+        }
+        if chip.id == "move_safe" {
+            let zones = movableSafeZones
+            if zones.isEmpty {
+                note = "No circle safe zones to move."
+                return
+            }
+            if zones.count == 1 {
+                beginMoveSafe(zoneID: zones[0].id)
+                return
+            }
+            showMoveSafePicker = true
+            note = "Pick a safe zone, then a new spot on the map."
+            return
+        }
         guard decision == .allowed else {
             note = denialNote(for: decision)
             return
@@ -1291,13 +1463,67 @@ final class AppStore {
         submitPurchase(chip, extra: [:])
     }
 
+    /// Seekers who were converted from hiders and can be rescued.
+    var rescueablePlayers: [PlayerDTO] {
+        guard let match else { return [] }
+        return match.snapshot.players.filter {
+            $0.role == .seeker && $0.status == .active && $0.convertedFromHider
+        }
+    }
+
+    /// Circle safe zones the seeker can relocate with Move safe.
+    var movableSafeZones: [VisualZone] {
+        liveZones.filter { $0.kind == .safe && $0.radiusMeters != nil }
+    }
+
+    func confirmRescue(playerID: String) {
+        showRescuePicker = false
+        guard let chip = dockPowerChips().first(where: { $0.id == "rescue" }) else { return }
+        let decision = powerChipDecision(for: chip, hasTarget: true)
+        guard decision == .allowed else {
+            note = denialNote(for: decision)
+            return
+        }
+        submitPurchase(chip, extra: [:], targetPlayerId: playerID)
+    }
+
+    func beginMoveSafe(zoneID: String) {
+        showMoveSafePicker = false
+        moveSafeZoneId = zoneID
+        beginMapPick(powerID: "move_safe")
+        let name = movableSafeZones.first(where: { $0.id == zoneID })?.name ?? "safe zone"
+        note = "Pan the map, then drop a new spot for \(name)."
+    }
+
+    func cancelRescuePicker() {
+        showRescuePicker = false
+        if note == "Pick a tagged seeker to rescue." { note = nil }
+    }
+
+    func cancelMoveSafePicker() {
+        showMoveSafePicker = false
+        moveSafeZoneId = nil
+        if note == "Pick a safe zone, then a new spot on the map." { note = nil }
+    }
+
+    private func beginMapPick(powerID: String) {
+        demoPicking = false
+        showRescuePicker = false
+        showMoveSafePicker = false
+        decoyPicking = true
+        mapPickPowerID = powerID
+    }
+
     func cancelDecoyPick() {
         decoyPicking = false
+        mapPickPowerID = nil
+        moveSafeZoneId = nil
         note = nil
     }
 
     func dropDecoy(at point: VisualPoint) {
-        guard let chip = dockPowerChips().first(where: { $0.id == "decoy" }) else { return }
+        let powerID = mapPickPowerID ?? "decoy"
+        guard let chip = dockPowerChips().first(where: { $0.id == powerID }) else { return }
         // Deny outside the yellow play area before POST. Server still re-checks
         // the session arena boundary; this keeps lat/lon off the wire when the
         // map the player sees already says the point is outside.
@@ -1310,6 +1536,19 @@ final class AppStore {
         )
         guard decision == .allowed else {
             note = denialNote(for: decision)
+            return
+        }
+        if powerID == "move_safe" {
+            guard let zoneId = moveSafeZoneId else {
+                note = "Pick a safe zone first."
+                return
+            }
+            submitPurchase(
+                chip,
+                extra: ["lat": point.latitude, "lon": point.longitude],
+                clearingDecoyPick: true,
+                zoneId: zoneId
+            )
             return
         }
         submitPurchase(chip, extra: ["lat": point.latitude, "lon": point.longitude], clearingDecoyPick: true)
@@ -1327,18 +1566,31 @@ final class AppStore {
     private func submitPurchase(
         _ chip: PowerChip,
         extra: [String: Double],
-        clearingDecoyPick: Bool = false
+        clearingDecoyPick: Bool = false,
+        targetPlayerId: String? = nil,
+        zoneId: String? = nil
     ) {
         guard let id = match?.snapshot.gameId else { return }
         Task {
             do {
-                let view = try await service.purchase(gameID: id, powerID: chip.id, extra: extra)
+                let view = try await service.purchase(
+                    gameID: id,
+                    powerID: chip.id,
+                    extra: extra,
+                    targetPlayerId: targetPlayerId,
+                    zoneId: zoneId
+                )
                 apply(view)
-                if clearingDecoyPick { decoyPicking = false }
+                if clearingDecoyPick {
+                    decoyPicking = false
+                    mapPickPowerID = nil
+                    moveSafeZoneId = nil
+                }
                 note = "\(chip.title) armed. \(chip.detail)."
             } catch let error as ServiceError {
                 // Stay in pick mode on TARGET_OUTSIDE so the player can drop again.
-                note = Self.purchaseCopy(for: error.code)
+                // Prefer the server message (Tracker mode denial, disabled power, etc.).
+                note = Self.purchaseCopy(for: error)
             } catch {
                 note = "Could not buy \(chip.title)."
             }
@@ -1355,7 +1607,16 @@ final class AppStore {
         case .eliminated: return "You are out of this round."
         case .needsTarget: return "Pick a spot on the map first."
         case .targetOutside: return "Decoy has to sit inside the play area."
+        case .unavailable:
+            return "Tracker needs timed Fuzzy or Precise location (not Hot/cold or Persistent)."
         }
+    }
+
+    static func purchaseCopy(for error: ServiceError) -> String {
+        if !error.message.isEmpty, error.message != error.code.rawValue {
+            return error.message
+        }
+        return purchaseCopy(for: error.code)
     }
 
     static func purchaseCopy(for code: ErrorCode) -> String {
@@ -1369,6 +1630,11 @@ final class AppStore {
         case .targetOutside: return "Decoy has to sit inside the play area."
         default: return "Purchase did not go through (\(code.rawValue))."
         }
+    }
+
+    /// Host changed reveal mode: turn Tracker off when it would conflict.
+    func syncTrackerAvailability() {
+        TrackerAvailability.syncEnabled(in: &modules)
     }
 
     func claimUWB(hiderID: UUID) {
@@ -1450,8 +1716,10 @@ final class AppStore {
     }
 
     func apply(_ view: PlayerViewDTO, now: Date = Date()) {
+        clearConnectionHiccup(restoreSituation: true)
         if PingDetector.didPing(previous: match?.snapshot, next: view) {
             pingPulse = PingPulse(role: view.you.role)
+            handlePingAlerts()
         }
         let anchor = ClockLead.anchor(
             previous: match?.snapshot,
@@ -1466,6 +1734,10 @@ final class AppStore {
             pingPulse = nil
             turnOffFlashlight()
             decoyPicking = false
+            moveSafeZoneId = nil
+            showRescuePicker = false
+            showMoveSafePicker = false
+            mapPickPowerID = nil
             demoPicking = false
             location.stop()
             live?.disconnect()
@@ -1596,6 +1868,10 @@ final class AppStore {
 
     func beginDemoMovePick() {
         decoyPicking = false
+        moveSafeZoneId = nil
+        showRescuePicker = false
+        showMoveSafePicker = false
+        mapPickPowerID = nil
         demoPicking = true
         note = "Pan the map, then drop where you want to walk."
     }
@@ -1639,8 +1915,148 @@ final class AppStore {
         }
     }
 
+    /// One failed ping must not toast; show after ≥2 send failures or continuous reconnect debounce.
+    func handleSendFailure(_ reason: String = "") {
+        _ = reason
+        consecutiveSendFailures += 1
+        situation = .reconnecting
+        if consecutiveSendFailures >= 2 {
+            presentHiccupNote()
+        }
+    }
+
+    func handleReconnect(_ reconnecting: Bool) {
+        guard reconnecting else { return }
+        situation = .reconnecting
+        // Server restart drops tokens. Force a republish on the next view.
+        lastUWBToken = nil
+        if reconnectingSince == nil {
+            reconnectingSince = Date()
+        }
+        scheduleHiccupDebounceIfNeeded()
+    }
+
+    /// Kick / removed WS path: stop reconnect UX and return home.
+    func handleRemovedFromLobby() {
+        clearConnectionHiccup(restoreSituation: true)
+        turnOffFlashlight()
+        decoyPicking = false
+        moveSafeZoneId = nil
+        showRescuePicker = false
+        showMoveSafePicker = false
+        mapPickPowerID = nil
+        demoPicking = false
+        stopUWB()
+        location.stop()
+        live?.disconnect()
+        match = nil
+        pingPulse = nil
+        liveUpdate = nil
+        liveUpdateExpiryTask?.cancel()
+        withAnimation(.snappy(duration: 0.35)) {
+            screen = .home
+        }
+        presentNote(Self.removedFromLobbyNote)
+    }
+
+    private func presentHiccupNote() {
+        note = Self.connectionHiccupNote
+        noteExpiryTask?.cancel()
+    }
+
+    private func scheduleHiccupDebounceIfNeeded() {
+        guard hiccupDebounceTask == nil else { return }
+        let delay = hiccupDebounceSeconds
+        hiccupDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, let self else { return }
+            self.hiccupDebounceTask = nil
+            guard self.situation == .reconnecting, self.reconnectingSince != nil else { return }
+            self.presentHiccupNote()
+        }
+    }
+
+    private func clearConnectionHiccup(restoreSituation: Bool) {
+        let wasHiccup = note == Self.connectionHiccupNote
+        consecutiveSendFailures = 0
+        reconnectingSince = nil
+        hiccupDebounceTask?.cancel()
+        hiccupDebounceTask = nil
+        if wasHiccup {
+            note = nil
+            noteExpiryTask?.cancel()
+        }
+        if restoreSituation, situation == .reconnecting {
+            situation = .active
+        }
+    }
+
+    /// Before create/join: if the field text differs from the session name, re-auth (same install id).
+    private func syncDisplayNameBeforeMatchIfNeededSync() {
+        let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard session?.displayName != trimmed else { return }
+        guard let fake else { return }
+        fake.signInSync(trimmed)
+        session = Session(displayName: trimmed, token: session?.token ?? "fake")
+        displayName = trimmed
+    }
+
+    private func syncDisplayNameBeforeMatchIfNeeded() async {
+        let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard session?.displayName != trimmed else { return }
+        if fake != nil {
+            syncDisplayNameBeforeMatchIfNeededSync()
+            return
+        }
+        live?.updateBaseURL(URL(string: serverURL) ?? URL(string: "http://localhost:8000")!)
+        live?.devAuthSecret = devAuthSecret
+        do {
+            let auth = try await service.signIn(
+                displayName: trimmed,
+                installationId: InstallationID.current(keychain: keychain)
+            )
+            try? keychain.saveToken(auth.accessToken)
+            if let refresh = auth.refreshToken {
+                try? keychain.saveRefreshToken(refresh)
+                live?.refreshToken = refresh
+            }
+            session = Session(displayName: auth.user.displayName, token: auth.accessToken)
+            displayName = auth.user.displayName
+        } catch {
+            // Keep the typed name locally; create/join may still fail with the old token.
+            displayName = trimmed
+            lastError = .unreachable
+            note = "Could not update your name. Is the home server running?"
+        }
+    }
+
+    private func restoreSessionFromStoredToken() async {
+        do {
+            let user = try await service.me()
+            let token = live?.token ?? keychain.readToken() ?? ""
+            session = Session(displayName: user.displayName, token: token)
+            displayName = user.displayName
+            if screen == .signedOut {
+                withAnimation(.snappy(duration: 0.35)) {
+                    screen = .home
+                }
+            }
+            if let loaded = try? await service.arenas() { arenas = loaded }
+            await registerPendingDeviceTokenIfNeeded()
+        } catch {
+            // Stale token: stay signed out rather than showing the default Casey Lee name.
+            keychain.deleteToken()
+            live?.token = nil
+            live?.refreshToken = nil
+            session = nil
+        }
+    }
+
     private func signInRemote() async {
         live?.updateBaseURL(URL(string: serverURL) ?? URL(string: "http://localhost:8000")!)
+        live?.devAuthSecret = devAuthSecret
         do {
             let auth = try await service.signIn(
                 displayName: displayName,

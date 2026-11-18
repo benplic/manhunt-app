@@ -20,6 +20,16 @@ final class Phase3Tests: XCTestCase {
         XCTAssertEqual(HintCopy.line(role: .hider, hint: hint), "Warmth is hidden from you.")
     }
 
+    func testHintHelpMatchesRevealMode() {
+        XCTAssertEqual(HintCopy.hintsHelp(locationMode: "hot_cold", hintsEnabled: false), "Hints are always on in Hot/cold.")
+        XCTAssertEqual(HintCopy.hintsHelp(locationMode: "precise", hintsEnabled: true), "Hints are off in Precise.")
+        XCTAssertEqual(HintCopy.hintsHelp(locationMode: "fuzzy", hintsEnabled: true), "Hints are on with Fuzzy.")
+        XCTAssertEqual(
+            HintCopy.hintsHelp(locationMode: "fuzzy", hintsEnabled: false),
+            "Hints are off while the Fuzzy Hints toggle is off."
+        )
+    }
+
     func testHeadStartChrome() {
         XCTAssertEqual(
             HeadStartChrome.kind(phase: .headStart, role: .seeker, seekerLock: "locked_map"),
@@ -47,5 +57,40 @@ final class Phase3Tests: XCTestCase {
         XCTAssertFalse(HeadStartChrome.showsFloatingNotice(.fullMap))
         XCTAssertTrue(HeadStartChrome.showsFloatingNotice(.spawnZone))
         XCTAssertTrue(HeadStartChrome.showsFloatingNotice(.none))
+    }
+
+    func testLiveMapZonesHideSpawnAfterHeadStart() {
+        let spawn = VisualZone(
+            id: "spawn",
+            name: "Spawn",
+            kind: .spawn,
+            points: [
+                VisualPoint(latitude: 40.66, longitude: -73.96),
+                VisualPoint(latitude: 40.661, longitude: -73.96),
+                VisualPoint(latitude: 40.661, longitude: -73.961),
+            ],
+            radiusMeters: nil
+        )
+        let safe = VisualZone(
+            id: "safe",
+            name: "Gazebo",
+            kind: .safe,
+            points: [VisualPoint(latitude: 40.662, longitude: -73.962)],
+            radiusMeters: 12
+        )
+        let during = LiveMapZones.visible(
+            liveZones: [spawn, safe],
+            spawnZones: [],
+            phase: .headStart,
+            emphasizeSpawn: true
+        )
+        XCTAssertEqual(during.map(\.id), ["spawn", "safe"])
+        let after = LiveMapZones.visible(
+            liveZones: [spawn, safe],
+            spawnZones: [spawn],
+            phase: .active,
+            emphasizeSpawn: false
+        )
+        XCTAssertEqual(after.map(\.id), ["safe"])
     }
 }

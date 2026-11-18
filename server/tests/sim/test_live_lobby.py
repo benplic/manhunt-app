@@ -119,3 +119,68 @@ def test_join_and_roles_push_a_lobby_view(client: TestClient) -> None:
             started_view = _next(guest_ws)
             assert started_view["type"] == "view"
             assert started_view["data"]["phase"] == "head_start"
+
+
+def _expect_close(ws, code: int = 4403, timeout: float = 2) -> None:
+    async def receive():
+        with anyio.fail_after(timeout):
+            message = await ws._send_rx.receive()
+        if message["type"] != "websocket.close":
+            raise AssertionError(f"expected close, got {message}")
+        assert message.get("code") == code, message
+
+    try:
+        ws.portal.call(receive)
+    except TimeoutError:
+        raise AssertionError("expected a websocket close") from None
+
+
+def test_remove_player_sends_removed_and_broadcasts_lobby(client: TestClient) -> None:
+    host = _auth(client, "Casey")
+    guest = _auth(client, "Riley")
+    arena = client.post(
+        "/v1/arenas",
+        json=arena_to_dict(square()),
+        headers=_hdr(host["access_token"]),
+    )
+    assert arena.status_code == 200, arena.text
+    game = client.post(
+        "/v1/games",
+        json={"arena_id": arena.json()["id"], "preset_id": "classic", "overrides": {}},
+        headers=_hdr(host["access_token"]),
+    )
+    assert game.status_code == 200, game.text
+    game_id = game.json()["id"]
+    joined = client.post(
+        "/v1/games/join",
+        json={"join_code": game.json()["join_code"]},
+        headers=_hdr(guest["access_token"]),
+    )
+    assert joined.status_code == 200, joined.text
+    guest_id = guest["user"]["id"]
+
+    with client.websocket_connect(f"/v1/games/{game_id}/ws") as host_ws:
+        host_ws.send_json({"type": "hello", "data": {"token": host["access_token"]}})
+        assert _next(host_ws)["type"] == "welcome"
+        assert _next(host_ws)["type"] == "view"
+
+        with client.websocket_connect(f"/v1/games/{game_id}/ws") as guest_ws:
+            guest_ws.send_json({"type": "hello", "data": {"token": guest["access_token"]}})
+            assert _next(guest_ws)["type"] == "welcome"
+            assert _next(guest_ws)["type"] == "view"
+
+            removed = client.post(
+                f"/v1/games/{game_id}/players/{guest_id}/remove",
+                headers=_hdr(host["access_token"]),
+            )
+            assert removed.status_code == 200, removed.text
+
+            goodbye = _next(guest_ws)
+            assert goodbye["type"] == "removed"
+            assert goodbye["data"]["reason"] == "host_removed"
+            _expect_close(guest_ws, code=4403)
+
+            host_view = _next(host_ws)
+            assert host_view["type"] == "view"
+            names = [player["display_name"] for player in host_view["data"]["players"]]
+            assert names == ["Casey"]

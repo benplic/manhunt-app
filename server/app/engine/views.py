@@ -6,6 +6,7 @@ from uuid import UUID
 
 from app.engine.arena import ZoneKind, arena_to_dict
 from app.engine.modules.head_start import spawn_clock_held
+from app.engine.modules.zone_policy import safe_zones_active
 from app.engine.modules.zone_shrink import zone_shrink_schedule
 from app.engine.session import GameSession
 from app.engine.state import PlayerState
@@ -32,6 +33,8 @@ def build_view(
                 "is_host": player.is_host,
                 "points": player.points,
                 "points_earned": player.points_earned,
+                # Hiders need this to pick a Rescue target; seekers gain nothing sensitive.
+                "converted_from_hider": bool(player.converted_from_hider),
                 "location": _visible_location(state, viewer, player),
             }
         )
@@ -97,12 +100,12 @@ def build_view(
             "points": viewer.points,
             "points_earned": viewer.points_earned,
             "hint": viewer.hint,
-            "effects": [e.type for e in state.effects if e.owner_id == viewer.player_id],
+            "effects": _effects_for(state, viewer),
             "cooldowns": cooldowns,
             "taunt_cooldown_s": taunt_cooldown_s,
             "taunt_enabled": bool(session.module_settings("points").get("taunt_enabled", True)),
         },
-        "arena": arena_to_dict(state.arena),
+        "arena": _arena_for_view(session),
         "players": players,
         "reveals": reveals,
         "banners": [
@@ -121,8 +124,24 @@ def build_view(
     }
 
 
+def _effects_for(state, viewer: PlayerState) -> list[str]:
+    """Owner effects plus shared lockdown so every phone can fade safe zones."""
+    owned = [e.type for e in state.effects if e.owner_id == viewer.player_id]
+    if state.lockdown_until_s is not None and "lockdown" not in owned:
+        owned.append("lockdown")
+    return owned
+
+
+def _arena_for_view(session: GameSession) -> dict:
+    packed = arena_to_dict(session.state.arena)
+    if safe_zones_active(session):
+        return packed
+    packed["zones"] = [zone for zone in packed["zones"] if zone["kind"] != ZoneKind.SAFE]
+    return packed
+
+
 def _power_ups_for(session: GameSession, viewer: PlayerState) -> list[dict]:
-    from app.engine.modules.power_ups import CATALOG
+    from app.engine.modules.power_ups import CATALOG, tracker_allowed
 
     settings = session.module_settings("power_ups")
     if not bool(settings.get("enabled", True)):
@@ -133,22 +152,32 @@ def _power_ups_for(session: GameSession, viewer: PlayerState) -> list[dict]:
         "radar": "Radar",
         "jammer": "Jammer",
         "shield": "Shield",
+        "rescue": "Rescue",
+        "create_safe": "Create safe",
         "scan": "Scan",
         "tracker": "Tracker",
         "lockdown": "Lockdown",
+        "move_safe": "Move safe",
+        "shrink_now": "Shrink now",
     }
+    tracker_ok = tracker_allowed(session=session)
     rows = []
     for power_id, base in CATALOG.items():
         if base["role"] != viewer.role:
             continue
         if not bool(settings.get(f"{power_id}_enabled", True)):
             continue
+        # Still list a forbidden Tracker so the dock can grey it with a clear denial.
+        available = True
+        if power_id == "tracker" and not tracker_ok:
+            available = False
         rows.append(
             {
                 "id": power_id,
                 "title": titles[power_id],
                 "cost": int(settings.get(f"{power_id}_cost", base["cost"])),
                 "role": base["role"],
+                "available": available,
             }
         )
     return rows

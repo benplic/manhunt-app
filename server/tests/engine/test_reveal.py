@@ -147,6 +147,67 @@ def test_fuzzy_reveal_emits_pins_are_up_event() -> None:
     assert any("Hider pins are up." in e.text for e in reveal_events)
 
 
+def test_fuzzy_reveal_does_not_pulse_during_head_start() -> None:
+    session, clock = make_session(
+        overrides={
+            "head_start": {"enabled": True, "duration": 10, "seeker_lock": "locked_map"},
+            "reveal_fuzzy": {"interval": 2, "display": 5, "fuzz": 0},
+            "signal_loss": {"silence": 60},
+        }
+    )
+    hid = uuid4()
+    seek = uuid4()
+    session.add_player(hid, "Riley", True)
+    session.add_player(seek, "Jordan", False)
+    session.set_role(hid, "hider")
+    session.set_role(seek, "seeker")
+    session.start()
+    session.record_location(hid, reading(meters(40, 40), clock))
+    session.record_location(seek, reading(meters(80, 40), clock))
+    run_for(session, clock, 8)
+    assert session.state.phase == "head_start"
+    assert session.state.reveals == []
+    assert session.state.last_reveal_at_s is None
+    # Head start ends on this tick; reveal may pulse once phase flips to active.
+    run_for(session, clock, 2)
+    assert session.state.phase == "active"
+    assert len(session.state.reveals) == 1
+    assert session.state.last_reveal_at_s is not None
+
+
+def test_hot_cold_pulse_does_not_run_during_head_start() -> None:
+    session, clock = make_session(
+        overrides={
+            "head_start": {"enabled": True, "duration": 6, "seeker_lock": "locked_map"},
+            "reveal_fuzzy": {
+                "location_mode": "hot_cold",
+                "persistence": "timed",
+                "interval": 2,
+                "display": 5,
+                "fuzz": 30,
+                "hints_enabled": False,
+                "hints_persistence": "persistent",
+                "hints_interval": 2,
+            },
+            "signal_loss": {"silence": 60},
+        }
+    )
+    hid = uuid4()
+    seek = uuid4()
+    session.add_player(hid, "Riley", True)
+    session.add_player(seek, "Jordan", False)
+    session.set_role(hid, "hider")
+    session.set_role(seek, "seeker")
+    session.start()
+    session.record_location(hid, reading(meters(40, 40), clock))
+    session.record_location(seek, reading(meters(80, 40), clock))
+    run_for(session, clock, 5)
+    assert session.state.phase == "head_start"
+    assert session.state.reveals == []
+    assert session.state.players[seek].hint is None
+    assert session.state.last_reveal_at_s is None
+
+
 def test_ghosted_hider_pulse_does_not_emit_pins_are_up() -> None:
     session, clock = make_session(
         overrides={

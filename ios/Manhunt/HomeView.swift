@@ -6,6 +6,7 @@ struct HomeView: View {
     @State private var renamingArenaID: UUID?
     @State private var renameArenaDraft = ""
     @State private var deletingArenaID: UUID?
+    @State private var confirmSignOut = false
 
     var body: some View {
         @Bindable var store = store
@@ -18,7 +19,7 @@ struct HomeView: View {
                             .foregroundStyle(HuntColor.paper)
                     }
                     Spacer()
-                    Button("Sign out", action: store.signOut)
+                    Button("Sign out") { confirmSignOut = true }
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(HuntColor.muted)
                 }
@@ -165,6 +166,10 @@ struct HomeView: View {
             Button("Cancel", role: .cancel) { deletingArenaID = nil }
         } message: {
             Text("Games already started keep their saved snapshot.")
+        }
+        .alert("Sign out?", isPresented: $confirmSignOut) {
+            Button("Sign out", role: .destructive, action: store.signOut)
+            Button("Cancel", role: .cancel) {}
         }
     }
 

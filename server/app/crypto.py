@@ -45,3 +45,25 @@ def decrypt_payload(key: bytes, blob: dict) -> dict:
     ciphertext = b64decode(str(blob["ct"]))
     plaintext = aes.decrypt(nonce, ciphertext, None)
     return json.loads(plaintext.decode())
+
+
+def seal_inputs(key: bytes, inputs: list, key_id: str = "v1") -> dict:
+    """Encrypt the replay log. It contains the same GPS fixes as the trail."""
+    return encrypt_payload(key, {"inputs": inputs}, key_id)
+
+
+def open_inputs(key: bytes | None, stored: object) -> list:
+    """Return the replay list. A raw list is a row written before sealing."""
+    if stored is None:
+        return []
+    if isinstance(stored, list):
+        return list(stored)
+    if isinstance(stored, dict) and "ct" in stored:
+        if key is None:
+            raise TrailKeyError("Sealed inputs cannot be opened without the trail key.")
+        payload = decrypt_payload(key, stored)
+        inputs = payload.get("inputs", [])
+        if not isinstance(inputs, list):
+            raise TrailKeyError("Sealed inputs payload is not a list.")
+        return inputs
+    return []

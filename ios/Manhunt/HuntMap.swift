@@ -24,19 +24,30 @@ struct HuntMap: View {
     var emphasizeSpawn: Bool = false
     var glidePeople: Bool = false
     var zoneShrink: ZoneShrinkClock? = nil
+    /// When true, safe zones fade so lockdown reads on the map.
+    var lockdownActive: Bool = false
 
     @State private var position: MapCameraPosition = .automatic
     @State private var crosshair = VisualPoint(latitude: 40.6616, longitude: -73.9688)
     @State private var glide = PlayerGlide()
+    @State private var safeDim: Double = 0
 
-    private var animates: Bool { glidePeople || zoneShrink != nil }
+    private var animates: Bool { glidePeople || zoneShrink != nil || safeDim > 0 || lockdownActive }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animates)) { timeline in
             mapContent(now: timeline.date)
         }
-        .onAppear { glide.retarget(people, now: Date()) }
+        .onAppear {
+            glide.retarget(people, now: Date())
+            safeDim = lockdownActive ? 1 : 0
+        }
         .onChange(of: people) { _, updated in glide.retarget(updated, now: Date()) }
+        .onChange(of: lockdownActive) { _, active in
+            withAnimation(.easeInOut(duration: 0.75)) {
+                safeDim = active ? 1 : 0
+            }
+        }
     }
 
     private func mapContent(now: Date) -> some View {
@@ -92,26 +103,29 @@ struct HuntMap: View {
                 ForEach(zones.filter { $0.kind == .outOfBounds }) { zone in
                     zoneContent(zone)
                 }
-                ForEach(reveals) { reveal in
+                ForEach(visibleReveals) { reveal in
                     revealContent(reveal)
                 }
                 if emphasizeSpawn {
                     ForEach(zones.filter { $0.kind == .spawn }) { zone in
                         if let anchor = zone.points.first {
-                            Annotation("Locked spawn", coordinate: anchor.coordinate) {
+                            Annotation("", coordinate: anchor.coordinate) {
                                 Image(systemName: "lock.fill")
                                     .font(.caption.weight(.bold))
                                     .padding(6)
                                     .background(HuntColor.ink, in: Circle())
                                     .foregroundStyle(HuntColor.paper)
+                                    .accessibilityLabel("Locked spawn")
                             }
                         }
                     }
                 }
-                ForEach(people) { person in
+                ForEach(visiblePeople) { person in
                     if shouldShow(person) {
-                        Annotation(person.name, coordinate: displayPoint(for: person, now: now).coordinate, anchor: .bottom) {
+                        // Empty title: PlayerPin owns the visual; MapKit titles would double the name.
+                        Annotation("", coordinate: displayPoint(for: person, now: now).coordinate, anchor: .bottom) {
                             PlayerPin(person: person, fuzzy: fuzzyHiders && person.role == .hider && !person.isYou)
+                                .accessibilityLabel(person.name)
                         }
                     }
                 }
@@ -185,6 +199,26 @@ struct HuntMap: View {
         return person.isYou
     }
 
+    /// Prefer reveal pins for others; keep the local `isYou` pin once when both lists have them.
+    private var revealPlayerIDs: Set<String> {
+        Set(reveals.map(\.playerID))
+    }
+
+    private var youPlayerID: String? {
+        people.first(where: \.isYou)?.id
+    }
+
+    private var visiblePeople: [VisualPlayer] {
+        people.filter { person in
+            person.isYou || !revealPlayerIDs.contains(person.id)
+        }
+    }
+
+    private var visibleReveals: [MapReveal] {
+        guard let youPlayerID else { return reveals }
+        return reveals.filter { $0.playerID != youPlayerID }
+    }
+
     /// Fuzzy pins are offset so the picture reads as "approximate", not exact.
     private func displayPoint(for person: VisualPlayer, now: Date) -> VisualPoint {
         let base = glidePeople ? (glide.point(for: person.id, at: now) ?? person.point) : person.point
@@ -199,28 +233,33 @@ struct HuntMap: View {
     private func zoneContent(_ zone: VisualZone) -> some MapContent {
         let tint = tint(for: zone.kind)
         let width: CGFloat = (emphasizeSpawn && zone.kind == .spawn) ? 4 : 2
+        let fillBase: Double = emphasizeSpawn && zone.kind == .spawn ? 0.45 : 0.28
+        let fillOpacity = zone.kind == .safe ? fillBase * (1 - 0.78 * safeDim) : fillBase
+        let strokeOpacity = zone.kind == .safe ? max(0.25, 1 - 0.65 * safeDim) : 1
         if zone.kind == .safe, let center = zone.points.first, let radius = zone.radiusMeters {
             MapCircle(center: center.coordinate, radius: radius)
-                .foregroundStyle(tint.opacity(0.28))
-                .stroke(tint, lineWidth: width)
+                .foregroundStyle(tint.opacity(fillOpacity))
+                .stroke(tint.opacity(strokeOpacity), lineWidth: width)
         } else if zone.points.count >= 3 {
             MapPolygon(coordinates: zone.points.map(\.coordinate))
-                .foregroundStyle(tint.opacity(emphasizeSpawn && zone.kind == .spawn ? 0.45 : 0.28))
-                .stroke(tint, lineWidth: width)
+                .foregroundStyle(tint.opacity(fillOpacity))
+                .stroke(tint.opacity(strokeOpacity), lineWidth: width)
         } else if zone.points.count >= 2 {
             MapPolyline(coordinates: zone.points.map(\.coordinate))
-                .stroke(tint, lineWidth: width)
+                .stroke(tint.opacity(strokeOpacity), lineWidth: width)
         }
         if !zone.name.isEmpty,
            zone.kind == .safe || zone.kind == .outOfBounds || zone.kind == .spawn,
            let anchor = zone.points.first {
-            Annotation(zone.name, coordinate: anchor.coordinate) {
+            // Empty title: Text below is the only label; MapKit titles would double it.
+            Annotation("", coordinate: anchor.coordinate) {
                 Text(zone.name)
                     .font(.caption2.weight(.bold))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(.black.opacity(0.72), in: Capsule())
-                    .foregroundStyle(HuntColor.paper)
+                    .foregroundStyle(HuntColor.paper.opacity(zone.kind == .safe ? strokeOpacity : 1))
+                    .accessibilityLabel(zone.name)
             }
         }
     }
@@ -234,13 +273,15 @@ struct HuntMap: View {
                 .foregroundStyle(color.opacity(0.22))
                 .stroke(color, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
         }
-        Annotation(reveal.name, coordinate: reveal.center.coordinate, anchor: .bottom) {
+        // Empty title: RevealPin owns the visual; MapKit titles would double the name.
+        Annotation("", coordinate: reveal.center.coordinate, anchor: .bottom) {
             RevealPin(
                 name: reveal.name,
                 playerID: reveal.playerID,
                 color: color,
                 fuzzy: reveal.radiusMeters > 0
             )
+            .accessibilityLabel(reveal.name)
         }
     }
 

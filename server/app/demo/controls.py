@@ -116,9 +116,26 @@ def _force_tag(session: GameSession, actor_id: UUID, hider_id: UUID | None) -> N
         for p in session.state.players.values()
         if p.role == "seeker" and p.player_id != target.player_id
     ]
-    if not seekers:
-        raise GameRuleError(ErrorCode.NEED_BOTH_ROLES, "Need at least one seeker to tag.")
     demo = session.demo
+    # Demo hosts often switch themselves to hider right before Force Tag. With
+    # classic seeker_count=1 that leaves zero seekers — promote a non-target
+    # (prefer a bot) so the control still works instead of NEED_BOTH_ROLES.
+    if not seekers:
+        candidates = [
+            p
+            for p in session.state.players.values()
+            if p.player_id != target.player_id
+        ]
+        if not candidates:
+            raise GameRuleError(ErrorCode.NEED_BOTH_ROLES, "Need at least one seeker to tag.")
+        bot_candidates = [
+            p for p in candidates if demo is not None and demo.is_bot(p.player_id)
+        ]
+        promoted = bot_candidates[0] if bot_candidates else candidates[0]
+        promoted.role = "seeker"
+        promoted.status = "active"
+        promoted.converted_from_hider = False
+        seekers = [promoted]
     bot_seekers = [s for s in seekers if demo is not None and demo.is_bot(s.player_id)]
     seeker = bot_seekers[0] if bot_seekers else seekers[0]
 
@@ -172,6 +189,7 @@ def _switch_team(session: GameSession, actor_id: UUID, role: str | None) -> None
 
     session.set_role(actor_id, next_role)
     player.status = "active"
+    player.converted_from_hider = False
     player.safe_zone_id = None
     player.safe_remaining_s = None
     player.safe_expired = False

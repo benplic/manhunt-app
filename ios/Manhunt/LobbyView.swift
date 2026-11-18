@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LobbyView: View {
     @Environment(AppStore.self) private var store
+    @State private var confirmLeave = false
 
     var body: some View {
         @Bindable var store = store
@@ -10,7 +11,7 @@ struct LobbyView: View {
                 ScreenHeader(
                     title: store.isHost ? "Your lobby" : "Joined",
                     subtitle: store.isHost ? "Share the code, then set roles." : "Waiting for the host to start.",
-                    onBack: store.goHome
+                    onBack: { confirmLeave = true }
                 )
 
                 CodeReadout(code: store.joinCode)
@@ -216,5 +217,9 @@ struct LobbyView: View {
             .padding(20)
         }
         .background(HuntColor.ink)
+        .alert("Leave this hunt?", isPresented: $confirmLeave) {
+            Button("Leave", role: .destructive, action: store.goHome)
+            Button("Cancel", role: .cancel) {}
+        }
     }
 }

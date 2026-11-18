@@ -12,6 +12,10 @@ from app.errors import ErrorCode, GameRuleError
 if TYPE_CHECKING:
     from app.engine.session import GameSession
 
+# The phone reports its own accuracy. Adding the whole number lets a seeker
+# claim 30 m of error and tag from the far side of a reveal circle.
+ACCURACY_BONUS_CAP_M = 5.0
+
 
 class TagPolicyModule(BaseModule):
     module_id: ClassVar[str] = "tag_policy"
@@ -45,7 +49,10 @@ class TagPolicyModule(BaseModule):
         if sloc.accuracy_m > ACCURACY_CUTOFF_M or hloc.accuracy_m > ACCURACY_CUTOFF_M:
             return ErrorCode.NOT_IN_PAIRING_RANGE
         gps = distance_m(sloc.point, hloc.point)
-        if gps > pairing + sloc.accuracy_m + hloc.accuracy_m:
+        bonus = min(sloc.accuracy_m, ACCURACY_BONUS_CAP_M) + min(
+            hloc.accuracy_m, ACCURACY_BONUS_CAP_M
+        )
+        if gps > pairing + bonus:
             return ErrorCode.NOT_IN_PAIRING_RANGE
         # Spec §5.6: a signed QR claim is the fallback when UWB is unavailable
         # or ranging fails. GPS pairing above still applies; dual-range is only
@@ -76,6 +83,7 @@ class TagPolicyModule(BaseModule):
         if result == "convert":
             hider.role = "seeker"
             hider.status = "active"
+            hider.converted_from_hider = True
         else:
             hider.status = "eliminated"
         grant_points(seeker, 25)

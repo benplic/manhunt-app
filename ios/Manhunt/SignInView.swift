@@ -44,6 +44,16 @@ struct SignInView: View {
                         .background(HuntColor.ink, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .foregroundStyle(HuntColor.paper)
                         .accessibilityIdentifier("server-url")
+                    Text("Home key")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(HuntColor.muted)
+                    SecureField("From the home server .env", text: $store.devAuthSecret)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .padding(12)
+                        .background(HuntColor.ink, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .foregroundStyle(HuntColor.paper)
+                        .accessibilityIdentifier("dev-auth-secret")
                 }
 
                 if let note = store.note {

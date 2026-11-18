@@ -101,9 +101,11 @@ struct PowerUpDTO: Codable, Equatable, Identifiable {
     var title: String
     var cost: Int
     var role: PlayerRole
+    /// Nil on older servers means available. False greys the chip with a denial.
+    var available: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, title, cost, role
+        case id, title, cost, role, available
     }
 }
 
@@ -313,6 +315,8 @@ struct PlayerDTO: Codable, Identifiable, Hashable {
     var isHost: Bool
     var points: Int? = nil
     var pointsEarned: Int? = nil
+    /// True after a convert-tag; Rescue can turn them back into a hider.
+    var convertedFromHider: Bool = false
     var location: LocationDTO?
 
     var id: UUID { playerId }
@@ -325,6 +329,7 @@ struct PlayerDTO: Codable, Identifiable, Hashable {
         case isHost = "is_host"
         case points
         case pointsEarned = "points_earned"
+        case convertedFromHider = "converted_from_hider"
         case location
     }
 }

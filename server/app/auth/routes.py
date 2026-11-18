@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends
+import hmac
+
+from fastapi import APIRouter, Depends, Header, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,14 +63,35 @@ async def _issue(session: AsyncSession, user: User, settings) -> AuthOut:
     )
 
 
+def _dev_secret_ok(presented: str, expected: str) -> bool:
+    if not expected or len(presented) != len(expected):
+        return False
+    return hmac.compare_digest(presented, expected)
+
+
 def bind_auth_routes(get_session, get_settings, current_user):
+    from app.games.join_limit import DevAuthRateLimiter
+
+    dev_limiter = DevAuthRateLimiter()
     router = APIRouter(prefix="/v1/auth", tags=["auth"])
 
     @router.post("/dev", response_model=AuthOut)
-    async def dev_auth(body: DevAuthIn, session: AsyncSession = Depends(get_session)) -> AuthOut:
+    async def dev_auth(
+        body: DevAuthIn,
+        request: Request,
+        session: AsyncSession = Depends(get_session),
+        dev_secret: str | None = Header(default=None, alias="X-Manhunt-Dev-Secret"),
+    ) -> AuthOut:
         settings = get_settings()
         if not settings.manhunt_dev_auth:
             raise ApiError(ErrorCode.FORBIDDEN, "Dev sign-in is disabled.", status_code=403)
+        client_ip = request.client.host if request.client else "unknown"
+        dev_limiter.hit(client_ip)
+        # Home publishes this route through the tunnel. The party secret is
+        # what stops a stranger who only has the URL from minting accounts.
+        if settings.manhunt_env == "home" or settings.manhunt_dev_auth_secret:
+            if not _dev_secret_ok(dev_secret or "", settings.manhunt_dev_auth_secret):
+                raise ApiError(ErrorCode.FORBIDDEN, "Dev sign-in is disabled.", status_code=403)
         handle = _install_handle(body.installation_id)
         name = body.display_name.strip()
         user = await session.scalar(select(User).where(User.dev_handle == handle))

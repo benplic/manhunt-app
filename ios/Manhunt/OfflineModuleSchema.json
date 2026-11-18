@@ -75,7 +75,7 @@
     "reveal_fuzzy": {
       "version": 1,
       "title": "Reveal",
-      "blurb": "Location pulses and hot/cold hints.",
+      "blurb": "Location pulses and hot/cold hints. Hints: Fuzzy when Hints is on; always on in Hot/cold; off in Precise.",
       "locked": true,
       "field_order": [
         "location_mode",
@@ -101,7 +101,8 @@
             "Fuzzy",
             "Precise",
             "Hot/cold"
-          ]
+          ],
+          "help": "Fuzzy: offset pins, optional hints. Precise: true pins, no hints. Hot/cold: distance and direction only (hints always on)."
         },
         "persistence": {
           "type": "enum",
@@ -114,7 +115,8 @@
           "labels": [
             "Timed",
             "Persistent"
-          ]
+          ],
+          "help": "Persistent pins never expire. Tracker is unavailable while Persistent."
         },
         "interval": {
           "type": "int",
@@ -146,7 +148,8 @@
         "hints_enabled": {
           "type": "bool",
           "title": "Hints",
-          "default": true
+          "default": true,
+          "help": "Fuzzy only. On: seekers get hot/cold with pins. Hot/cold mode always has hints; Precise never does."
         },
         "hints_persistence": {
           "type": "enum",
@@ -233,13 +236,14 @@
     "zone_policy": {
       "version": 1,
       "title": "Zones",
-      "blurb": "Out of bounds counts down. Safe zones block tags until time runs out.",
+      "blurb": "Out of bounds counts down. Safe visit and cooldown limit each stay; remove-after drops every safe zone from the hunt.",
       "locked": true,
       "field_order": [
         "oob_countdown",
         "hider_oob_penalty",
         "safe_visit",
         "safe_cooldown",
+        "safe_remove_after",
         "margin_m"
       ],
       "fields": {
@@ -282,6 +286,15 @@
           "step": 15,
           "default": 60,
           "suffix": "s"
+        },
+        "safe_remove_after": {
+          "type": "int",
+          "title": "Remove safes after",
+          "min": 0,
+          "max": 180,
+          "step": 5,
+          "default": 0,
+          "suffix": "min"
         },
         "margin_m": {
           "type": "int",
@@ -461,12 +474,24 @@
         "jammer_cost",
         "shield_enabled",
         "shield_cost",
+        "rescue_enabled",
+        "rescue_cost",
+        "rescue_duration",
+        "create_safe_enabled",
+        "create_safe_cost",
+        "create_safe_radius_m",
         "scan_enabled",
         "scan_cost",
+        "scan_radius_m",
+        "scan_count",
         "tracker_enabled",
         "tracker_cost",
         "lockdown_enabled",
-        "lockdown_cost"
+        "lockdown_cost",
+        "move_safe_enabled",
+        "move_safe_cost",
+        "shrink_now_enabled",
+        "shrink_now_cost"
       ],
       "fields": {
         "enabled": {
@@ -544,6 +569,53 @@
           "default": 70,
           "suffix": "pts"
         },
+        "rescue_enabled": {
+          "type": "bool",
+          "title": "Rescue",
+          "default": true,
+          "help": "Convert a tagged seeker back to hider with brief immunity."
+        },
+        "rescue_cost": {
+          "type": "int",
+          "title": "Rescue cost",
+          "min": 0,
+          "max": 200,
+          "step": 5,
+          "default": 120,
+          "suffix": "pts"
+        },
+        "rescue_duration": {
+          "type": "int",
+          "title": "Rescue immunity",
+          "min": 15,
+          "max": 180,
+          "step": 15,
+          "default": 60,
+          "suffix": "s"
+        },
+        "create_safe_enabled": {
+          "type": "bool",
+          "title": "Create safe",
+          "default": true
+        },
+        "create_safe_cost": {
+          "type": "int",
+          "title": "Create safe cost",
+          "min": 0,
+          "max": 200,
+          "step": 5,
+          "default": 110,
+          "suffix": "pts"
+        },
+        "create_safe_radius_m": {
+          "type": "int",
+          "title": "New safe radius",
+          "min": 10,
+          "max": 80,
+          "step": 5,
+          "default": 30,
+          "suffix": "m"
+        },
         "scan_enabled": {
           "type": "bool",
           "title": "Scan",
@@ -558,10 +630,29 @@
           "default": 25,
           "suffix": "pts"
         },
+        "scan_radius_m": {
+          "type": "int",
+          "title": "Scan radius",
+          "min": 10,
+          "max": 150,
+          "step": 5,
+          "default": 30,
+          "suffix": "m"
+        },
+        "scan_count": {
+          "type": "int",
+          "title": "Scan pins",
+          "min": 1,
+          "max": 5,
+          "step": 1,
+          "default": 1,
+          "suffix": ""
+        },
         "tracker_enabled": {
           "type": "bool",
           "title": "Tracker",
-          "default": true
+          "default": true,
+          "help": "Timed hot/cold for seekers. Unavailable when Location is Hot/cold or Location timing is Persistent."
         },
         "tracker_cost": {
           "type": "int",
@@ -584,6 +675,35 @@
           "max": 200,
           "step": 5,
           "default": 75,
+          "suffix": "pts"
+        },
+        "move_safe_enabled": {
+          "type": "bool",
+          "title": "Move safe",
+          "default": true
+        },
+        "move_safe_cost": {
+          "type": "int",
+          "title": "Move safe cost",
+          "min": 0,
+          "max": 200,
+          "step": 5,
+          "default": 110,
+          "suffix": "pts"
+        },
+        "shrink_now_enabled": {
+          "type": "bool",
+          "title": "Shrink now",
+          "default": true,
+          "help": "Fire the next zone shrink now and shift the remaining schedule."
+        },
+        "shrink_now_cost": {
+          "type": "int",
+          "title": "Shrink now cost",
+          "min": 0,
+          "max": 200,
+          "step": 5,
+          "default": 100,
           "suffix": "pts"
         }
       }

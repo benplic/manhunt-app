@@ -21,6 +21,15 @@ A roadmap bullet is done only when its acceptance line in the remaining-benchmar
 - Code, comments, and docs are English. Unfinished behavior gets a `TODO:` comment. Do not swallow exceptions.
 - No secrets in the repo. No coordinates or tokens in logs.
 
+## Git identity (benplic only)
+
+Only the **benplic** GitHub account may author or push commits in this repo.
+
+- Allowed: GitHub user `benplic` (local `user.name` / `user.email` that map to that account; SSH host `github.com-benplic`).
+- Forbidden author/committer or push identities: `splichta`, `cursoragent`, `bplichta01`, and any other non-`benplic` account.
+- Before every `git commit` or `git push`, check `git config --get user.name`, `git config --get user.email`, and `git remote -v`. If the effective identity is forbidden or not `benplic`, stop and fix local repo config (do not rely on a global `bplichta01` identity). Do not pass `--author` to impersonate a forbidden account.
+- Prefer this repo’s local git config over the machine global config when they disagree.
+
 ## Checks
 
 - Server: `cd server && . .venv/bin/activate && pytest -q && ruff check .`

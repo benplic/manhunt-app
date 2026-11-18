@@ -135,11 +135,13 @@ def test_bot_seeker_chases_and_tags_hider_even_with_human_seeker() -> None:
     for method in ("qr", "uwb"):
         session, clock, _, bot_seeker, bot_hider = _setup_demo(seed=77, method=method)
         session.start()
-        # Advance past 10s head start
-        for _ in range(10):
+        # Advance past head start (spawn lock may hold a tick or two for streak).
+        for _ in range(20):
             clock.advance(1)
             session.tick()
             BotDriver.step(session)
+            if session.state.phase == "active":
+                break
         assert session.state.phase == "active"
 
         # Place hider 25m away from seeker so chase + tag finishes quickly.
@@ -172,10 +174,12 @@ def test_bot_seeker_chases_and_tags_hider_even_with_human_seeker() -> None:
 def test_bot_seeker_safe_zone_refusal_does_not_crash() -> None:
     session, clock, _, bot_seeker, bot_hider = _setup_demo(seed=5)
     session.start()
-    for _ in range(10):
+    for _ in range(20):
         clock.advance(1)
         session.tick()
         BotDriver.step(session)
+        if session.state.phase == "active":
+            break
 
     safe_center = session.state.arena.zones[1].shape.center  # type: ignore[union-attr]
     session.set_synthetic_location(
@@ -201,10 +205,13 @@ def test_bot_seeker_safe_zone_refusal_does_not_crash() -> None:
 def test_bot_modes_go_dark_oob_and_human_walk() -> None:
     session, clock, human, bot_seeker, bot_hider = _setup_demo(seed=11)
     session.start()
-    for _ in range(10):
+    for _ in range(20):
         clock.advance(1)
         session.tick()
         BotDriver.step(session)
+        if session.state.phase == "active":
+            break
+    assert session.state.phase == "active"
 
     assert session.demo is not None
     center = session.state.arena.boundary_circle.center  # type: ignore[union-attr]

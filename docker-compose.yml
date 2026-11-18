@@ -3,10 +3,14 @@ services:
     image: postgres:16
     environment:
       POSTGRES_USER: manhunt
-      POSTGRES_PASSWORD: manhunt
+      # .env supplies this for the home server. The default keeps
+      # `docker compose --profile test` working when POSTGRES_PASSWORD is unset.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-manhunt}
       POSTGRES_DB: manhunt
     ports:
-      - "5432:5432"
+      # Loopback only. The published password used to be reachable on every
+      # interface of the host. Set POSTGRES_PASSWORD in the untracked .env.
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U manhunt -d manhunt"]
       interval: 2s
@@ -21,10 +25,13 @@ services:
     environment:
       MANHUNT_ENV: home
       MANHUNT_DEV_AUTH: "true"
-      MANHUNT_DATABASE_URL: postgresql+psycopg://manhunt:manhunt@db:5432/manhunt
-      MANHUNT_SESSION_SIGNING_KEY: ${MANHUNT_SESSION_SIGNING_KEY:-dev-session-signing-key-change-me}
-      MANHUNT_QR_SIGNING_KEY: ${MANHUNT_QR_SIGNING_KEY:-dev-qr-signing-key-change-me}
-      MANHUNT_TRAIL_KEY: ${MANHUNT_TRAIL_KEY:-abababababababababababababababababababababababababababababababab}
+      # No committed fallbacks. An empty value fails startup instead of signing
+      # sessions with a key that is in the repo.
+      MANHUNT_DATABASE_URL: ${MANHUNT_DATABASE_URL:-postgresql+psycopg://manhunt:${POSTGRES_PASSWORD:-manhunt}@db:5432/manhunt}
+      MANHUNT_SESSION_SIGNING_KEY: ${MANHUNT_SESSION_SIGNING_KEY:-}
+      MANHUNT_QR_SIGNING_KEY: ${MANHUNT_QR_SIGNING_KEY:-}
+      MANHUNT_TRAIL_KEY: ${MANHUNT_TRAIL_KEY:-}
+      MANHUNT_DEV_AUTH_SECRET: ${MANHUNT_DEV_AUTH_SECRET:-}
       MANHUNT_TICK_LOOP: "true"
     ports:
       - "8000:8000"
@@ -48,7 +55,7 @@ services:
     environment:
       MANHUNT_ENV: test
       MANHUNT_DEV_AUTH: "true"
-      MANHUNT_DATABASE_URL: postgresql+psycopg://manhunt:manhunt@db:5432/manhunt
+      MANHUNT_DATABASE_URL: postgresql+psycopg://manhunt:${POSTGRES_PASSWORD:-manhunt}@db:5432/manhunt
       MANHUNT_SESSION_SIGNING_KEY: test-session-signing-key-change-me
       MANHUNT_QR_SIGNING_KEY: test-qr-signing-key-change-me
       MANHUNT_TICK_LOOP: "false"

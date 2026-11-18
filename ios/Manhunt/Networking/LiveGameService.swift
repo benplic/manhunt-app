@@ -5,6 +5,8 @@ final class LiveGameService: GameService {
     private let client: APIClient
     private let socket = GameSocket()
     private(set) var joinCalls = 0
+    /// Sent only on dev sign-in. The home server rejects Play without it.
+    var devAuthSecret: String = ""
     /// Rotating refresh token from the last auth response. Cleared on sign-out.
     var refreshToken: String?
     /// Called when a refresh attempt fails so the store can sign out.
@@ -15,6 +17,8 @@ final class LiveGameService: GameService {
     var onQR: ((String) -> Void)?
     var onEvent: ((BannerDTO) -> Void)?
     var onReconnect: ((Bool) -> Void)?
+    /// Fired when the server removes this player (`type: removed` or close 4403).
+    var onRemoved: (() -> Void)?
     var onUWBPeers: (([UWBPeer]) -> Void)?
     var onSendFailure: ((String) -> Void)? {
         get { socket.onSendFailure }
@@ -28,6 +32,7 @@ final class LiveGameService: GameService {
         socket.onEvent = { [weak self] banner in self?.onEvent?(banner) }
         socket.onReconnect = { [weak self] reconnecting in self?.onReconnect?(reconnecting) }
         socket.onUWBPeers = { [weak self] peers in self?.onUWBPeers?(peers) }
+        socket.onRemoved = { [weak self] in self?.onRemoved?() }
         client.refreshAccessToken = { [weak self] in
             try await self?.rotateAccessToken()
         }
@@ -58,6 +63,7 @@ final class LiveGameService: GameService {
     }
 
     func signIn(displayName: String, installationId: String) async throws -> AuthOut {
+        client.devAuthSecret = devAuthSecret
         let auth: AuthOut = try await client.post(
             "/v1/auth/dev",
             body: DevAuthBody(displayName: displayName, installationId: installationId)
@@ -75,6 +81,10 @@ final class LiveGameService: GameService {
         client.token = auth.accessToken
         refreshToken = auth.refreshToken
         return auth
+    }
+
+    func me() async throws -> UserDTO {
+        try await client.get("/v1/me")
     }
 
     func registerDeviceToken(_ token: String) async throws {
@@ -146,6 +156,10 @@ final class LiveGameService: GameService {
 
     func end(gameID: UUID) async throws -> PlayerViewDTO {
         try await client.postEmpty("/v1/games/\(gameID.uuidString)/end")
+    }
+
+    func rematch(gameID: UUID) async throws -> PlayerViewDTO {
+        try await client.postEmpty("/v1/games/\(gameID.uuidString)/rematch")
     }
 
     func leave(gameID: UUID) async throws {
@@ -258,15 +272,29 @@ final class LiveGameService: GameService {
         try await client.get("/v1/presets/saved")
     }
 
-    func purchase(gameID: UUID, powerID: String, extra: [String: Double]) async throws -> PlayerViewDTO {
+    func purchase(
+        gameID: UUID,
+        powerID: String,
+        extra: [String: Double],
+        targetPlayerId: String?,
+        zoneId: String?
+    ) async throws -> PlayerViewDTO {
         struct Body: Encodable {
             var id: String
             var lat: Double?
             var lon: Double?
+            var target_player_id: String?
+            var zone_id: String?
         }
         return try await client.post(
             "/v1/games/\(gameID.uuidString)/power-ups",
-            body: Body(id: powerID, lat: extra["lat"], lon: extra["lon"])
+            body: Body(
+                id: powerID,
+                lat: extra["lat"],
+                lon: extra["lon"],
+                target_player_id: targetPlayerId,
+                zone_id: zoneId
+            )
         )
     }
 
