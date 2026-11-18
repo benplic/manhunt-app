@@ -8,6 +8,7 @@ struct LiveGameView: View {
     @State private var showBoard = false
     @State private var showLog = false
     @State private var showDemo = false
+    @State private var confirmLeave = false
 
     var body: some View {
         @Bindable var store = store
@@ -183,6 +184,10 @@ struct LiveGameView: View {
             Button("End game", role: .destructive, action: store.endLive)
             Button("Cancel", role: .cancel) {}
         }
+        .alert("Leave this hunt?", isPresented: $confirmLeave) {
+            Button("Leave", role: .destructive, action: store.goHome)
+            Button("Cancel", role: .cancel) {}
+        }
         .onChange(of: store.situation) { _, situation in
             if situation == .outOfBounds {
                 UINotificationFeedbackGenerator().notificationOccurred(.warning)
@@ -195,7 +200,7 @@ struct LiveGameView: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                mapIconChip(systemName: "house.fill", label: "Home", action: store.goHome)
+                mapIconChip(systemName: "house.fill", label: "Home") { confirmLeave = true }
                 mapIconChip(systemName: "trophy.fill", label: "Leaderboard") { showBoard = true }
                 mapIconChip(systemName: "book.closed.fill", label: "Event log") {
                     showLog = true

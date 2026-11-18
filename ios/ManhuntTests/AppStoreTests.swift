@@ -66,6 +66,7 @@ final class AppStoreTests: XCTestCase {
         XCTAssertFalse(store.isHost)
     }
 
+    // HomeView confirms Sign out in an alert before calling signOut(); that dialog is UI-only.
     @MainActor
     func testSignOutDropsTheMatch() {
         let store = AppStore.makePreview()
@@ -374,6 +375,7 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(store.screen, .home)
     }
 
+    // LobbyView / LiveGameView confirm Leave this hunt? before goHome(); that dialog is UI-only.
     @MainActor
     func testLeaveClearsTheMatchAndHitsTheService() async throws {
         let fake = FakeGameService()
