@@ -151,3 +151,68 @@ def test_disabled_power_is_rejected_and_a_custom_cost_is_charged() -> None:
     session.purchase(seeker, "scan")
     assert session.state.players[seeker].points == 0
     assert session.state.players[seeker].points_earned == 0
+
+
+def test_tracker_purchase_rejected_in_hot_cold_mode() -> None:
+    session, clock, hider, seeker = two_player_hunt(
+        {
+            "reveal_fuzzy": {
+                "location_mode": "hot_cold",
+                "persistence": "timed",
+                "hints_enabled": False,
+            }
+        }
+    )
+    session.state.players[seeker].points = 200
+    with pytest.raises(GameRuleError) as exc:
+        session.purchase(seeker, "tracker")
+    assert exc.value.code == ErrorCode.WRONG_PHASE
+    assert "tracker" in exc.value.message.lower()
+    assert session.state.players[seeker].points == 200
+    assert session.state.players[seeker].tracker_until_s is None
+
+
+def test_tracker_purchase_rejected_when_location_is_persistent() -> None:
+    session, clock, hider, seeker = two_player_hunt(
+        {
+            "reveal_fuzzy": {
+                "location_mode": "fuzzy",
+                "persistence": "persistent",
+                "hints_enabled": True,
+            }
+        }
+    )
+    session.state.players[seeker].points = 200
+    with pytest.raises(GameRuleError) as exc:
+        session.purchase(seeker, "tracker")
+    assert exc.value.code == ErrorCode.WRONG_PHASE
+    assert "tracker" in exc.value.message.lower()
+    assert session.state.players[seeker].points == 200
+    assert session.state.players[seeker].tracker_until_s is None
+
+
+def test_tracker_purchase_allowed_on_timed_fuzzy() -> None:
+    session, clock, hider, seeker = two_player_hunt(
+        {
+            "reveal_fuzzy": {
+                "location_mode": "fuzzy",
+                "persistence": "timed",
+                "hints_enabled": False,
+            }
+        }
+    )
+    session.state.players[seeker].points = 200
+    session.purchase(seeker, "tracker")
+    assert session.state.players[seeker].points == 150
+    assert session.state.players[seeker].tracker_until_s is not None
+
+
+def test_tracker_chip_marked_unavailable_in_hot_cold_view() -> None:
+    from app.engine.views import build_view
+
+    session, clock, hider, seeker = two_player_hunt(
+        {"reveal_fuzzy": {"location_mode": "hot_cold", "persistence": "timed"}}
+    )
+    view = build_view(session, seeker)
+    tracker = next(p for p in view["power_ups"] if p["id"] == "tracker")
+    assert tracker["available"] is False

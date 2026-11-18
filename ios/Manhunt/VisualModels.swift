@@ -135,6 +135,7 @@ struct VisualModule: Identifiable {
 struct VisualRow: Identifiable {
     var id: String
     var title: String
+    var help: String? = nil
     var control: Control
     var number: Double
     var choice: Int
@@ -211,6 +212,8 @@ struct PowerChip: Identifiable {
     var cost: Int
     var role: VisualRole
     var systemImage: String
+    /// False when the current reveal mode forbids this power (still shown greyed).
+    var available: Bool = true
 }
 
 enum SamplePark {
@@ -298,7 +301,7 @@ enum SamplePark {
         PowerChip(id: "jammer", title: "Jammer", detail: "Mute hot / cold hints", cost: 55, role: .hider, systemImage: "waveform.slash"),
         PowerChip(id: "shield", title: "Shield", detail: "Untaggable for 30s", cost: 70, role: .hider, systemImage: "shield.fill"),
         PowerChip(id: "scan", title: "Scan", detail: "Reveal one hider now", cost: 25, role: .seeker, systemImage: "viewfinder"),
-        PowerChip(id: "tracker", title: "Tracker", detail: "Hot / cold for 3 min", cost: 50, role: .seeker, systemImage: "location.magnifyingglass"),
+        PowerChip(id: "tracker", title: "Tracker", detail: "Hot / cold for 3 min (timed Fuzzy/Precise)", cost: 50, role: .seeker, systemImage: "location.magnifyingglass"),
         PowerChip(id: "lockdown", title: "Lockdown", detail: "Safe zones off", cost: 75, role: .seeker, systemImage: "lock.shield.fill"),
     ]
 

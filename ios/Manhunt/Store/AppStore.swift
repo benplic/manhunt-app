@@ -1352,7 +1352,8 @@ final class AppStore {
                 detail: known?.detail ?? "",
                 cost: dto.cost,
                 role: visual,
-                systemImage: known?.systemImage ?? "bolt.fill"
+                systemImage: known?.systemImage ?? "bolt.fill",
+                available: dto.available ?? true
             )
         }
     }
@@ -1373,7 +1374,8 @@ final class AppStore {
             status: snapshot.you.status,
             requiresTarget: chip.id == "decoy",
             hasTarget: hasTarget,
-            targetInsidePlayArea: targetInsidePlayArea
+            targetInsidePlayArea: targetInsidePlayArea,
+            available: chip.available
         )
     }
 
@@ -1396,14 +1398,19 @@ final class AppStore {
     }
 
     func buyPower(_ chip: PowerChip) {
-        guard chipIsTappable(chip) else { return }
+        guard let request = purchaseRequest(for: chip) else { return }
+        let decision = PowerUpRules.decide(request)
+        if case .denied(.unavailable) = decision {
+            note = denialNote(for: decision)
+            return
+        }
+        guard PowerUpRules.chipIsTappable(request) else { return }
         if chip.id == "decoy" {
             demoPicking = false
             decoyPicking = true
             note = "Pan the map, then drop a decoy inside the play area."
             return
         }
-        let decision = powerChipDecision(for: chip)
         guard decision == .allowed else {
             note = denialNote(for: decision)
             return
@@ -1458,7 +1465,8 @@ final class AppStore {
                 note = "\(chip.title) armed. \(chip.detail)."
             } catch let error as ServiceError {
                 // Stay in pick mode on TARGET_OUTSIDE so the player can drop again.
-                note = Self.purchaseCopy(for: error.code)
+                // Prefer the server message (Tracker mode denial, disabled power, etc.).
+                note = Self.purchaseCopy(for: error)
             } catch {
                 note = "Could not buy \(chip.title)."
             }
@@ -1475,7 +1483,16 @@ final class AppStore {
         case .eliminated: return "You are out of this round."
         case .needsTarget: return "Pick a spot on the map first."
         case .targetOutside: return "Decoy has to sit inside the play area."
+        case .unavailable:
+            return "Tracker needs timed Fuzzy or Precise location (not Hot/cold or Persistent)."
         }
+    }
+
+    static func purchaseCopy(for error: ServiceError) -> String {
+        if !error.message.isEmpty, error.message != error.code.rawValue {
+            return error.message
+        }
+        return purchaseCopy(for: error.code)
     }
 
     static func purchaseCopy(for code: ErrorCode) -> String {
@@ -1489,6 +1506,11 @@ final class AppStore {
         case .targetOutside: return "Decoy has to sit inside the play area."
         default: return "Purchase did not go through (\(code.rawValue))."
         }
+    }
+
+    /// Host changed reveal mode: turn Tracker off when it would conflict.
+    func syncTrackerAvailability() {
+        TrackerAvailability.syncEnabled(in: &modules)
     }
 
     func claimUWB(hiderID: UUID) {
