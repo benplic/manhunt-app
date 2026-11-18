@@ -137,8 +137,8 @@ def bind_ws(manager: SessionManager, get_settings, persist_location=None):
                         continue
                     if persist_location is not None:
                         await persist_location(session)
-                    await manager.broadcast(game_id)
-                    await manager.push_uwb_peers(game_id)
+                    # Views ride the 1 Hz tick_loop. Broadcasting here multiplies
+                    # with every phone (~2 Hz × N) and freezes the live MapKit UI.
                 elif kind == "uwb_token":
                     now = time.monotonic()
                     if now - last_token < 10:
