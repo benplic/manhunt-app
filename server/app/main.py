@@ -111,10 +111,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 log.exception("trail_purge_failed")
 
         async def persist_all() -> None:
-            async with factory() as session:
-                for game in list(manager.sessions.values()):
-                    await service.persist_game(session, game)
-                await session.commit()
+            # One session/commit per game so a single failure cannot dirty the rest.
+            for game in list(manager.sessions.values()):
+                async with factory() as session:
+                    try:
+                        await service.persist_game(session, game, commit=True)
+                    except Exception:
+                        await session.rollback()
+                        log.exception(
+                            "persist_game_failed game_id=%s", game.state.game_id
+                        )
 
         async def keep_alive() -> None:
             # Loopback HTTP so ACA request concurrency stays above zero.
@@ -227,8 +233,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(bind_preset_save(get_session, current_user))
     async def persist_location(game) -> None:
         async with factory() as session:
-            await service.persist_game(session, game)
-            await session.commit()
+            await service.persist_game(session, game, commit=True)
 
     app.include_router(bind_game_routes(get_session, current_user, service))
     app.include_router(bind_demo_routes(get_session, current_user, service, settings_dep))

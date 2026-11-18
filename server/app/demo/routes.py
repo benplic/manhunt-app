@@ -63,8 +63,7 @@ def bind_demo_routes(get_session, current_user, service: GameService, get_settin
             status = 422 if exc.code == ErrorCode.VALIDATION_FAILED else 409
             raise ApiError(exc.code, exc.message, status_code=status) from exc
 
-        await service.persist_game(session, game)
-        await session.commit()
+        await service.persist_game(session, game, commit=True)
         await service.manager.broadcast(game_id)
         return build_view(
             game,

@@ -50,6 +50,8 @@ class GameSession:
         )
         self._pending: list[GameEvent] = []
         self.replaying = False
+        # Highest seq known committed to game_events. Persist skips seq <= this.
+        self.last_persisted_seq: int = 0
         # Sample lobby (PARK42). The realtime loop counts this down. Not engine time.
         self.sample_start_after_s: int | None = None
         self.sample_waited_s = 0
@@ -137,6 +139,9 @@ class GameSession:
         self._note_input("resume", {})
 
     def end(self, reason: str, winner: str = "none") -> None:
+        # Host double-tap / racing tick must not emit a second ended event.
+        if self.state.phase == "ended":
+            return
         self.state.phase = "ended"
         self.state.result = WinResult(winner=winner, reason=reason, ended_at=self.clock.now())
         self.emit("ended", {"text": reason, "winner": winner})
