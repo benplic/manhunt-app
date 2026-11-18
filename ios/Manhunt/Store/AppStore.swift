@@ -1075,9 +1075,8 @@ final class AppStore {
         screen = .home
     }
 
-    /// Host-only: open a new lobby copying the ended hunt's arena + rules.
     func rematch() {
-        guard isHost, let id = match?.snapshot.gameId else { return }
+        guard let id = match?.snapshot.gameId else { return }
         lastError = nil
         if let fake {
             do {

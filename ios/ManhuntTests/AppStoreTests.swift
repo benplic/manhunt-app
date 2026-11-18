@@ -401,15 +401,45 @@ final class AppStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testRematchIsHostOnly() {
-        let store = AppStore.makePreview()
+    func testGuestRematchBeforeHostSurfacesRematchNotReady() {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
         store.signInPreview()
         _ = store.join(code: "PARK42")
+        fake.markEnded(store.match!.snapshot.gameId)
         store.screen = .results
-        let before = store.match?.snapshot.gameId
         store.rematch()
         XCTAssertEqual(store.screen, .results)
-        XCTAssertEqual(store.match?.snapshot.gameId, before)
+        XCTAssertEqual(store.lastError, .service(.rematchNotReady))
+        XCTAssertTrue(store.note?.lowercased().contains("host") == true)
+    }
+
+    @MainActor
+    func testGuestRematchJoinsHostLobby() throws {
+        let fake = FakeGameService()
+        let host = AppStore(service: fake)
+        host.signInPreview()
+        host.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        host.randomizeRoles(seekerCount: 1)
+        _ = host.startMatch()
+        host.endMatch()
+        let endedID = host.match!.snapshot.gameId
+        host.rematch()
+        let rematchID = host.match!.snapshot.gameId
+        XCTAssertNotEqual(rematchID, endedID)
+
+        _ = fake.signInSync("Riley Chen")
+        let guest = AppStore(service: fake)
+        guest.session = Session(displayName: "Riley Chen", token: "fake")
+        guest.match = MatchHandle(
+            snapshot: try fake.forceEndedGuestView(gameID: endedID),
+            qrToken: nil
+        )
+        guest.screen = .results
+        guest.rematch()
+        XCTAssertEqual(guest.screen, .lobby)
+        XCTAssertEqual(guest.match?.snapshot.gameId, rematchID)
+        XCTAssertFalse(guest.isHost)
     }
 
     @MainActor

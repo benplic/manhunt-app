@@ -10,10 +10,8 @@ struct ResultsView: View {
             VStack(alignment: .leading, spacing: 18) {
                 HuntButton(title: "Home", haptic: .light, action: store.leaveResults)
                     .accessibilityIdentifier("back-home")
-                if store.isHost {
-                    HuntButton(title: "Rematch", haptic: .medium, action: store.rematch)
-                        .accessibilityIdentifier("rematch")
-                }
+                HuntButton(title: "Rematch", haptic: .medium, action: store.rematch)
+                    .accessibilityIdentifier("rematch")
                 Text(winnerTitle(winner))
                     .font(.caption.weight(.bold))
                     .tracking(1.6)
