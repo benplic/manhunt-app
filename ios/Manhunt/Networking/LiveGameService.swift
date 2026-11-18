@@ -17,6 +17,8 @@ final class LiveGameService: GameService {
     var onQR: ((String) -> Void)?
     var onEvent: ((BannerDTO) -> Void)?
     var onReconnect: ((Bool) -> Void)?
+    /// Fired when the server removes this player (`type: removed`). Kick lane wires the socket.
+    var onRemoved: (() -> Void)?
     var onUWBPeers: (([UWBPeer]) -> Void)?
     var onRemoved: (() -> Void)?
     var onSendFailure: ((String) -> Void)? {
@@ -80,6 +82,10 @@ final class LiveGameService: GameService {
         client.token = auth.accessToken
         refreshToken = auth.refreshToken
         return auth
+    }
+
+    func me() async throws -> UserDTO {
+        try await client.get("/v1/me")
     }
 
     func registerDeviceToken(_ token: String) async throws {

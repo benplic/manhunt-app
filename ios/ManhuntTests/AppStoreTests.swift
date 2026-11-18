@@ -253,8 +253,9 @@ final class AppStoreTests: XCTestCase {
     }
 
     func testInstallationIDStablePerDefaults() {
-        let defaults = UserDefaults(suiteName: "manhunt.tests.installation.\(UUID().uuidString)")!
-        defer { defaults.removePersistentDomain(forName: defaults.suiteName!) }
+        let suite = "manhunt.tests.installation.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
         let first = InstallationID.current(defaults: defaults)
         let second = InstallationID.current(defaults: defaults)
         XCTAssertEqual(first, second)
@@ -436,7 +437,7 @@ final class AppStoreTests: XCTestCase {
     @MainActor
     func testRefreshRotatesTheFakeToken() async throws {
         let fake = FakeGameService()
-        _ = try await fake.signIn(displayName: "Casey")
+        _ = try await fake.signIn(displayName: "Casey", installationId: "test-install")
         let first = fake.signInSync("Casey").refreshToken
         XCTAssertNotNil(first)
         let rotated = try await fake.refresh(refreshToken: first!)
@@ -456,5 +457,117 @@ final class AppStoreTests: XCTestCase {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
         XCTAssertEqual(fake.lastDeviceToken, "deadbeef")
+    }
+
+    @MainActor
+    func testRenameBeforeCreateReauthsWithFieldName() {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        let before = fake.signInCalls
+        store.displayName = "  Morgan Reed  "
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        XCTAssertEqual(fake.signInCalls, before + 1)
+        XCTAssertEqual(fake.lastSignInDisplayName, "Morgan Reed")
+        XCTAssertEqual(store.session?.displayName, "Morgan Reed")
+        XCTAssertEqual(store.displayName, "Morgan Reed")
+        XCTAssertEqual(store.players.first(where: \.isYou)?.name, "Morgan Reed")
+    }
+
+    @MainActor
+    func testRenameBeforeJoinReauthsWithFieldName() {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        let before = fake.signInCalls
+        store.displayName = "Riley Chen"
+        XCTAssertNil(store.join(code: "PARK42"))
+        XCTAssertEqual(fake.signInCalls, before + 1)
+        XCTAssertEqual(fake.lastSignInDisplayName, "Riley Chen")
+        XCTAssertEqual(store.session?.displayName, "Riley Chen")
+        XCTAssertEqual(store.screen, .lobby)
+    }
+
+    @MainActor
+    func testMatchingDisplayNameSkipsReauthBeforeJoin() {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        let before = fake.signInCalls
+        store.displayName = "Casey Lee"
+        XCTAssertNil(store.join(code: "PARK42"))
+        XCTAssertEqual(fake.signInCalls, before)
+        XCTAssertEqual(store.session?.displayName, "Casey Lee")
+    }
+
+    @MainActor
+    func testSingleSendFailureDoesNotShowHiccupNote() {
+        let store = AppStore.makePreview()
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.randomizeRoles(seekerCount: 1)
+        _ = store.startMatch()
+        store.handleSendFailure("ping failed")
+        XCTAssertEqual(store.situation, .reconnecting)
+        XCTAssertNotEqual(store.note, "Connection hiccup. Retrying…")
+    }
+
+    @MainActor
+    func testTwoSendFailuresShowHiccupNote() {
+        let store = AppStore.makePreview()
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.randomizeRoles(seekerCount: 1)
+        _ = store.startMatch()
+        store.handleSendFailure("one")
+        store.handleSendFailure("two")
+        XCTAssertEqual(store.note, "Connection hiccup. Retrying…")
+        XCTAssertEqual(store.situation, .reconnecting)
+    }
+
+    @MainActor
+    func testSuccessfulViewClearsHiccupNote() {
+        let store = AppStore.makePreview()
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.randomizeRoles(seekerCount: 1)
+        _ = store.startMatch()
+        store.handleSendFailure("one")
+        store.handleSendFailure("two")
+        XCTAssertEqual(store.note, "Connection hiccup. Retrying…")
+        guard var view = store.match?.snapshot else { return XCTFail("Expected match") }
+        view.phase = .active
+        store.apply(view)
+        XCTAssertNil(store.note)
+        XCTAssertNotEqual(store.situation, .reconnecting)
+    }
+
+    @MainActor
+    func testReconnectShowsHiccupNoteAfterDebounce() async {
+        let store = AppStore.makePreview()
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.randomizeRoles(seekerCount: 1)
+        _ = store.startMatch()
+        store.hiccupDebounceSeconds = 0.05
+        store.handleReconnect(true)
+        XCTAssertEqual(store.situation, .reconnecting)
+        XCTAssertNotEqual(store.note, "Connection hiccup. Retrying…")
+        try? await Task.sleep(for: .milliseconds(120))
+        XCTAssertEqual(store.note, "Connection hiccup. Retrying…")
+    }
+
+    @MainActor
+    func testRemovedFromLobbyStopsReconnectAndGoesHome() {
+        let store = AppStore.makePreview()
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.situation = .reconnecting
+        store.note = "Connection hiccup. Retrying…"
+        store.handleRemovedFromLobby()
+        XCTAssertEqual(store.screen, .home)
+        XCTAssertNil(store.match)
+        XCTAssertEqual(store.note, "You were removed from the lobby.")
+        XCTAssertNotEqual(store.situation, .reconnecting)
     }
 }
