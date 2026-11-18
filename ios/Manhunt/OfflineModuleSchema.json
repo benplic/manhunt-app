@@ -474,6 +474,12 @@
         "jammer_cost",
         "shield_enabled",
         "shield_cost",
+        "rescue_enabled",
+        "rescue_cost",
+        "rescue_duration",
+        "create_safe_enabled",
+        "create_safe_cost",
+        "create_safe_radius_m",
         "scan_enabled",
         "scan_cost",
         "scan_radius_m",
@@ -481,7 +487,11 @@
         "tracker_enabled",
         "tracker_cost",
         "lockdown_enabled",
-        "lockdown_cost"
+        "lockdown_cost",
+        "move_safe_enabled",
+        "move_safe_cost",
+        "shrink_now_enabled",
+        "shrink_now_cost"
       ],
       "fields": {
         "enabled": {
@@ -559,6 +569,53 @@
           "default": 70,
           "suffix": "pts"
         },
+        "rescue_enabled": {
+          "type": "bool",
+          "title": "Rescue",
+          "default": true,
+          "help": "Convert a tagged seeker back to hider with brief immunity."
+        },
+        "rescue_cost": {
+          "type": "int",
+          "title": "Rescue cost",
+          "min": 0,
+          "max": 200,
+          "step": 5,
+          "default": 120,
+          "suffix": "pts"
+        },
+        "rescue_duration": {
+          "type": "int",
+          "title": "Rescue immunity",
+          "min": 15,
+          "max": 180,
+          "step": 15,
+          "default": 60,
+          "suffix": "s"
+        },
+        "create_safe_enabled": {
+          "type": "bool",
+          "title": "Create safe",
+          "default": true
+        },
+        "create_safe_cost": {
+          "type": "int",
+          "title": "Create safe cost",
+          "min": 0,
+          "max": 200,
+          "step": 5,
+          "default": 110,
+          "suffix": "pts"
+        },
+        "create_safe_radius_m": {
+          "type": "int",
+          "title": "New safe radius",
+          "min": 10,
+          "max": 80,
+          "step": 5,
+          "default": 30,
+          "suffix": "m"
+        },
         "scan_enabled": {
           "type": "bool",
           "title": "Scan",
@@ -618,6 +675,35 @@
           "max": 200,
           "step": 5,
           "default": 75,
+          "suffix": "pts"
+        },
+        "move_safe_enabled": {
+          "type": "bool",
+          "title": "Move safe",
+          "default": true
+        },
+        "move_safe_cost": {
+          "type": "int",
+          "title": "Move safe cost",
+          "min": 0,
+          "max": 200,
+          "step": 5,
+          "default": 110,
+          "suffix": "pts"
+        },
+        "shrink_now_enabled": {
+          "type": "bool",
+          "title": "Shrink now",
+          "default": true,
+          "help": "Fire the next zone shrink now and shift the remaining schedule."
+        },
+        "shrink_now_cost": {
+          "type": "int",
+          "title": "Shrink now cost",
+          "min": 0,
+          "max": 200,
+          "step": 5,
+          "default": 100,
           "suffix": "pts"
         }
       }

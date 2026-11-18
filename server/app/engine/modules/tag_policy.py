@@ -83,6 +83,7 @@ class TagPolicyModule(BaseModule):
         if result == "convert":
             hider.role = "seeker"
             hider.status = "active"
+            hider.converted_from_hider = True
         else:
             hider.status = "eliminated"
         grant_points(seeker, 25)

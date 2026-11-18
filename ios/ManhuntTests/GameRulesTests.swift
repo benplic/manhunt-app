@@ -277,6 +277,27 @@ final class GameRulesTests: XCTestCase {
         XCTAssertTrue(PowerUpRules.chipIsTappable(request))
     }
 
+    func testExpensivePowerCatalogNeedsTargetsAndSymbols() {
+        XCTAssertTrue(PowerUpRules.requiresTarget(powerID: "rescue"))
+        XCTAssertTrue(PowerUpRules.requiresTarget(powerID: "create_safe"))
+        XCTAssertTrue(PowerUpRules.requiresTarget(powerID: "move_safe"))
+        XCTAssertFalse(PowerUpRules.requiresTarget(powerID: "shrink_now"))
+        XCTAssertTrue(PowerUpRules.requiresMapPoint(powerID: "create_safe"))
+        XCTAssertFalse(PowerUpRules.requiresMapPoint(powerID: "rescue"))
+        let byID = Dictionary(uniqueKeysWithValues: SamplePark.powerUps.map { ($0.id, $0) })
+        XCTAssertEqual(byID["rescue"]?.systemImage, "arrow.uturn.backward.circle")
+        XCTAssertEqual(byID["move_safe"]?.systemImage, "arrow.up.and.down.and.arrow.left.and.right")
+        XCTAssertEqual(byID["create_safe"]?.systemImage, "plus.circle")
+        XCTAssertEqual(byID["shrink_now"]?.systemImage, "arrow.down.right.and.arrow.up.left")
+        XCTAssertEqual(byID["rescue"]?.role, .hider)
+        XCTAssertEqual(byID["move_safe"]?.role, .seeker)
+        XCTAssertEqual(byID["create_safe"]?.role, .hider)
+        XCTAssertEqual(byID["shrink_now"]?.role, .seeker)
+        XCTAssertNotNil(ModuleForm.offlineModules().first { $0.id == "power_ups" }?.rows.first { $0.id == "rescue_cost" })
+        XCTAssertNotNil(ModuleForm.offlineModules().first { $0.id == "power_ups" }?.rows.first { $0.id == "create_safe_radius_m" })
+        XCTAssertNotNil(ModuleForm.offlineModules().first { $0.id == "power_ups" }?.rows.first { $0.id == "shrink_now_enabled" })
+    }
+
     func testDecoyChipStaysGreyWhenPointsAreShort() {
         let request = PurchaseRequest(
             balance: 10,

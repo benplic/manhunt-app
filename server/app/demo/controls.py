@@ -172,6 +172,7 @@ def _switch_team(session: GameSession, actor_id: UUID, role: str | None) -> None
 
     session.set_role(actor_id, next_role)
     player.status = "active"
+    player.converted_from_hider = False
     player.safe_zone_id = None
     player.safe_remaining_s = None
     player.safe_expired = False

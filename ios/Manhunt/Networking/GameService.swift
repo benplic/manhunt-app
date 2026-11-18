@@ -30,7 +30,13 @@ protocol GameService: AnyObject {
     func view(gameID: UUID) async throws -> PlayerViewDTO
     func claimQR(gameID: UUID, token: String) async throws
     func claimUWB(gameID: UUID, hiderID: UUID) async throws
-    func purchase(gameID: UUID, powerID: String, extra: [String: Double]) async throws -> PlayerViewDTO
+    func purchase(
+        gameID: UUID,
+        powerID: String,
+        extra: [String: Double],
+        targetPlayerId: String?,
+        zoneId: String?
+    ) async throws -> PlayerViewDTO
     func demo(gameID: UUID, action: String, params: [String: RuleValue]) async throws -> PlayerViewDTO
     func fetchModules() async throws -> [VisualModule]
     func savePreset(name: String, modules: [String: [String: RuleValue]]) async throws -> SavedPresetDTO

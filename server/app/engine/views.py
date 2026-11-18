@@ -150,9 +150,13 @@ def _power_ups_for(session: GameSession, viewer: PlayerState) -> list[dict]:
         "radar": "Radar",
         "jammer": "Jammer",
         "shield": "Shield",
+        "rescue": "Rescue",
+        "create_safe": "Create safe",
         "scan": "Scan",
         "tracker": "Tracker",
         "lockdown": "Lockdown",
+        "move_safe": "Move safe",
+        "shrink_now": "Shrink now",
     }
     tracker_ok = tracker_allowed(session=session)
     rows = []

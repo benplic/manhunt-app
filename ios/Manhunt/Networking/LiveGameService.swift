@@ -272,15 +272,29 @@ final class LiveGameService: GameService {
         try await client.get("/v1/presets/saved")
     }
 
-    func purchase(gameID: UUID, powerID: String, extra: [String: Double]) async throws -> PlayerViewDTO {
+    func purchase(
+        gameID: UUID,
+        powerID: String,
+        extra: [String: Double],
+        targetPlayerId: String?,
+        zoneId: String?
+    ) async throws -> PlayerViewDTO {
         struct Body: Encodable {
             var id: String
             var lat: Double?
             var lon: Double?
+            var target_player_id: String?
+            var zone_id: String?
         }
         return try await client.post(
             "/v1/games/\(gameID.uuidString)/power-ups",
-            body: Body(id: powerID, lat: extra["lat"], lon: extra["lon"])
+            body: Body(
+                id: powerID,
+                lat: extra["lat"],
+                lon: extra["lon"],
+                target_player_id: targetPlayerId,
+                zone_id: zoneId
+            )
         )
     }
 

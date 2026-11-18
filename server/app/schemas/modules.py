@@ -16,9 +16,13 @@ _POWER_TITLES = {
     "radar": "Radar",
     "jammer": "Jammer",
     "shield": "Shield",
+    "rescue": "Rescue",
+    "create_safe": "Create safe",
     "scan": "Scan",
     "tracker": "Tracker",
     "lockdown": "Lockdown",
+    "move_safe": "Move safe",
+    "shrink_now": "Shrink now",
 }
 
 
@@ -33,6 +37,10 @@ def _power_ups_fields() -> tuple[list[str], dict[str, Any]]:
                 "Timed hot/cold for seekers. Unavailable when Location is Hot/cold "
                 "or Location timing is Persistent."
             )
+        elif power_id == "rescue":
+            help_text = "Convert a tagged seeker back to hider with brief immunity."
+        elif power_id == "shrink_now":
+            help_text = "Fire the next zone shrink now and shift the remaining schedule."
         fields[f"{power_id}_enabled"] = _bool(title, True, help_text=help_text)
         fields[f"{power_id}_cost"] = _int(
             f"{title} cost", 0, 200, int(base["cost"]), step=5, suffix="pts"
@@ -42,6 +50,16 @@ def _power_ups_fields() -> tuple[list[str], dict[str, Any]]:
             fields["scan_radius_m"] = _int("Scan radius", 10, 150, 30, step=5, suffix="m")
             fields["scan_count"] = _int("Scan pins", 1, 5, 1)
             field_order.extend(["scan_radius_m", "scan_count"])
+        elif power_id == "rescue":
+            fields["rescue_duration"] = _int(
+                "Rescue immunity", 15, 180, int(base["duration"]), step=15, suffix="s"
+            )
+            field_order.append("rescue_duration")
+        elif power_id == "create_safe":
+            fields["create_safe_radius_m"] = _int(
+                "New safe radius", 10, 80, 30, step=5, suffix="m"
+            )
+            field_order.append("create_safe_radius_m")
     return field_order, fields
 
 

@@ -48,6 +48,26 @@ struct PurchaseRequest {
 }
 
 enum PowerUpRules {
+    /// Map / player / zone targets the dock must collect before POST.
+    static func requiresTarget(powerID: String) -> Bool {
+        switch powerID {
+        case "decoy", "create_safe", "move_safe", "rescue":
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Point-in-play-area check (decoy / create_safe / move_safe). Rescue uses a player id.
+    static func requiresMapPoint(powerID: String) -> Bool {
+        switch powerID {
+        case "decoy", "create_safe", "move_safe":
+            return true
+        default:
+            return false
+        }
+    }
+
     static func decide(_ request: PurchaseRequest) -> PurchaseDecision {
         if request.balance < request.cost { return .denied(.insufficientPoints) }
         if request.cooldownRemaining > 0 { return .denied(.coolingDown) }

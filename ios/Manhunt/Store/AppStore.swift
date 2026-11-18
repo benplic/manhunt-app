@@ -65,8 +65,10 @@ final class AppStore {
     var seekerCount = 1
     var editor = ArenaEditorModel()
     var situation: LiveSituation = .active
-    /// Decoy purchase step: pan the map and drop a pin before POST.
+    /// Map-target purchase step (decoy / create_safe): pan and drop before POST.
     var decoyPicking = false
+    /// Which power-up opened `decoyPicking` (`decoy` or `create_safe`).
+    var mapPickPowerID: String?
     /// Demo walk target picker: pan the map and drop a destination for `move_me`.
     var demoPicking = false
     var tool: ArenaTool = .playArea
@@ -596,6 +598,7 @@ final class AppStore {
     func signOut() {
         turnOffFlashlight()
         decoyPicking = false
+        mapPickPowerID = nil
         demoPicking = false
         stopUWB()
         live?.disconnect()
@@ -626,6 +629,7 @@ final class AppStore {
         let gameID = match?.snapshot.gameId
         turnOffFlashlight()
         decoyPicking = false
+        mapPickPowerID = nil
         demoPicking = false
         stopUWB()
         location.stop()
@@ -1372,7 +1376,7 @@ final class AppStore {
             role: snapshot.you.role,
             requiredRole: chip.role == .hider ? .hider : .seeker,
             status: snapshot.you.status,
-            requiresTarget: chip.id == "decoy",
+            requiresTarget: PowerUpRules.requiresTarget(powerID: chip.id),
             hasTarget: hasTarget,
             targetInsidePlayArea: targetInsidePlayArea,
             available: chip.available
@@ -1405,10 +1409,20 @@ final class AppStore {
             return
         }
         guard PowerUpRules.chipIsTappable(request) else { return }
-        if chip.id == "decoy" {
+        if chip.id == "decoy" || chip.id == "create_safe" {
             demoPicking = false
             decoyPicking = true
-            note = "Pan the map, then drop a decoy inside the play area."
+            mapPickPowerID = chip.id
+            note = chip.id == "decoy"
+                ? "Pan the map, then drop a decoy inside the play area."
+                : "Pan the map, then drop a safe zone inside the play area."
+            return
+        }
+        // TODO: rescue needs a tagged-seeker picker; move_safe needs zone + map point UI.
+        if chip.id == "rescue" || chip.id == "move_safe" {
+            note = chip.id == "rescue"
+                ? "Pick a tagged seeker to rescue."
+                : "Pick a safe zone, then a new spot on the map."
             return
         }
         guard decision == .allowed else {
@@ -1420,11 +1434,13 @@ final class AppStore {
 
     func cancelDecoyPick() {
         decoyPicking = false
+        mapPickPowerID = nil
         note = nil
     }
 
     func dropDecoy(at point: VisualPoint) {
-        guard let chip = dockPowerChips().first(where: { $0.id == "decoy" }) else { return }
+        let powerID = mapPickPowerID ?? "decoy"
+        guard let chip = dockPowerChips().first(where: { $0.id == powerID }) else { return }
         // Deny outside the yellow play area before POST. Server still re-checks
         // the session arena boundary; this keeps lat/lon off the wire when the
         // map the player sees already says the point is outside.
@@ -1454,14 +1470,25 @@ final class AppStore {
     private func submitPurchase(
         _ chip: PowerChip,
         extra: [String: Double],
-        clearingDecoyPick: Bool = false
+        clearingDecoyPick: Bool = false,
+        targetPlayerId: String? = nil,
+        zoneId: String? = nil
     ) {
         guard let id = match?.snapshot.gameId else { return }
         Task {
             do {
-                let view = try await service.purchase(gameID: id, powerID: chip.id, extra: extra)
+                let view = try await service.purchase(
+                    gameID: id,
+                    powerID: chip.id,
+                    extra: extra,
+                    targetPlayerId: targetPlayerId,
+                    zoneId: zoneId
+                )
                 apply(view)
-                if clearingDecoyPick { decoyPicking = false }
+                if clearingDecoyPick {
+                    decoyPicking = false
+                    mapPickPowerID = nil
+                }
                 note = "\(chip.title) armed. \(chip.detail)."
             } catch let error as ServiceError {
                 // Stay in pick mode on TARGET_OUTSIDE so the player can drop again.
@@ -1610,6 +1637,7 @@ final class AppStore {
             pingPulse = nil
             turnOffFlashlight()
             decoyPicking = false
+            mapPickPowerID = nil
             demoPicking = false
             location.stop()
             live?.disconnect()
@@ -1740,6 +1768,7 @@ final class AppStore {
 
     func beginDemoMovePick() {
         decoyPicking = false
+        mapPickPowerID = nil
         demoPicking = true
         note = "Pan the map, then drop where you want to walk."
     }
@@ -1809,6 +1838,7 @@ final class AppStore {
         clearConnectionHiccup(restoreSituation: true)
         turnOffFlashlight()
         decoyPicking = false
+        mapPickPowerID = nil
         demoPicking = false
         stopUWB()
         location.stop()

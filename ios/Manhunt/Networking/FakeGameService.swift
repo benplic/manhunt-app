@@ -379,17 +379,29 @@ final class FakeGameService: GameService {
         presetsSaved
     }
 
-    func purchase(gameID: UUID, powerID: String, extra: [String: Double]) async throws -> PlayerViewDTO {
+    func purchase(
+        gameID: UUID,
+        powerID: String,
+        extra: [String: Double],
+        targetPlayerId: String?,
+        zoneId: String?
+    ) async throws -> PlayerViewDTO {
         guard let game = games[gameID] else { throw ServiceError(code: .gameNotFound, message: "") }
         // Mirror the server play-area gate so decoy UI tests can assert TARGET_OUTSIDE.
-        if powerID == "decoy" {
+        if powerID == "decoy" || powerID == "create_safe" || powerID == "move_safe" {
             guard let lat = extra["lat"], let lon = extra["lon"] else {
-                throw ServiceError(code: .needsTarget, message: "Decoy needs a point.")
+                throw ServiceError(code: .needsTarget, message: "Needs a map point.")
+            }
+            if powerID == "move_safe", zoneId == nil {
+                throw ServiceError(code: .needsTarget, message: "Move safe needs a zone.")
             }
             let point = GeoPoint(latitude: lat, longitude: lon)
             if !ArenaGeometry.contains(point, in: Arena.sampleSquare().boundary) {
                 throw ServiceError(code: .targetOutside, message: "Outside play area.")
             }
+        }
+        if powerID == "rescue", targetPlayerId == nil {
+            throw ServiceError(code: .needsTarget, message: "Rescue needs a player.")
         }
         return game.view()
     }

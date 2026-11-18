@@ -61,6 +61,8 @@ class PlayerState:
     is_host: bool
     role: str = "unassigned"
     status: str = "active"
+    # True after tag_policy convert: a former hider now hunting as seeker.
+    converted_from_hider: bool = False
     points: int = 0
     points_earned: int = 0
     location: LocationReading | None = None
@@ -138,3 +140,5 @@ class GameState:
     uwb_peer_signature: dict[UUID, tuple[str, ...]] = field(default_factory=dict)
     initial_radius_m: float | None = None
     last_zone_warned_step: int = 0
+    # Extra seconds added to zone_shrink_schedule elapsed (Shrink Now).
+    zone_shrink_ahead_s: int = 0
