@@ -1008,6 +1008,46 @@ final class AppStore {
         screen = .home
     }
 
+    /// Host-only: open a new lobby copying the ended hunt's arena + rules.
+    func rematch() {
+        guard isHost, let id = match?.snapshot.gameId else { return }
+        lastError = nil
+        if let fake {
+            do {
+                let view = try fake.rematchSync(gameID: id)
+                timeline = []
+                note = nil
+                apply(view)
+                screen = .lobby
+            } catch let error as ServiceError {
+                lastError = .service(error.code)
+                note = error.message
+            } catch {
+                lastError = .service(.internal)
+                note = "Could not start a rematch."
+            }
+            return
+        }
+        Task { await rematchRemote(gameID: id) }
+    }
+
+    private func rematchRemote(gameID: UUID) async {
+        do {
+            let view = try await service.rematch(gameID: gameID)
+            timeline = []
+            note = nil
+            apply(view)
+            screen = .lobby
+            live?.connect(gameID: view.gameId)
+        } catch let error as ServiceError {
+            lastError = .service(error.code)
+            note = error.message
+        } catch {
+            lastError = .unreachable
+            note = "Is the home server running?"
+        }
+    }
+
     func editArena(_ id: String) {
         arenaID = id
         if let uuid = UUID(uuidString: id), let arena = arenas.first(where: { $0.id == uuid }) {

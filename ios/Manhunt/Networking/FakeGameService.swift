@@ -232,6 +232,36 @@ final class FakeGameService: GameService {
         try mutate(gameID) { $0.phase = .ended }
     }
 
+    func rematch(gameID: UUID) async throws -> PlayerViewDTO {
+        try rematchSync(gameID: gameID)
+    }
+
+    func rematchSync(gameID: UUID) throws -> PlayerViewDTO {
+        guard let old = games[gameID] else {
+            throw ServiceError(code: .gameNotFound, message: "Game not found.")
+        }
+        guard old.youAreHost else {
+            throw ServiceError(code: .notHost, message: "Only the host can do that.")
+        }
+        guard old.phase == .ended else {
+            throw ServiceError(code: .wrongPhase, message: "Rematch is only available after the hunt ends.")
+        }
+        let you = signedIn
+        let hostID = you?.id ?? old.players.first(where: \.isHost)?.id ?? UUID()
+        let hostName = you?.displayName ?? old.players.first(where: \.isHost)?.name ?? "You"
+        let id = UUID()
+        let game = FakeGame(
+            id: id,
+            joinCode: JoinCode.generate(using: &rng),
+            youAreHost: true,
+            players: [
+                FakePlayer(id: hostID, name: hostName, role: .unassigned, isHost: true),
+            ]
+        )
+        games[id] = game
+        return game.view()
+    }
+
     /// Test helper: jump past head start so power-ups / taunt can fire.
     func advanceToActive(gameID: UUID) throws -> PlayerViewDTO {
         try mutate(gameID) { $0.phase = .active }

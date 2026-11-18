@@ -113,6 +113,14 @@ def bind_game_routes(get_session, current_user, service: GameService):
     ) -> dict:
         return _view(service, await service.end(session, user, game_id), user.id)
 
+    @router.post("/games/{game_id}/rematch")
+    async def rematch(
+        game_id: UUID,
+        session: AsyncSession = Depends(get_session),
+        user=Depends(current_user),
+    ) -> dict:
+        return _view(service, await service.rematch(session, user, game_id), user.id)
+
     @router.post("/games/{game_id}/leave")
     async def leave(
         game_id: UUID,

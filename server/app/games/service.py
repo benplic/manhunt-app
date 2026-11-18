@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -406,6 +407,42 @@ class GameService:
             await session.commit()
             self.finalize_persist(game)
         await self.manager.broadcast(game_id)
+        return game
+
+    async def rematch(self, session: AsyncSession, user: User, game_id: UUID) -> GameSession:
+        """Host-only: open a fresh lobby copying the ended game's arena + preset."""
+        row = await self.require_host(session, game_id, user)
+        if row.status != "ended":
+            raise ApiError(
+                ErrorCode.WRONG_PHASE,
+                "Rematch is only available after the hunt ends.",
+                status_code=409,
+            )
+        join_code = await self._unique_code(session)
+        seed = random.SystemRandom().randint(1, 2**31 - 1)
+        new_row = GameRow(
+            id=uuid4(),
+            join_code=join_code,
+            host_id=user.id,
+            status="lobby",
+            arena_snapshot=deepcopy(row.arena_snapshot),
+            preset_snapshot=deepcopy(row.preset_snapshot),
+            seed=seed,
+            inputs=[],
+        )
+        session.add(new_row)
+        session.add(GamePlayerRow(game_id=new_row.id, user_id=user.id, role="unassigned"))
+        await session.commit()
+        game = self.manager.register(
+            new_row.id,
+            new_row.arena_snapshot,
+            new_row.preset_snapshot,
+            seed,
+            join_code,
+        )
+        game.add_player(user.id, user.display_name, is_host=True)
+        await self.persist_inputs(session, game)
+        await session.commit()
         return game
 
     async def remove_player(
