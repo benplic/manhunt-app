@@ -1,5 +1,6 @@
 import CoreLocation
 import Foundation
+import SwiftUI
 import UIKit
 
 enum AppScreen: String, Equatable {
@@ -118,6 +119,15 @@ final class AppStore {
     private var lastUWBRangeAt: [UUID: Date] = [:]
     /// APNs device token waiting for auth, then PUT /v1/me/device-token.
     private var pendingDeviceToken: String?
+    /// Consecutive WebSocket send failures. Hiccup toast needs ≥2.
+    private var consecutiveSendFailures = 0
+    /// When continuous reconnecting started; toast after `hiccupDebounceSeconds`.
+    private var reconnectingSince: Date?
+    private var hiccupDebounceTask: Task<Void, Never>?
+    /// Tests shorten this so debounce coverage stays fast.
+    var hiccupDebounceSeconds: TimeInterval = 3
+    static let connectionHiccupNote = "Connection hiccup. Retrying…"
+    static let removedFromLobbyNote = "You were removed from the lobby."
 
     static let serverURLKey = "manhunt.serverURL"
     static let devAuthSecretKey = "manhunt.devAuthSecret"
@@ -177,10 +187,12 @@ final class AppStore {
         }
         live?.onReconnect = { [weak self] reconnecting in
             Task { @MainActor in
-                guard let self, reconnecting else { return }
-                self.situation = .reconnecting
-                // Server restart drops tokens. Force a republish on the next view.
-                self.lastUWBToken = nil
+                self?.handleReconnect(reconnecting)
+            }
+        }
+        live?.onRemoved = { [weak self] in
+            Task { @MainActor in
+                self?.handleRemovedFromLobby()
             }
         }
         live?.onUWBPeers = { [weak self] peers in
@@ -188,8 +200,7 @@ final class AppStore {
         }
         live?.onSendFailure = { [weak self] _ in
             Task { @MainActor in
-                self?.situation = .reconnecting
-                self?.note = "Connection hiccup. Retrying…"
+                self?.handleSendFailure()
             }
         }
         live?.onRefreshFailed = { [weak self] in
@@ -211,6 +222,8 @@ final class AppStore {
         }
         if let live, let storedAccess = keychain.readToken() {
             live.token = storedAccess
+            // Pull display_name from /v1/me so Home is not stuck on "Casey Lee".
+            Task { await restoreSessionFromStoredToken() }
         }
         location.onStreamFailure = { [weak self] in
             self?.situation = .reconnecting
@@ -541,6 +554,7 @@ final class AppStore {
         session = nil
         match = nil
         pingPulse = nil
+        clearConnectionHiccup(restoreSituation: true)
         withAnimation(.snappy(duration: 0.35)) {
             screen = .signedOut
         }
@@ -750,9 +764,13 @@ final class AppStore {
         self.arenaID = arenaID.uuidString
         guard let fake else {
             let overrides = PresetOverrides.from(modules: modules, arena: selected)
-            Task { await createMatchRemote(arenaID: arenaID, presetID: presetID, overrides: overrides) }
+            Task {
+                await syncDisplayNameBeforeMatchIfNeeded()
+                await createMatchRemote(arenaID: arenaID, presetID: presetID, overrides: overrides)
+            }
             return
         }
+        syncDisplayNameBeforeMatchIfNeededSync()
         do {
             let view = try fake.createGameSync(arenaID: arenaID, presetID: presetID)
             apply(view)
@@ -789,9 +807,13 @@ final class AppStore {
         }
         guard let fake else {
             joinDraft = normalized
-            Task { await joinRemote(normalized) }
+            Task {
+                await syncDisplayNameBeforeMatchIfNeeded()
+                await joinRemote(normalized)
+            }
             return nil
         }
+        syncDisplayNameBeforeMatchIfNeededSync()
         do {
             let view = try fake.joinSync(code: normalized)
             apply(view)
@@ -1457,6 +1479,7 @@ final class AppStore {
     }
 
     func apply(_ view: PlayerViewDTO, now: Date = Date()) {
+        clearConnectionHiccup(restoreSituation: true)
         if PingDetector.didPing(previous: match?.snapshot, next: view) {
             pingPulse = PingPulse(role: view.you.role)
         }
@@ -1643,6 +1666,141 @@ final class AppStore {
         } catch {
             presentNote("Demo action failed.")
             return false
+        }
+    }
+
+    /// One failed ping must not toast; show after ≥2 send failures or continuous reconnect debounce.
+    func handleSendFailure(_ reason: String = "") {
+        _ = reason
+        consecutiveSendFailures += 1
+        situation = .reconnecting
+        if consecutiveSendFailures >= 2 {
+            presentHiccupNote()
+        }
+    }
+
+    func handleReconnect(_ reconnecting: Bool) {
+        guard reconnecting else { return }
+        situation = .reconnecting
+        // Server restart drops tokens. Force a republish on the next view.
+        lastUWBToken = nil
+        if reconnectingSince == nil {
+            reconnectingSince = Date()
+        }
+        scheduleHiccupDebounceIfNeeded()
+    }
+
+    /// Kick / removed WS path: stop reconnect UX and return home.
+    func handleRemovedFromLobby() {
+        clearConnectionHiccup(restoreSituation: true)
+        turnOffFlashlight()
+        decoyPicking = false
+        demoPicking = false
+        stopUWB()
+        location.stop()
+        live?.disconnect()
+        match = nil
+        pingPulse = nil
+        liveUpdate = nil
+        liveUpdateExpiryTask?.cancel()
+        withAnimation(.snappy(duration: 0.35)) {
+            screen = .home
+        }
+        presentNote(Self.removedFromLobbyNote)
+    }
+
+    private func presentHiccupNote() {
+        note = Self.connectionHiccupNote
+        noteExpiryTask?.cancel()
+    }
+
+    private func scheduleHiccupDebounceIfNeeded() {
+        guard hiccupDebounceTask == nil else { return }
+        let delay = hiccupDebounceSeconds
+        hiccupDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, let self else { return }
+            self.hiccupDebounceTask = nil
+            guard self.situation == .reconnecting, self.reconnectingSince != nil else { return }
+            self.presentHiccupNote()
+        }
+    }
+
+    private func clearConnectionHiccup(restoreSituation: Bool) {
+        let wasHiccup = note == Self.connectionHiccupNote
+        consecutiveSendFailures = 0
+        reconnectingSince = nil
+        hiccupDebounceTask?.cancel()
+        hiccupDebounceTask = nil
+        if wasHiccup {
+            note = nil
+            noteExpiryTask?.cancel()
+        }
+        if restoreSituation, situation == .reconnecting {
+            situation = .active
+        }
+    }
+
+    /// Before create/join: if the field text differs from the session name, re-auth (same install id).
+    private func syncDisplayNameBeforeMatchIfNeededSync() {
+        let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard session?.displayName != trimmed else { return }
+        guard let fake else { return }
+        fake.signInSync(trimmed)
+        session = Session(displayName: trimmed, token: session?.token ?? "fake")
+        displayName = trimmed
+    }
+
+    private func syncDisplayNameBeforeMatchIfNeeded() async {
+        let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        guard session?.displayName != trimmed else { return }
+        if fake != nil {
+            syncDisplayNameBeforeMatchIfNeededSync()
+            return
+        }
+        live?.updateBaseURL(URL(string: serverURL) ?? URL(string: "http://localhost:8000")!)
+        live?.devAuthSecret = devAuthSecret
+        do {
+            let auth = try await service.signIn(
+                displayName: trimmed,
+                installationId: InstallationID.current(keychain: keychain)
+            )
+            try? keychain.saveToken(auth.accessToken)
+            if let refresh = auth.refreshToken {
+                try? keychain.saveRefreshToken(refresh)
+                live?.refreshToken = refresh
+            }
+            session = Session(displayName: auth.user.displayName, token: auth.accessToken)
+            displayName = auth.user.displayName
+        } catch {
+            // Keep the typed name locally; create/join may still fail with the old token.
+            displayName = trimmed
+            lastError = .unreachable
+            note = "Could not update your name. Is the home server running?"
+        }
+    }
+
+    private func restoreSessionFromStoredToken() async {
+        do {
+            let user = try await service.me()
+            let token = live?.token ?? keychain.readToken() ?? ""
+            session = Session(displayName: user.displayName, token: token)
+            displayName = user.displayName
+            if screen == .signedOut {
+                withAnimation(.snappy(duration: 0.35)) {
+                    screen = .home
+                }
+            }
+            if let loaded = try? await service.arenas() { arenas = loaded }
+            await registerPendingDeviceTokenIfNeeded()
+        } catch {
+            // Stale token: stay signed out rather than showing the default Casey Lee name.
+            keychain.deleteToken()
+            live?.token = nil
+            live?.refreshToken = nil
+            session = nil
         }
     }
 

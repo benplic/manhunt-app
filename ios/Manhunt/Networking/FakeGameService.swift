@@ -8,7 +8,11 @@ final class FakeGameService: GameService {
     private(set) var lastDeviceToken: String?
     private(set) var appleSignIns = 0
     private(set) var refreshCalls = 0
+    private(set) var signInCalls = 0
+    private(set) var lastSignInDisplayName: String?
     private var signedIn: UserDTO?
+
+    var currentUser: UserDTO? { signedIn }
     private(set) var storedArenas: [Arena]
     private var games: [UUID: FakeGame] = [:]
     private var presetsSaved: [SavedPresetDTO] = []
@@ -36,7 +40,7 @@ final class FakeGameService: GameService {
 
     func signIn(displayName: String, installationId: String) async throws -> AuthOut {
         _ = installationId
-        signInSync(displayName)
+        return signInSync(displayName)
     }
 
     func signInWithApple(identityToken: String, displayName: String?) async throws -> AuthOut {
@@ -55,6 +59,8 @@ final class FakeGameService: GameService {
 
     @discardableResult
     func signInSync(_ displayName: String) -> AuthOut {
+        signInCalls += 1
+        lastSignInDisplayName = displayName
         let user = UserDTO(id: signedIn?.id ?? UUID(), displayName: displayName)
         signedIn = user
         issuedRefresh = "fake-refresh-\(user.id.uuidString.prefix(8))"
@@ -64,6 +70,13 @@ final class FakeGameService: GameService {
             user: user,
             refreshToken: issuedRefresh
         )
+    }
+
+    func me() async throws -> UserDTO {
+        guard let signedIn else {
+            throw ServiceError(code: .unauthorized, message: "Not signed in.")
+        }
+        return signedIn
     }
 
     func refresh(refreshToken: String) async throws -> AuthOut {
