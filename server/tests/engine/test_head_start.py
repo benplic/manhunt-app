@@ -68,6 +68,8 @@ def test_spawn_lock_holds_head_start_until_seekers_are_inside_and_pauses_if_they
     session.set_role(other, "seeker")
     session.record_location(hider, reading(meters(100, 100), clock))
     session.record_location(seeker, reading(meters(150, 150), clock))
+    # Two consecutive accurate in-spawn fixes before the seeker counts as in.
+    session.record_location(other, reading(meters(10, 10), clock))
     session.record_location(other, reading(meters(10, 10), clock))
     session.start()
     limit = session.state.time_limit_remaining_s
@@ -82,6 +84,7 @@ def test_spawn_lock_holds_head_start_until_seekers_are_inside_and_pauses_if_they
     assert build_view(session, other)["spawn_lock"]["outside"] is False
 
     session.record_location(seeker, reading(meters(12, 12), clock))
+    session.record_location(seeker, reading(meters(12, 12), clock))
     run_for(session, clock, 4)
     assert session.state.phase == "head_start"
     assert session.state.game_elapsed_s == 4
@@ -95,6 +98,7 @@ def test_spawn_lock_holds_head_start_until_seekers_are_inside_and_pauses_if_they
     assert session.state.game_elapsed_s == 4
     assert session.state.phase_remaining_s == 6
 
+    session.record_location(other, reading(meters(8, 8), clock))
     session.record_location(other, reading(meters(8, 8), clock))
     run_for(session, clock, 5)
     assert session.state.phase == "head_start"
@@ -140,10 +144,12 @@ def test_seeker_standing_in_an_out_zone_does_not_start_head_start() -> None:
     session.record_location(hider, reading(meters(100, 100), clock))
     # Inside the spawn polygon, but the out zone covers this corner.
     session.record_location(seeker, reading(meters(10, 10), clock))
+    session.record_location(seeker, reading(meters(10, 10), clock))
     session.start()
     run_for(session, clock, 4)
     assert session.state.phase == "head_start"
     assert session.state.game_elapsed_s == 0
+    session.record_location(seeker, reading(meters(50, 50), clock))
     session.record_location(seeker, reading(meters(50, 50), clock))
     run_for(session, clock, 6)
     assert session.state.phase == "active"
@@ -189,3 +195,103 @@ def test_pause_freezes_the_head_start_clock() -> None:
     assert session.state.phase == "head_start"
     run_for(session, clock, 5)
     assert session.state.phase == "active"
+
+
+def test_spawn_lock_needs_two_consecutive_in_spawn_fixes_against_flicker() -> None:
+    from app.engine.arena import ArenaZone, PolygonShape, ZoneKind
+    from tests.engine.helpers import meters, reading
+
+    session, clock = make_session(
+        overrides={
+            "head_start": {"enabled": True, "duration": 8, "seeker_lock": "spawn_zone"},
+            "win": {"time_limit": 30},
+        }
+    )
+    session.state.arena.zones.append(
+        ArenaZone(
+            id=uuid4(),
+            name="Spawn",
+            kind=ZoneKind.SEEKER_SPAWN,
+            shape=PolygonShape(
+                vertices=[meters(0, 0), meters(40, 0), meters(40, 40), meters(0, 40)]
+            ),
+        )
+    )
+    hider = uuid4()
+    seeker = uuid4()
+    session.add_player(hider, "Riley", True)
+    session.add_player(seeker, "Jordan", False)
+    session.set_role(hider, "hider")
+    session.set_role(seeker, "seeker")
+    session.record_location(hider, reading(meters(100, 100), clock))
+    session.record_location(seeker, reading(meters(150, 150), clock))
+    session.start()
+    assert session.state.game_elapsed_s == 0
+
+    # One accurate in-spawn fix is not enough (GPS flicker guard).
+    session.record_location(seeker, reading(meters(12, 12), clock))
+    run_for(session, clock, 3)
+    assert session.state.phase == "head_start"
+    assert session.state.game_elapsed_s == 0
+    assert session.state.players[seeker].spawn_in_streak == 1
+
+    # A second consecutive accurate in-spawn fix releases the clock.
+    session.record_location(seeker, reading(meters(14, 14), clock))
+    run_for(session, clock, 2)
+    assert session.state.game_elapsed_s == 2
+    assert session.state.players[seeker].spawn_in_streak >= 2
+
+    # Leaving resets the streak and re-holds the match clock.
+    session.record_location(seeker, reading(meters(90, 90), clock))
+    run_for(session, clock, 3)
+    assert session.state.game_elapsed_s == 2
+    assert session.state.players[seeker].spawn_in_streak == 0
+
+    # Flicker: one good fix after leaving still holds; need two again.
+    session.record_location(seeker, reading(meters(10, 10), clock))
+    run_for(session, clock, 2)
+    assert session.state.game_elapsed_s == 2
+    session.record_location(seeker, reading(meters(11, 11), clock))
+    run_for(session, clock, 3)
+    assert session.state.game_elapsed_s == 5
+
+
+def test_spawn_lock_inaccurate_fix_does_not_count_toward_streak() -> None:
+    from app.engine.arena import ArenaZone, PolygonShape, ZoneKind
+    from tests.engine.helpers import meters, reading
+
+    session, clock = make_session(
+        overrides={
+            "head_start": {"enabled": True, "duration": 6, "seeker_lock": "spawn_zone"},
+        }
+    )
+    session.state.arena.zones.append(
+        ArenaZone(
+            id=uuid4(),
+            name="Spawn",
+            kind=ZoneKind.SEEKER_SPAWN,
+            shape=PolygonShape(
+                vertices=[meters(0, 0), meters(40, 0), meters(40, 40), meters(0, 40)]
+            ),
+        )
+    )
+    hider = uuid4()
+    seeker = uuid4()
+    session.add_player(hider, "Riley", True)
+    session.add_player(seeker, "Jordan", False)
+    session.set_role(hider, "hider")
+    session.set_role(seeker, "seeker")
+    session.record_location(hider, reading(meters(100, 100), clock))
+    session.record_location(seeker, reading(meters(150, 150), clock))
+    session.start()
+
+    session.record_location(seeker, reading(meters(12, 12), clock, accuracy=50))
+    session.record_location(seeker, reading(meters(12, 12), clock, accuracy=50))
+    run_for(session, clock, 2)
+    assert session.state.game_elapsed_s == 0
+    assert session.state.players[seeker].spawn_in_streak == 0
+
+    session.record_location(seeker, reading(meters(12, 12), clock))
+    session.record_location(seeker, reading(meters(13, 13), clock))
+    run_for(session, clock, 2)
+    assert session.state.game_elapsed_s == 2
