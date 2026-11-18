@@ -48,4 +48,39 @@ final class Phase3Tests: XCTestCase {
         XCTAssertTrue(HeadStartChrome.showsFloatingNotice(.spawnZone))
         XCTAssertTrue(HeadStartChrome.showsFloatingNotice(.none))
     }
+
+    func testLiveMapZonesHideSpawnAfterHeadStart() {
+        let spawn = VisualZone(
+            id: "spawn",
+            name: "Spawn",
+            kind: .spawn,
+            points: [
+                VisualPoint(latitude: 40.66, longitude: -73.96),
+                VisualPoint(latitude: 40.661, longitude: -73.96),
+                VisualPoint(latitude: 40.661, longitude: -73.961),
+            ],
+            radiusMeters: nil
+        )
+        let safe = VisualZone(
+            id: "safe",
+            name: "Gazebo",
+            kind: .safe,
+            points: [VisualPoint(latitude: 40.662, longitude: -73.962)],
+            radiusMeters: 12
+        )
+        let during = LiveMapZones.visible(
+            liveZones: [spawn, safe],
+            spawnZones: [],
+            phase: .headStart,
+            emphasizeSpawn: true
+        )
+        XCTAssertEqual(during.map(\.id), ["spawn", "safe"])
+        let after = LiveMapZones.visible(
+            liveZones: [spawn, safe],
+            spawnZones: [spawn],
+            phase: .active,
+            emphasizeSpawn: false
+        )
+        XCTAssertEqual(after.map(\.id), ["safe"])
+    }
 }

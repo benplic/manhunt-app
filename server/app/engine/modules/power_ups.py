@@ -115,6 +115,9 @@ def apply_purchase(s: GameSession, player_id, power_id: str, **kwargs: Any) -> N
 
 
 def _scan(s: GameSession, seeker_id) -> None:
+    settings = s.module_settings("power_ups")
+    radius_m = float(settings.get("scan_radius_m", 30))
+    pin_count = max(1, int(settings.get("scan_count", 1)))
     hiders = [
         p
         for p in s.state.players.values()
@@ -122,17 +125,17 @@ def _scan(s: GameSession, seeker_id) -> None:
     ]
     if not hiders:
         return
-    target = hiders[s.rng.randrange(len(hiders))]
-    reading = target.last_precise or target.location
-    assert reading is not None
-    fuzz = float(s.module_settings("reveal_fuzzy").get("fuzz", 30))
-    s.state.reveals.append(
-        RevealPin(
-            reveal_id=uuid4(),
-            player_id=target.player_id,
-            lat=reading.lat,
-            lon=reading.lon,
-            radius_m=fuzz,
-            expires_at_game_s=s.state.game_elapsed_s + 10,
+    picks = s.rng.sample(hiders, min(pin_count, len(hiders)))
+    for target in picks:
+        reading = target.last_precise or target.location
+        assert reading is not None
+        s.state.reveals.append(
+            RevealPin(
+                reveal_id=uuid4(),
+                player_id=target.player_id,
+                lat=reading.lat,
+                lon=reading.lon,
+                radius_m=radius_m,
+                expires_at_game_s=s.state.game_elapsed_s + 10,
+            )
         )
-    )

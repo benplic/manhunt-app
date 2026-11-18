@@ -74,6 +74,49 @@ def test_out_zone_beats_a_safe_zone_that_covers_the_same_ground() -> None:
         assert exc.code == ErrorCode.TARGET_IN_SAFE_ZONE
 
 
+def test_safe_remove_after_drops_protection_and_arena_zones() -> None:
+    session, clock, hider, seeker = two_player_hunt(
+        overrides={
+            "head_start": {"enabled": True, "duration": 1},
+            "signal_loss": {"silence": 600},
+            "zone_policy": {"safe_visit": 120, "safe_remove_after": 1},
+        }
+    )
+    session.state.arena = gazebo_arena()
+    session.record_location(hider, reading(meters(100, 101), clock))
+    session.record_location(seeker, reading(meters(100, 102), clock))
+    run_for(session, clock, 1)
+    assert session.state.players[hider].safe_zone_id is not None
+    token = make_qr_token(
+        game_id=session.state.game_id,
+        hider_id=hider,
+        expires_at=clock.now() + timedelta(seconds=30),
+        key=session.qr_signing_key,
+    )
+    try:
+        session.claim_tag(TagClaim(seeker, hider, qr_token=token))
+        raise AssertionError("expected the safe zone to block the tag")
+    except GameRuleError as exc:
+        assert exc.code == ErrorCode.TARGET_IN_SAFE_ZONE
+
+    # After one active minute past head start, safes are gone.
+    for _ in range(60):
+        session.record_location(hider, reading(meters(100, 101), clock))
+        session.record_location(seeker, reading(meters(100, 102), clock))
+        run_for(session, clock, 1)
+    assert session.state.players[hider].safe_zone_id is None
+    view = build_view(session, hider)
+    assert all(zone["kind"] != "safe" for zone in view["arena"]["zones"])
+    token = make_qr_token(
+        game_id=session.state.game_id,
+        hider_id=hider,
+        expires_at=clock.now() + timedelta(seconds=30),
+        key=session.qr_signing_key,
+    )
+    session.claim_tag(TagClaim(seeker, hider, qr_token=token))
+    assert session.state.players[hider].status == "eliminated"
+
+
 def test_seeker_outside_is_revealed_until_they_return() -> None:
     session, clock, hider, seeker = two_player_hunt(
         overrides={"zone_policy": {"oob_countdown": 15}}

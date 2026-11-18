@@ -35,6 +35,9 @@ class ZonePolicyModule(BaseModule):
         from app.engine.modules.head_start import spawn_clock_held
 
         safe_time_runs = not spawn_clock_held(s)
+        safes_live = safe_zones_active(s)
+        if not safes_live:
+            _clear_all_safe_state(s)
         for player in s.state.players.values():
             reading = player.location
             if reading is None or reading.accuracy_m > ACCURACY_CUTOFF_M:
@@ -59,7 +62,7 @@ class ZonePolicyModule(BaseModule):
             player.oob_revealed = player.role == "seeker" and player.bounds_phase != "inside"
             # Safe time stays put while seekers are still walking to spawn.
             # Out-of-bounds above still counts; that is a hazard, not the match clock.
-            if safe_time_runs:
+            if safe_time_runs and safes_live:
                 _advance_safe(s, player, point, safe_visit)
 
     def check_tag(self, s: GameSession, claim: TagClaim) -> ErrorCode | None:
@@ -68,9 +71,36 @@ class ZonePolicyModule(BaseModule):
             return ErrorCode.TARGET_NOT_ACTIVE
         if s.state.lockdown_until_s is not None:
             return None
+        if not safe_zones_active(s):
+            return None
         if hider.safe_zone_id is not None and not hider.safe_expired:
             return ErrorCode.TARGET_IN_SAFE_ZONE
         return None
+
+
+def safe_zones_active(s: GameSession) -> bool:
+    """False after host timed removal (minutes of active play after head start).
+
+    Per-visit limits stay on safe_visit / safe_cooldown; this is whole-hunt removal.
+    0 (default) keeps safe zones for the whole game.
+    """
+    remove_after_min = int(s.module_settings("zone_policy").get("safe_remove_after", 0))
+    if remove_after_min <= 0:
+        return True
+    hs = s.module_settings("head_start")
+    head_start_s = int(hs.get("duration", 60)) if bool(hs.get("enabled", True)) else 0
+    active_elapsed = max(0, s.state.game_elapsed_s - head_start_s)
+    return active_elapsed < remove_after_min * 60
+
+
+def _clear_all_safe_state(s: GameSession) -> None:
+    for player in s.state.players.values():
+        if player.safe_zone_id is None and not player.safe_expired:
+            continue
+        player.safe_zone_id = None
+        player.safe_remaining_s = None
+        player.safe_expired = False
+        player.safe_cooldown_until_s = None
 
 
 def _covered_by_out_zone(point: GeoPoint, zones) -> bool:

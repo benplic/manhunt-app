@@ -6,6 +6,7 @@ from uuid import UUID
 
 from app.engine.arena import ZoneKind, arena_to_dict
 from app.engine.modules.head_start import spawn_clock_held
+from app.engine.modules.zone_policy import safe_zones_active
 from app.engine.modules.zone_shrink import zone_shrink_schedule
 from app.engine.session import GameSession
 from app.engine.state import PlayerState
@@ -97,12 +98,12 @@ def build_view(
             "points": viewer.points,
             "points_earned": viewer.points_earned,
             "hint": viewer.hint,
-            "effects": [e.type for e in state.effects if e.owner_id == viewer.player_id],
+            "effects": _effects_for(state, viewer),
             "cooldowns": cooldowns,
             "taunt_cooldown_s": taunt_cooldown_s,
             "taunt_enabled": bool(session.module_settings("points").get("taunt_enabled", True)),
         },
-        "arena": arena_to_dict(state.arena),
+        "arena": _arena_for_view(session),
         "players": players,
         "reveals": reveals,
         "banners": [
@@ -119,6 +120,22 @@ def build_view(
         "power_ups": _power_ups_for(session, viewer),
         "demo": _build_demo(session, viewer, demo_controls_enabled=demo_controls_enabled),
     }
+
+
+def _effects_for(state, viewer: PlayerState) -> list[str]:
+    """Owner effects plus shared lockdown so every phone can fade safe zones."""
+    owned = [e.type for e in state.effects if e.owner_id == viewer.player_id]
+    if state.lockdown_until_s is not None and "lockdown" not in owned:
+        owned.append("lockdown")
+    return owned
+
+
+def _arena_for_view(session: GameSession) -> dict:
+    packed = arena_to_dict(session.state.arena)
+    if safe_zones_active(session):
+        return packed
+    packed["zones"] = [zone for zone in packed["zones"] if zone["kind"] != ZoneKind.SAFE]
+    return packed
 
 
 def _power_ups_for(session: GameSession, viewer: PlayerState) -> list[dict]:

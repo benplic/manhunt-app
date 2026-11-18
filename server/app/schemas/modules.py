@@ -32,6 +32,10 @@ def _power_ups_fields() -> tuple[list[str], dict[str, Any]]:
             f"{title} cost", 0, 200, int(base["cost"]), step=5, suffix="pts"
         )
         field_order.extend([f"{power_id}_enabled", f"{power_id}_cost"])
+        if power_id == "scan":
+            fields["scan_radius_m"] = _int("Scan radius", 10, 150, 30, step=5, suffix="m")
+            fields["scan_count"] = _int("Scan pins", 1, 5, 1)
+            field_order.extend(["scan_radius_m", "scan_count"])
     return field_order, fields
 
 
@@ -159,13 +163,17 @@ SCHEMAS: dict[str, dict[str, Any]] = {
     "zone_policy": {
         "version": 1,
         "title": "Zones",
-        "blurb": "Out of bounds counts down. Safe zones block tags until time runs out.",
+        "blurb": (
+            "Out of bounds counts down. Safe visit and cooldown limit each stay; "
+            "remove-after drops every safe zone from the hunt."
+        ),
         "locked": True,
         "field_order": [
             "oob_countdown",
             "hider_oob_penalty",
             "safe_visit",
             "safe_cooldown",
+            "safe_remove_after",
             "margin_m",
         ],
         "fields": {
@@ -178,6 +186,9 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             ),
             "safe_visit": _int("Safe visit", 5, 300, 60, step=15, suffix="s"),
             "safe_cooldown": _int("Safe cooldown", 0, 300, 60, step=15, suffix="s"),
+            "safe_remove_after": _int(
+                "Remove safes after", 0, 180, 0, step=5, suffix="min"
+            ),
             "margin_m": _int("Edge margin", 0, 30, 5, suffix="m"),
         },
     },

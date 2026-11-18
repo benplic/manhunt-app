@@ -64,6 +64,11 @@ def test_shield_blocks_tags_until_lockdown() -> None:
     with pytest.raises(GameRuleError) as exc:
         session.claim_tag(TagClaim(seeker, hider, qr_token=_qr(session, clock, hider)))
     assert exc.value.code == ErrorCode.TARGET_SHIELDED
+    from app.engine.views import build_view
+
+    # Lockdown is shared so hiders can fade safe zones on the map.
+    assert "lockdown" in build_view(session, hider)["you"]["effects"]
+    assert "lockdown" in build_view(session, seeker)["you"]["effects"]
 
 
 def test_scan_radar_and_jammer() -> None:
@@ -74,6 +79,7 @@ def test_scan_radar_and_jammer() -> None:
     session.state.players[seeker].points = 300
     session.purchase(seeker, "scan")
     assert session.state.reveals
+    assert session.state.reveals[0].radius_m == 30
     session.purchase(hider, "radar")
     session.purchase(hider, "jammer")
     from app.engine.views import build_view
@@ -83,6 +89,47 @@ def test_scan_radar_and_jammer() -> None:
     session.tick()
     seeker_view = build_view(session, seeker)
     assert seeker_view["you"].get("hint") is None
+
+
+def test_scan_uses_power_ups_radius_and_pin_count() -> None:
+    from uuid import uuid4
+
+    from tests.engine.helpers import make_session
+
+    session, clock = make_session(
+        overrides={
+            "head_start": {"enabled": True, "duration": 1},
+            "signal_loss": {"silence": 60},
+            "power_ups": {
+                "scan_enabled": True,
+                "scan_cost": 5,
+                "scan_radius_m": 55,
+                "scan_count": 2,
+            },
+            "reveal_fuzzy": {"fuzz": 5, "interval": 30},
+        }
+    )
+    hider = uuid4()
+    second = uuid4()
+    seeker = uuid4()
+    session.add_player(hider, "Riley", is_host=True)
+    session.add_player(second, "Casey", is_host=False)
+    session.add_player(seeker, "Jordan", is_host=False)
+    session.set_role(hider, "hider")
+    session.set_role(second, "hider")
+    session.set_role(seeker, "seeker")
+    session.start()
+    run_for(session, clock, 1)
+    session.record_location(hider, reading(meters(100, 100), clock))
+    session.record_location(second, reading(meters(120, 120), clock))
+    session.record_location(seeker, reading(meters(40, 40), clock))
+    session.state.players[seeker].points = 50
+    before = len(session.state.reveals)
+    session.purchase(seeker, "scan")
+    pins = session.state.reveals[before:]
+    assert len(pins) == 2
+    assert {p.player_id for p in pins} == {hider, second}
+    assert all(p.radius_m == 55 for p in pins)
 
 
 def test_disabled_power_is_rejected_and_a_custom_cost_is_charged() -> None:

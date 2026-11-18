@@ -21,7 +21,10 @@ def test_core_modules_are_locked_and_power_costs_are_fields(client: TestClient) 
         assert "enabled" not in modules[module_id]["fields"]
     assert modules["power_ups"]["locked"] is False
     assert modules["power_ups"]["fields"]["scan_cost"]["default"] == 25
+    assert modules["power_ups"]["fields"]["scan_radius_m"]["default"] == 30
+    assert modules["power_ups"]["fields"]["scan_count"]["default"] == 1
     assert modules["power_ups"]["fields"]["ghost_cost"]["default"] == 20
+    assert modules["zone_policy"]["fields"]["safe_remove_after"]["default"] == 0
     assert "hot_cold" not in modules
 
 

@@ -233,13 +233,14 @@
     "zone_policy": {
       "version": 1,
       "title": "Zones",
-      "blurb": "Out of bounds counts down. Safe zones block tags until time runs out.",
+      "blurb": "Out of bounds counts down. Safe visit and cooldown limit each stay; remove-after drops every safe zone from the hunt.",
       "locked": true,
       "field_order": [
         "oob_countdown",
         "hider_oob_penalty",
         "safe_visit",
         "safe_cooldown",
+        "safe_remove_after",
         "margin_m"
       ],
       "fields": {
@@ -282,6 +283,15 @@
           "step": 15,
           "default": 60,
           "suffix": "s"
+        },
+        "safe_remove_after": {
+          "type": "int",
+          "title": "Remove safes after",
+          "min": 0,
+          "max": 180,
+          "step": 5,
+          "default": 0,
+          "suffix": "min"
         },
         "margin_m": {
           "type": "int",
@@ -463,6 +473,8 @@
         "shield_cost",
         "scan_enabled",
         "scan_cost",
+        "scan_radius_m",
+        "scan_count",
         "tracker_enabled",
         "tracker_cost",
         "lockdown_enabled",
@@ -557,6 +569,24 @@
           "step": 5,
           "default": 25,
           "suffix": "pts"
+        },
+        "scan_radius_m": {
+          "type": "int",
+          "title": "Scan radius",
+          "min": 10,
+          "max": 150,
+          "step": 5,
+          "default": 30,
+          "suffix": "m"
+        },
+        "scan_count": {
+          "type": "int",
+          "title": "Scan pins",
+          "min": 1,
+          "max": 5,
+          "step": 1,
+          "default": 1,
+          "suffix": ""
         },
         "tracker_enabled": {
           "type": "bool",

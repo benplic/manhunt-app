@@ -148,6 +148,10 @@ final class LiveHudAndPresetsTests: XCTestCase {
         }
         XCTAssertEqual(modules.first { $0.id == "power_ups" }?.locked, false)
         XCTAssertNotNil(modules.first { $0.id == "power_ups" }?.rows.first { $0.id == "scan_cost" })
+        XCTAssertNotNil(modules.first { $0.id == "power_ups" }?.rows.first { $0.id == "scan_radius_m" })
+        XCTAssertNotNil(modules.first { $0.id == "power_ups" }?.rows.first { $0.id == "scan_count" })
+        XCTAssertNotNil(modules.first { $0.id == "zone_policy" }?.rows.first { $0.id == "safe_remove_after" })
+        XCTAssertNotNil(modules.first { $0.id == "zone_policy" }?.rows.first { $0.id == "safe_visit" })
         var edited = modules
         if let mIdx = edited.firstIndex(where: { $0.id == "reveal_fuzzy" }),
            let rIdx = edited[mIdx].rows.firstIndex(where: { $0.id == "location_mode" }),

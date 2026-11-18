@@ -20,16 +20,14 @@ struct LiveGameView: View {
             seekerLock: snapshot?.seekerLock
         )
         let spawnZones = snapshot?.spawnLock?.zones.map { $0.asVisual() } ?? []
-        let liveZones = store.liveZones
-        // spawnLock can re-send seeker spawn with a different id; drop by id or geometry.
-        let zones = liveZones + spawnZones.filter { spawn in
-            !liveZones.contains { existing in
-                existing.id == spawn.id
-                    || (existing.kind == spawn.kind
-                        && existing.points == spawn.points
-                        && existing.radiusMeters == spawn.radiusMeters)
-            }
-        }
+        let emphasizeSpawn = chrome == .spawnZone
+        let zones = LiveMapZones.visible(
+            liveZones: store.liveZones,
+            spawnZones: spawnZones,
+            phase: snapshot?.phase ?? .active,
+            emphasizeSpawn: emphasizeSpawn
+        )
+        let lockdownActive = snapshot?.you.effects?.contains("lockdown") == true
         return ZStack(alignment: .top) {
             HuntMap(
                 boundary: store.mapArena.boundary,
@@ -46,9 +44,10 @@ struct LiveGameView: View {
                 onDrop: store.decoyPicking
                     ? { store.dropDecoy(at: $0) }
                     : (store.demoPicking ? { store.dropDemoMove(at: $0) } : nil),
-                emphasizeSpawn: chrome == .spawnZone,
+                emphasizeSpawn: emphasizeSpawn,
                 glidePeople: true,
-                zoneShrink: store.zoneShrinkClock
+                zoneShrink: store.zoneShrinkClock,
+                lockdownActive: lockdownActive
             )
             .ignoresSafeArea()
 

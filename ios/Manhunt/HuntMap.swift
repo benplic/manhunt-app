@@ -24,19 +24,30 @@ struct HuntMap: View {
     var emphasizeSpawn: Bool = false
     var glidePeople: Bool = false
     var zoneShrink: ZoneShrinkClock? = nil
+    /// When true, safe zones fade so lockdown reads on the map.
+    var lockdownActive: Bool = false
 
     @State private var position: MapCameraPosition = .automatic
     @State private var crosshair = VisualPoint(latitude: 40.6616, longitude: -73.9688)
     @State private var glide = PlayerGlide()
+    @State private var safeDim: Double = 0
 
-    private var animates: Bool { glidePeople || zoneShrink != nil }
+    private var animates: Bool { glidePeople || zoneShrink != nil || safeDim > 0 || lockdownActive }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animates)) { timeline in
             mapContent(now: timeline.date)
         }
-        .onAppear { glide.retarget(people, now: Date()) }
+        .onAppear {
+            glide.retarget(people, now: Date())
+            safeDim = lockdownActive ? 1 : 0
+        }
         .onChange(of: people) { _, updated in glide.retarget(updated, now: Date()) }
+        .onChange(of: lockdownActive) { _, active in
+            withAnimation(.easeInOut(duration: 0.75)) {
+                safeDim = active ? 1 : 0
+            }
+        }
     }
 
     private func mapContent(now: Date) -> some View {
@@ -222,17 +233,20 @@ struct HuntMap: View {
     private func zoneContent(_ zone: VisualZone) -> some MapContent {
         let tint = tint(for: zone.kind)
         let width: CGFloat = (emphasizeSpawn && zone.kind == .spawn) ? 4 : 2
+        let fillBase: Double = emphasizeSpawn && zone.kind == .spawn ? 0.45 : 0.28
+        let fillOpacity = zone.kind == .safe ? fillBase * (1 - 0.78 * safeDim) : fillBase
+        let strokeOpacity = zone.kind == .safe ? max(0.25, 1 - 0.65 * safeDim) : 1
         if zone.kind == .safe, let center = zone.points.first, let radius = zone.radiusMeters {
             MapCircle(center: center.coordinate, radius: radius)
-                .foregroundStyle(tint.opacity(0.28))
-                .stroke(tint, lineWidth: width)
+                .foregroundStyle(tint.opacity(fillOpacity))
+                .stroke(tint.opacity(strokeOpacity), lineWidth: width)
         } else if zone.points.count >= 3 {
             MapPolygon(coordinates: zone.points.map(\.coordinate))
-                .foregroundStyle(tint.opacity(emphasizeSpawn && zone.kind == .spawn ? 0.45 : 0.28))
-                .stroke(tint, lineWidth: width)
+                .foregroundStyle(tint.opacity(fillOpacity))
+                .stroke(tint.opacity(strokeOpacity), lineWidth: width)
         } else if zone.points.count >= 2 {
             MapPolyline(coordinates: zone.points.map(\.coordinate))
-                .stroke(tint, lineWidth: width)
+                .stroke(tint.opacity(strokeOpacity), lineWidth: width)
         }
         if !zone.name.isEmpty,
            zone.kind == .safe || zone.kind == .outOfBounds || zone.kind == .spawn,
@@ -244,7 +258,7 @@ struct HuntMap: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(.black.opacity(0.72), in: Capsule())
-                    .foregroundStyle(HuntColor.paper)
+                    .foregroundStyle(HuntColor.paper.opacity(zone.kind == .safe ? strokeOpacity : 1))
                     .accessibilityLabel(zone.name)
             }
         }
