@@ -1,0 +1,31 @@
+---
+description: Only benplic GitHub may commit or push in this repo
+alwaysApply: true
+---
+
+# Git identity — benplic only
+
+Only the **benplic** GitHub account may author or push commits in this repository.
+
+## Allowed
+
+- GitHub user: `benplic`
+- Local `user.name` / `user.email` that map to that account
+- SSH remote host alias: `github.com-benplic` (for example `git@github.com-benplic:benplic/manhunt-app.git`)
+
+## Forbidden
+
+Do not create, amend, or push commits as any of these identities (author, committer, or authenticated GitHub user):
+
+- `splichta`
+- `cursoragent`
+- `bplichta01`
+- any other non-`benplic` account
+
+## Before every commit or push
+
+1. Run `git config --get user.name` and `git config --get user.email`.
+2. Run `git remote -v` and confirm the push URL uses the benplic host/account.
+3. If the effective identity is forbidden or not benplic, **stop**. Fix this repo’s **local** git config. Do not rely on a machine-global identity such as `bplichta01`.
+4. Do not use `git commit --author=...` to impersonate a forbidden account.
+5. Prefer this repository’s local `user.name` / `user.email` over the global config when they disagree.
