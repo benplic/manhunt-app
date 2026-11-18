@@ -375,6 +375,42 @@ final class AppStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testRematchOpensANewLobbyWithAFreshGameId() {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.randomizeRoles(seekerCount: 1)
+        _ = store.startMatch()
+        let endedID = store.match?.snapshot.gameId
+        XCTAssertNotNil(endedID)
+        store.endMatch()
+        XCTAssertEqual(store.screen, .results)
+        store.timeline = [
+            TimelineEventDTO(seq: 1, type: "game_ended", payload: TimelinePayloadDTO(text: "done"))
+        ]
+        store.rematch()
+        XCTAssertEqual(store.screen, .lobby)
+        XCTAssertTrue(store.isHost)
+        XCTAssertNotEqual(store.match?.snapshot.gameId, endedID)
+        XCTAssertEqual(store.match?.snapshot.phase, .lobby)
+        XCTAssertTrue(store.timeline.isEmpty)
+        XCTAssertNotEqual(store.joinCode, "")
+    }
+
+    @MainActor
+    func testRematchIsHostOnly() {
+        let store = AppStore.makePreview()
+        store.signInPreview()
+        _ = store.join(code: "PARK42")
+        store.screen = .results
+        let before = store.match?.snapshot.gameId
+        store.rematch()
+        XCTAssertEqual(store.screen, .results)
+        XCTAssertEqual(store.match?.snapshot.gameId, before)
+    }
+
+    @MainActor
     func testLeaveClearsTheMatchAndHitsTheService() async throws {
         let fake = FakeGameService()
         let store = AppStore(service: fake)

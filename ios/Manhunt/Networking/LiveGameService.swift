@@ -158,6 +158,10 @@ final class LiveGameService: GameService {
         try await client.postEmpty("/v1/games/\(gameID.uuidString)/end")
     }
 
+    func rematch(gameID: UUID) async throws -> PlayerViewDTO {
+        try await client.postEmpty("/v1/games/\(gameID.uuidString)/rematch")
+    }
+
     func leave(gameID: UUID) async throws {
         let _: EmptyBody = try await client.postEmpty("/v1/games/\(gameID.uuidString)/leave")
     }

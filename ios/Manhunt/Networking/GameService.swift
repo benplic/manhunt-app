@@ -21,6 +21,7 @@ protocol GameService: AnyObject {
     func pause(gameID: UUID) async throws -> PlayerViewDTO
     func resume(gameID: UUID) async throws -> PlayerViewDTO
     func end(gameID: UUID) async throws -> PlayerViewDTO
+    func rematch(gameID: UUID) async throws -> PlayerViewDTO
     func leave(gameID: UUID) async throws
     func removePlayer(gameID: UUID, playerID: UUID) async throws -> PlayerViewDTO
     func undoTag(gameID: UUID) async throws -> PlayerViewDTO
