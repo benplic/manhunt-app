@@ -111,7 +111,7 @@ final class AppStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testBlockedPlayerHiddenFromLobbyList() {
+    func testBlockedPlayerStaysInLobbyWithAnonymizedName() {
         let suite = "manhunt.tests.blocklist.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -119,13 +119,16 @@ final class AppStoreTests: XCTestCase {
         let store = AppStore(service: FakeGameService(), defaults: defaults)
         store.signInPreview()
         store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
-        let blockedID = store.players[0].id
-        store.blockPlayer(blockedID)
-        XCTAssertFalse(store.players.contains { $0.id == blockedID })
+        let target = store.players[0]
+        store.blockPlayer(target.id, displayName: target.name)
+        let blocked = store.players.first { $0.id == target.id }
+        XCTAssertNotNil(blocked)
+        XCTAssertEqual(blocked?.name, "Blocked Player #1")
+        XCTAssertEqual(store.players.count, store.match?.snapshot.players.count)
     }
 
     @MainActor
-    func testBlockedPlayerRevealHiddenFromMap() {
+    func testBlockedPlayerRevealKeepsPinWithAnonymizedName() {
         let suite = "manhunt.tests.blocklist.reveal.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -160,7 +163,7 @@ final class AppStoreTests: XCTestCase {
                         lon: -73.96,
                         radiusM: 30,
                         expiresInS: 8,
-                        displayName: "Blocked"
+                        displayName: "Casey"
                     )
                 ],
                 banners: [],
@@ -169,8 +172,9 @@ final class AppStoreTests: XCTestCase {
             qrToken: nil
         )
         XCTAssertEqual(store.liveReveals.count, 1)
-        store.blockPlayer(blockedPlayerID.uuidString)
-        XCTAssertTrue(store.liveReveals.isEmpty)
+        store.blockPlayer(blockedPlayerID.uuidString, displayName: "Casey")
+        XCTAssertEqual(store.liveReveals.count, 1)
+        XCTAssertEqual(store.liveReveals.first?.name, "Blocked Player #1")
     }
 
     @MainActor

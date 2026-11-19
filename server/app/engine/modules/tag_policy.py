@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 # The phone reports its own accuracy. Adding the whole number lets a seeker
 # claim 30 m of error and tag from the far side of a reveal circle.
 ACCURACY_BONUS_CAP_M = 5.0
+# Host UI no longer exposes pairing; keep GPS pairing fixed.
+PAIRING_M = 30.0
 
 
 class TagPolicyModule(BaseModule):
@@ -30,7 +32,7 @@ class TagPolicyModule(BaseModule):
             return ErrorCode.TARGET_NOT_ACTIVE
         if s.state.phase not in {"active"}:
             return ErrorCode.WRONG_PHASE
-        pairing = float(self.settings.get("pairing_m", 30))
+        pairing = PAIRING_M
         sloc = seeker.location
         hloc = hider.location
         if sloc is None or hloc is None:

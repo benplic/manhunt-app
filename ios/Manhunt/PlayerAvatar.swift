@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Initials avatar until photo upload ships. Color is stable per player id.
-/// TODO: reuse this view in chat rows when messaging lands.
+/// TODO: reuse this view in chat rows when messaging lands; filter blocked ids via PlayerBlockList.
 struct PlayerAvatar: View {
     var name: String
     var playerID: String

@@ -45,7 +45,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Manhunt uses the camera so a seeker can scan a hider's tag code, and may use the torch when you turn on the flashlight control.</string>
 	<key>ManhuntPrivacyPolicyURL</key>
-	<string>https://REPLACE_WITH_PUBLISHED_PRIVACY_URL</string>
+	<string>https://benplic.github.io/manhunt-app/</string>
 	<key>ManhuntSupportEmail</key>
 	<string>support@manhunt.pivotlattice.app</string>
 	<key>ITSAppUsesNonExemptEncryption</key>

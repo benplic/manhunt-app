@@ -499,6 +499,7 @@ private struct LeaderboardSheet: View {
     @Environment(\.openURL) private var openURL
     var players: [VisualPlayer]
     var dismiss: () -> Void
+    @State private var pendingBlock: PendingBlock?
 
     var body: some View {
         NavigationStack {
@@ -533,7 +534,7 @@ private struct LeaderboardSheet: View {
                                 Button("Report") { openURL(url) }
                             }
                             Button("Block", role: .destructive) {
-                                store.blockPlayer(player.id)
+                                pendingBlock = PendingBlock(id: player.id, name: player.name)
                             }
                         }
                     }
@@ -545,6 +546,23 @@ private struct LeaderboardSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done", action: dismiss)
                 }
+            }
+            .alert(
+                "Block this player?",
+                isPresented: Binding(
+                    get: { pendingBlock != nil },
+                    set: { if !$0 { pendingBlock = nil } }
+                )
+            ) {
+                Button("Block", role: .destructive) {
+                    if let pendingBlock {
+                        store.blockPlayer(pendingBlock.id, displayName: pendingBlock.name)
+                    }
+                    pendingBlock = nil
+                }
+                Button("Cancel", role: .cancel) { pendingBlock = nil }
+            } message: {
+                Text("Their pin stays on the map as “Blocked Player #…”. You can unblock them in Account.")
             }
         }
     }

@@ -99,7 +99,7 @@ RANGES: dict[tuple[str, str], tuple[float, float]] = {
     ("reveal_fuzzy", "display"): (5, 60),
     ("reveal_fuzzy", "fuzz"): (0, 100),
     ("tag_policy", "radius_m"): (1, 5),
-    ("tag_policy", "pairing_m"): (5, 80),
+    ("tag_policy", "pairing_m"): (30, 30),
     ("zone_policy", "margin_m"): (0, 30),
     ("zone_policy", "oob_countdown"): (5, 120),
     ("zone_policy", "safe_visit"): (5, 300),

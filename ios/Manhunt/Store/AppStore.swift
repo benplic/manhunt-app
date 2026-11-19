@@ -336,14 +336,16 @@ final class AppStore {
     var demoControlsEnabled: Bool { match?.snapshot.demo?.controlsEnabled == true }
     var joinCode: String { match?.snapshot.joinCode ?? "" }
     var hostName: String {
-        match?.snapshot.players.first(where: \.isHost)?.displayName ?? "The host"
+        guard let host = match?.snapshot.players.first(where: \.isHost) else {
+            return "The host"
+        }
+        return blockList.displayName(for: host.playerId.uuidString, fallback: host.displayName)
     }
 
     var players: [VisualPlayer] {
         guard let match else { return SamplePark.players }
-        return match.snapshot.players
-            .filter { !blockList.isBlocked($0.playerId.uuidString) }
-            .map { player in
+        let list = blockList
+        return match.snapshot.players.map { player in
             let point: VisualPoint
             if let loc = player.location {
                 point = VisualPoint(latitude: loc.lat, longitude: loc.lon)
@@ -353,9 +355,10 @@ final class AppStore {
             let spendable = player.points
                 ?? (player.playerId == match.snapshot.you.playerId ? match.snapshot.you.points : 0)
             let earned = player.pointsEarned ?? spendable
+            let id = player.playerId.uuidString
             return VisualPlayer(
-                id: player.playerId.uuidString,
-                name: player.displayName,
+                id: id,
+                name: list.displayName(for: id, fallback: player.displayName),
                 role: visualRole(player.role),
                 isYou: player.playerId == match.snapshot.you.playerId,
                 isHost: player.isHost,
@@ -409,10 +412,10 @@ final class AppStore {
 
     var liveReveals: [MapReveal] {
         guard let reveals = match?.snapshot.reveals else { return [] }
-        return reveals
-            .filter { !blockList.isBlocked($0.playerId.uuidString) }
-            .map { pin in
-            let name: String = {
+        let list = blockList
+        return reveals.map { pin in
+            let id = pin.playerId.uuidString
+            let fallback: String = {
                 if let displayName = pin.displayName, !displayName.isEmpty {
                     return displayName
                 }
@@ -420,8 +423,8 @@ final class AppStore {
             }()
             return MapReveal(
                 id: pin.revealId.uuidString,
-                name: name,
-                playerID: pin.playerId.uuidString,
+                name: list.displayName(for: id, fallback: fallback),
+                playerID: id,
                 colorIndex: RevealPalette.index(for: pin.playerId),
                 center: VisualPoint(latitude: pin.lat, longitude: pin.lon),
                 radiusMeters: pin.radiusM
@@ -1494,12 +1497,18 @@ final class AppStore {
     }
 
     /// Seekers who were converted from hiders and can be rescued.
+    /// Blocked players stay eligible — rescue UI shows their anonymized name via `players`.
     var rescueablePlayers: [PlayerDTO] {
         guard let match else { return [] }
         return match.snapshot.players.filter {
-            !blockList.isBlocked($0.playerId.uuidString)
-                && $0.role == .seeker && $0.status == .active && $0.convertedFromHider
+            $0.role == .seeker && $0.status == .active && $0.convertedFromHider
         }
+    }
+
+    var blockedPlayers: [BlockedPlayerEntry] { blockList.entries }
+
+    func anonymizedBlockedName(for playerID: String) -> String? {
+        blockList.anonymizedName(for: playerID)
     }
 
     func reportMailURL(playerID: String, displayName: String) -> URL? {
@@ -1514,10 +1523,21 @@ final class AppStore {
         )
     }
 
-    func blockPlayer(_ playerID: String) {
+    func blockPlayer(_ playerID: String, displayName: String? = nil) {
+        let realName = match?.snapshot.players
+            .first { $0.playerId.uuidString == playerID }?
+            .displayName
+        let fromSnapshot = realName.flatMap { $0.isEmpty ? nil : $0 }
+        let fromArg = displayName.flatMap { $0.isEmpty ? nil : $0 }
         var list = blockList
-        list.block(playerID)
+        list.block(playerID, displayName: fromSnapshot ?? fromArg ?? "Player")
         note = "Player blocked on this device."
+    }
+
+    func unblockPlayer(_ playerID: String) {
+        var list = blockList
+        list.unblock(playerID)
+        note = "Player unblocked."
     }
 
     /// One-time first-hunt safety disclaimer (UserDefaults). In-game banner ack is `acknowledgeSafety()`.

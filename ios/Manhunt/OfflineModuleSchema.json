@@ -180,6 +180,7 @@
       "title": "Tag",
       "blurb": "Seekers scan a rotating QR code while GPS pairing is satisfied.",
       "locked": true,
+      "hidden": true,
       "field_order": [
         "method",
         "radius_m",
@@ -223,8 +224,8 @@
         "pairing_m": {
           "type": "int",
           "title": "Pairing",
-          "min": 5,
-          "max": 80,
+          "min": 30,
+          "max": 30,
           "step": 5,
           "default": 30,
           "suffix": "m"

@@ -19,6 +19,10 @@ def test_core_modules_are_locked_and_power_costs_are_fields(client: TestClient) 
     for module_id in ("tag_policy", "win", "points", "zone_policy", "reveal_fuzzy"):
         assert modules[module_id]["locked"] is True
         assert "enabled" not in modules[module_id]["fields"]
+    assert modules["tag_policy"]["hidden"] is True
+    assert modules["tag_policy"]["fields"]["pairing_m"]["default"] == 30
+    assert modules["tag_policy"]["fields"]["pairing_m"]["min"] == 30
+    assert modules["tag_policy"]["fields"]["pairing_m"]["max"] == 30
     assert modules["power_ups"]["locked"] is False
     assert modules["power_ups"]["fields"]["scan_cost"]["default"] == 25
     assert modules["power_ups"]["fields"]["scan_radius_m"]["default"] == 30

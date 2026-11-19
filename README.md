@@ -79,8 +79,9 @@ Sign-in requires age. The server and client reject ages under 13 (`TOO_YOUNG`). 
 
 ### Privacy policy and support
 
-- Policy source: [docs/legal/privacy.md](docs/legal/privacy.md). Publish that file to a **public HTTPS URL** (GitHub Pages, a static host, or similar).
-- Set `ManhuntPrivacyPolicyURL` in `ios/Support/Info.plist` to that URL (placeholder today: `https://REPLACE_WITH_PUBLISHED_PRIVACY_URL`). The in-app Privacy policy link and Account screen use this key.
+- Policy source: [docs/legal/privacy.md](docs/legal/privacy.md) (HTML mirror at [docs/legal/privacy/index.html](docs/legal/privacy/index.html)).
+- GitHub Pages workflow: [`.github/workflows/pages.yml`](.github/workflows/pages.yml) deploys that folder to `https://benplic.github.io/manhunt-app/` (enable **Settings → Pages → GitHub Actions** once; private repos may need a public mirror or GitHub Pro).
+- `ManhuntPrivacyPolicyURL` in the Info plists points at that URL. The in-app Privacy policy link and Account screen use this key.
 - Support email is `support@manhunt.pivotlattice.app` (`ManhuntSupportEmail` in the Info plists and `docs/legal/privacy.md`).
 
 App Store Connect must list the same privacy and support URLs; that step is in the Apple plan, not in git.

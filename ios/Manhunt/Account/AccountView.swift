@@ -23,6 +23,8 @@ struct AccountView: View {
                         .accessibilityIdentifier("account-support-link")
                     }
 
+                    blockedPlayersSection
+
                     Text("Deleting your account removes your profile and sign-in tokens from the server. Past hunts may show an anonymized name.")
                         .font(.footnote)
                         .foregroundStyle(HuntColor.muted)
@@ -57,6 +59,46 @@ struct AccountView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("This cannot be undone. You will be signed out immediately.")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var blockedPlayersSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Blocked players")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(HuntColor.muted)
+                .accessibilityIdentifier("account-blocked-heading")
+
+            let blocked = store.blockedPlayers
+            if blocked.isEmpty {
+                Text("No blocked players.")
+                    .font(.footnote)
+                    .foregroundStyle(HuntColor.muted)
+                    .accessibilityIdentifier("account-blocked-empty")
+            } else {
+                ForEach(blocked) { entry in
+                    Card {
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(store.anonymizedBlockedName(for: entry.playerId) ?? "Blocked Player")
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(HuntColor.paper)
+                                Text("Was: \(entry.displayName)")
+                                    .font(.caption)
+                                    .foregroundStyle(HuntColor.muted)
+                            }
+                            Spacer()
+                            Button("Unblock") {
+                                store.unblockPlayer(entry.playerId)
+                            }
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(HuntColor.signal)
+                            .accessibilityIdentifier("account-unblock-\(entry.playerId)")
+                        }
+                    }
+                }
             }
         }
     }

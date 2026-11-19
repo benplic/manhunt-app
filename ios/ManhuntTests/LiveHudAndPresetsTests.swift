@@ -181,7 +181,8 @@ final class LiveHudAndPresetsTests: XCTestCase {
 
     func testLockedModulesHaveNoMasterSwitchAndRevealHidesFuzzWhenPrecise() {
         let modules = ModuleForm.offlineModules()
-        for id in ["tag_policy", "win", "points", "zone_policy", "reveal_fuzzy"] {
+        XCTAssertNil(modules.first { $0.id == "tag_policy" }, "Tag card is hidden; pairing stays 30 m in engine")
+        for id in ["win", "points", "zone_policy", "reveal_fuzzy"] {
             let module = modules.first { $0.id == id }
             XCTAssertEqual(module?.locked, true, id)
             XCTAssertEqual(module?.tracksEnabled, false, id)

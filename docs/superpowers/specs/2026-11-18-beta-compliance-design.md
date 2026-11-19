@@ -71,7 +71,7 @@ Sign-in gains: **Age** field next to **Display name**, privacy link, no SIWA but
 
 - **Filter:** shared blocked-token list (profanity / hate slurs — keep list short and maintainable). Reject on client before Play; server re-checks `display_name` on `/v1/auth/dev` and any rename path.
 - **Report:** from lobby / live player chrome → mailto with subject/body including `game_id`, `player_id`, display name, reporter install context. Uses the same support address as Contact.
-- **Block:** per-device `Set` of blocked `player_id` UUIDs in Keychain or UserDefaults. Map / player lists hide blocked players’ pins and names for the local user only. Unblock on Account or player menu later if cheap; minimum is block for beta.
+- **Block:** per-device list of blocked `player_id` UUIDs (+ last known display name) in UserDefaults. Co-play stays allowed: lobby/live lists and map pins still show the player as `Blocked Player #N`. Confirm before block; Account lists entries with Unblock. When chat lands, hide messages from blocked ids the same way.
 
 ### 3.6 Fixed cloud base URL
 

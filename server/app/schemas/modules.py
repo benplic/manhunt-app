@@ -199,6 +199,8 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "title": "Tag",
         "blurb": "Seekers scan a rotating QR code while GPS pairing is satisfied.",
         "locked": True,
+        # Host editor hides this card; engine still loads classic defaults (pairing_m=30).
+        "hidden": True,
         "field_order": ["method", "radius_m", "result", "pairing_m"],
         "fields": {
             "method": _enum("Method", ["qr"], "qr", ["QR code"]),
@@ -209,7 +211,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 "eliminate",
                 ["Eliminate", "Join seekers"],
             ),
-            "pairing_m": _int("Pairing", 5, 80, 30, step=5, suffix="m"),
+            "pairing_m": _int("Pairing", 30, 30, 30, step=5, suffix="m"),
         },
     },
     "zone_policy": {

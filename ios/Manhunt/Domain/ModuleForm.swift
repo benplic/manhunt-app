@@ -53,13 +53,15 @@ struct ModuleSchemaDTO: Decodable, Equatable {
     var title: String?
     var blurb: String?
     var locked: Bool
+    /// When true, the preset editor omits this card (engine defaults still apply).
+    var hidden: Bool
     var fieldOrder: [String]
     /// False when the payload left `field_order` out and the decoder sorted the keys.
     var fieldOrderWasProvided: Bool
     var fields: [String: SchemaFieldDTO]
 
     enum CodingKeys: String, CodingKey {
-        case version, title, blurb, locked, fields
+        case version, title, blurb, locked, hidden, fields
         case fieldOrder = "field_order"
     }
 
@@ -69,6 +71,7 @@ struct ModuleSchemaDTO: Decodable, Equatable {
         title = try container.decodeIfPresent(String.self, forKey: .title)
         blurb = try container.decodeIfPresent(String.self, forKey: .blurb)
         locked = try container.decodeIfPresent(Bool.self, forKey: .locked) ?? false
+        hidden = try container.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
         fields = try container.decodeIfPresent([String: SchemaFieldDTO].self, forKey: .fields) ?? [:]
         if let listed = try container.decodeIfPresent([String].self, forKey: .fieldOrder) {
             fieldOrder = listed
@@ -120,7 +123,7 @@ enum ModuleForm {
 
     static func modules(from response: ModulesResponse) -> [VisualModule] {
         displayOrder(for: response).compactMap { id in
-            guard var schema = response.modules[id] else { return nil }
+            guard var schema = response.modules[id], !schema.hidden else { return nil }
             fillDisplayGaps(&schema, id: id)
             return module(id: id, schema: schema)
         }
