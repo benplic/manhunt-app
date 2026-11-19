@@ -6,7 +6,7 @@ describe('lobby game actions', () => {
     vi.unstubAllGlobals()
   })
 
-  it('POSTs seeker_count: 1 to /roles', async () => {
+  it('POSTs mode random and seeker_count: 1 to /roles', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -24,7 +24,7 @@ describe('lobby game actions', () => {
 
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toMatch(/\/v1\/games\/game-1\/roles$/)
-    expect(JSON.parse(init.body)).toEqual({ seeker_count: 1 })
+    expect(JSON.parse(init.body)).toEqual({ mode: 'random', seeker_count: 1 })
     expect(init.headers.Authorization).toBe('Bearer tok')
   })
 
