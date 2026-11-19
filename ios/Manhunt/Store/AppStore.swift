@@ -79,6 +79,8 @@ final class AppStore {
     var showMoveSafePicker = false
     /// Demo walk target picker: pan the map and drop a destination for `move_me`.
     var demoPicking = false
+    /// First-hunt safety disclaimer; set when `enterLive()` is gated.
+    var showSafetyModal = false
     var tool: ArenaTool = .playArea
     var draftBoundary: [VisualPoint] = []
     var draftBoundaryCircle: CircleBoundary?
@@ -136,6 +138,17 @@ final class AppStore {
     static let ageYearsKey = "manhunt.ageYears"
     static let tooYoungNote = "Manhunt is not available for people under 13."
     static let nameBlockedNote = "That display name is not allowed."
+    static let safetyAcknowledgedKey = "manhunt.hasAcknowledgedSafety"
+    static let safetyDisclaimerCopy =
+        "Play only where it is legal and safe. You are responsible for your surroundings. "
+        + "Manhunt is not for reckless use on public roads or anywhere you could hurt yourself or others."
+
+    var hasAcknowledgedSafety: Bool {
+        defaults.bool(forKey: Self.safetyAcknowledgedKey)
+    }
+
+    private var blockList: PlayerBlockList { PlayerBlockList(defaults: defaults) }
+    private var pendingEnterLive = false
 
     init(
         service: GameService,
@@ -242,7 +255,9 @@ final class AppStore {
     }
 
     static func makePreview() -> AppStore {
-        AppStore(service: FakeGameService())
+        let store = AppStore(service: FakeGameService())
+        store.defaults.set(true, forKey: Self.safetyAcknowledgedKey)
+        return store
     }
 
     static func makeForLaunch() -> AppStore {
@@ -326,7 +341,9 @@ final class AppStore {
 
     var players: [VisualPlayer] {
         guard let match else { return SamplePark.players }
-        return match.snapshot.players.map { player in
+        return match.snapshot.players
+            .filter { !blockList.isBlocked($0.playerId.uuidString) }
+            .map { player in
             let point: VisualPoint
             if let loc = player.location {
                 point = VisualPoint(latitude: loc.lat, longitude: loc.lon)
@@ -1480,7 +1497,36 @@ final class AppStore {
     var rescueablePlayers: [PlayerDTO] {
         guard let match else { return [] }
         return match.snapshot.players.filter {
-            $0.role == .seeker && $0.status == .active && $0.convertedFromHider
+            !blockList.isBlocked($0.playerId.uuidString)
+                && $0.role == .seeker && $0.status == .active && $0.convertedFromHider
+        }
+    }
+
+    func reportMailURL(playerID: String, displayName: String) -> URL? {
+        guard let gameID = match?.snapshot.gameId,
+              let id = UUID(uuidString: playerID)
+        else { return nil }
+        return PlayerReportMail.url(
+            gameID: gameID,
+            playerID: id,
+            displayName: displayName,
+            supportEmail: Self.supportEmail()
+        )
+    }
+
+    func blockPlayer(_ playerID: String) {
+        var list = blockList
+        list.block(playerID)
+        note = "Player blocked on this device."
+    }
+
+    /// One-time first-hunt safety disclaimer (UserDefaults). In-game banner ack is `acknowledgeSafety()`.
+    func acknowledgeSafetyDisclaimer() {
+        defaults.set(true, forKey: Self.safetyAcknowledgedKey)
+        showSafetyModal = false
+        if pendingEnterLive {
+            pendingEnterLive = false
+            performEnterLive()
         }
     }
 
@@ -1745,6 +1791,15 @@ final class AppStore {
     }
 
     private func enterLive() {
+        guard hasAcknowledgedSafety else {
+            pendingEnterLive = true
+            showSafetyModal = true
+            return
+        }
+        performEnterLive()
+    }
+
+    private func performEnterLive() {
         screen = .live
         // FakeGameService UI tests must not touch CoreLocation; demo games use virtual movement.
         if live != nil, match?.snapshot.demo == nil {

@@ -495,6 +495,8 @@ struct LiveGameView: View {
 }
 
 private struct LeaderboardSheet: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.openURL) private var openURL
     var players: [VisualPlayer]
     var dismiss: () -> Void
 
@@ -524,6 +526,16 @@ private struct LeaderboardSheet: View {
                         Spacer()
                         Text("\(player.earned)")
                             .font(.headline.monospacedDigit())
+                    }
+                    .contextMenu {
+                        if !player.isYou {
+                            if let url = store.reportMailURL(playerID: player.id, displayName: player.name) {
+                                Button("Report") { openURL(url) }
+                            }
+                            Button("Block", role: .destructive) {
+                                store.blockPlayer(player.id)
+                            }
+                        }
                     }
                 }
             }

@@ -92,6 +92,39 @@ final class AppStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testSafetyDisclaimerGatesEnterLiveUntilAcknowledged() {
+        let suite = "manhunt.tests.safety.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = AppStore(service: FakeGameService(), defaults: defaults)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.randomizeRoles(seekerCount: 1)
+        XCTAssertFalse(store.hasAcknowledgedSafety)
+        XCTAssertNil(store.startMatch())
+        XCTAssertEqual(store.screen, .lobby)
+        XCTAssertTrue(store.showSafetyModal)
+        store.acknowledgeSafetyDisclaimer()
+        XCTAssertTrue(store.hasAcknowledgedSafety)
+        XCTAssertEqual(store.screen, .live)
+        XCTAssertFalse(store.showSafetyModal)
+    }
+
+    @MainActor
+    func testBlockedPlayerHiddenFromLobbyList() {
+        let suite = "manhunt.tests.blocklist.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: AppStore.safetyAcknowledgedKey)
+        let store = AppStore(service: FakeGameService(), defaults: defaults)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        let blockedID = store.players[0].id
+        store.blockPlayer(blockedID)
+        XCTAssertFalse(store.players.contains { $0.id == blockedID })
+    }
+
+    @MainActor
     func testActivePhaseDropsTheStartLine() {
         let store = AppStore.makePreview()
         store.signInPreview()

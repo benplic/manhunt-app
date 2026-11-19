@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LobbyView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.openURL) private var openURL
     @State private var confirmLeave = false
 
     var body: some View {
@@ -74,6 +75,16 @@ struct LobbyView: View {
                             }
                             .buttonStyle(.huntPress(.light))
                             .accessibilityLabel("\(player.name), \(player.role.rawValue)")
+                            .contextMenu {
+                                if !player.isYou {
+                                    if let url = store.reportMailURL(playerID: player.id, displayName: player.name) {
+                                        Button("Report") { openURL(url) }
+                                    }
+                                    Button("Block", role: .destructive) {
+                                        store.blockPlayer(player.id)
+                                    }
+                                }
+                            }
 
                             if store.isHost, !player.isYou, !player.isHost {
                                 Button {
