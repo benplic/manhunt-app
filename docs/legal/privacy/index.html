@@ -9,50 +9,111 @@
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       line-height: 1.55;
-      max-width: 40rem;
+      max-width: 42rem;
       margin: 2rem auto;
       padding: 0 1.25rem 3rem;
     }
     h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
     h2 { font-size: 1.15rem; margin-top: 1.75rem; }
+    h3 { font-size: 1rem; margin-top: 1.25rem; }
     .meta { opacity: 0.7; margin-bottom: 1.5rem; }
-    ul { padding-left: 1.2rem; }
+    ul, ol { padding-left: 1.2rem; }
+    table { border-collapse: collapse; width: 100%; font-size: 0.92rem; margin: 0.75rem 0 1rem; }
+    th, td { border: 1px solid color-mix(in srgb, CanvasText 25%, transparent); padding: 0.45rem 0.55rem; text-align: left; vertical-align: top; }
+    th { font-weight: 600; }
   </style>
 </head>
 <body>
   <h1>Manhunt Privacy Policy</h1>
-  <p class="meta">Draft for external beta. Last updated: 2026-11-18.</p>
+  <p class="meta">Effective date: 2026-11-19. Last updated: 2026-11-19.<br />Draft for external beta.</p>
 
   <h2>Who we are</h2>
   <p>Manhunt is a location-based outdoor game operated for beta testing. This policy describes what we collect, how we use it, and your choices. Questions: <a href="mailto:support@manhunt.pivotlattice.app">support@manhunt.pivotlattice.app</a>.</p>
 
   <h2>Data we collect</h2>
   <ul>
-    <li><strong>Display name</strong> — shown to other players in your games.</li>
-    <li><strong>Age</strong> — collected at sign-in to enforce a minimum age of 13. We check it when you sign in and store it <strong>only on your device</strong> (<code>manhunt.ageYears</code>); we do not persist age on your server user record.</li>
-    <li><strong>Precise location</strong> — while a hunt is open, to enforce the play area, safe zones, tags, and safety features. Sent to our server and shared with other players in that game under the game rules.</li>
-    <li><strong>Installation identifier</strong> — a stable id for this app install, used for authentication and device management.</li>
-    <li><strong>Home auth secret</strong> — stored <strong>only on your device</strong> (Keychain) to restore your session; we do not log this value.</li>
-    <li><strong>Optional push notification token</strong> — if you enable notifications, we store a device token to send game-related alerts.</li>
+    <li><strong>Display name</strong> — stored on your server user record and shown to other players in your games. You can change it by signing in again with a new name (subject to our name rules).</li>
+    <li><strong>Age</strong> — collected at sign-in as a <strong>self-reported</strong> whole number to enforce a minimum age of <strong>13</strong>. We check it when you sign in (app and server). We store it <strong>only on your device</strong> (for example <code>manhunt.ageYears</code>); we do <strong>not</strong> persist age on your server user record. We do not independently verify age beyond this gate.</li>
+    <li><strong>Precise location</strong> — while a hunt is open, to enforce the play area, safe zones, tags, and in-game safety features. Sent to our server and shared with other players in that game under the game rules. Accuracy depends on your device, GPS, and environment; safety features are aids, not guarantees.</li>
+    <li><strong>Installation identifier</strong> — a stable id for this app (or browser) install, used to authenticate and restore your session.</li>
+    <li><strong>Home auth secret</strong> — the party “home key,” stored <strong>only on your device</strong> (iOS Keychain, or browser storage on the web client) to restore sign-in; we do not log this value.</li>
+    <li><strong>Account metadata on the server</strong> — typically: user id, display name, auth handle (dev install handle and/or Apple subject when enabled), account creation time, refresh-token records, optional push device token, owned arenas and rule presets, and game membership rows (game id, role/status, join time). Gameplay may also create game records, encrypted location-related inputs, and event-log rows (some marked sensitive).</li>
+    <li><strong>Optional push notification token</strong> — if notifications are enabled and the build supports them, we store an Apple Push Notification service (APNs) device token to send game-related alerts.</li>
   </ul>
-  <p>We do not use advertising SDKs or cross-app tracking.</p>
+  <p>We do not use advertising SDKs, cross-app tracking, or third-party analytics/crash-reporting SDKs in the beta clients.</p>
+
+  <h2>Age 13+ and underage accounts</h2>
+  <p>Manhunt is intended for users <strong>13 and older</strong>. Sign-in is blocked when the self-reported age is under 13. If we learn that an account belongs to someone under 13 (for example via a report or support request), we will delete that account and associated personal data as described under <strong>Account deletion</strong>, and you should email <a href="mailto:support@manhunt.pivotlattice.app">support@manhunt.pivotlattice.app</a>. Parents or guardians who believe a child under 13 created an account should contact us at the same address.</p>
+  <p>Depending on where beta testers live, additional youth-privacy rules may apply. This beta relies on a self-attested age gate rather than government ID or credit-card age verification.</p>
 
   <h2>How location is shared with other players</h2>
-  <p>During an active hunt, players in the same game can see positions and related gameplay state as defined by that hunt’s rules (including safety alerts where enabled). Location updates stop when the hunt ends or you leave. Manhunt requests <strong>When In Use</strong> location only; it does not ask for Always location access.</p>
+  <p>During an open hunt, players in the same game can see positions and related gameplay state as defined by that hunt’s rules (including safety alerts where enabled). <strong>Leaving a hunt or ending the hunt stops broadcasting your live coordinates</strong> to other players in that game; the client also stops sending location updates when you leave or return home. Manhunt on iOS requests <strong>When In Use</strong> location only; it does not ask for Always location access. On the web client, location is used while the page is allowed to access geolocation (typically while the tab is open).</p>
+  <p><strong>Outdoor play is at your own discretion.</strong> Stay aware of traffic, terrain, weather, and local rules. In-app safety banners and alerts depend on connectivity and GPS conditions and may be delayed or unavailable.</p>
+
+  <h3>Safety, reporting, and blocking</h3>
+  <ul>
+    <li>You can <strong>leave</strong> a lobby or live hunt from the app at any time.</li>
+    <li>You can <strong>report</strong> another player by email (mailto) with game and player identifiers for moderation.</li>
+    <li>You can <strong>block</strong> a player on your device: they stay in the hunt, but their name is shown as an anonymized label (for example “Blocked Player #1”) and their pin remains; when chat exists, blocked players’ messages will be hidden on your device.</li>
+    <li>Safety acknowledgements may be stored on your device and/or reflected in gameplay state. We do <strong>not</strong> currently keep a separate long-term “incident report” database inside the game beyond normal gameplay logs and any email you send to support.</li>
+  </ul>
 
   <h2>Retention</h2>
-  <p>Gameplay and sensitive location trails on our servers are purged on a rolling basis, with a default <strong>7-day</strong> maximum retention for sensitive location history unless a shorter window applies to a specific feature. Account metadata is kept until you delete your account or we no longer need it to operate the service.</p>
+  <ul>
+    <li><strong>Sensitive location trails</strong> (encrypted location-related inputs used for gameplay forensics) are purged on a rolling basis with a default <strong>7-day</strong> maximum retention (<code>MANHUNT_TRAIL_RETENTION_DAYS</code>, default 7), unless a shorter window is configured on the host.</li>
+    <li><strong>Non-sensitive gameplay event text</strong> (for example tags or announcements that are not marked sensitive) may remain associated with a game until that game is removed (for example when a host’s account is deleted) or we no longer need the log to operate the beta.</li>
+    <li><strong>Account metadata</strong> (see above) is kept until you delete your account or we no longer need it to operate the service.</li>
+    <li><strong>Support / abuse emails</strong> you send to support may be retained as needed to investigate and respond, which can be longer than the 7-day location trail window.</li>
+    <li>In-app safety alerts that are part of normal gameplay follow the trail/event rules above; they are <strong>not</strong> given an automatic longer retention unless you also email support about the incident.</li>
+  </ul>
+
+  <h2>Your rights and controls</h2>
+  <ul>
+    <li><strong>Display name</strong> — change by signing in again with a new allowed name.</li>
+    <li><strong>Push notifications</strong> — turn off in iOS <strong>Settings → Notifications → Manhunt</strong> (and any in-app control when offered). Removing the device token from our servers also happens when you delete your account.</li>
+    <li><strong>Block / report</strong> — from lobby or live player menus; unblock from <strong>Account → Blocked players</strong>.</li>
+    <li><strong>Leave a hunt</strong> — stops live location broadcast to that game’s other players.</li>
+    <li><strong>Delete account</strong> — <strong>Home → Account → Delete account</strong>. If the in-app control is unavailable, email support.</li>
+    <li><strong>Access / correction / export</strong> — for beta, email support to request a copy of personal data we hold about your account or to correct account details we can change on the server. We will respond within a reasonable time for a small beta.</li>
+  </ul>
 
   <h2>Account deletion</h2>
-  <p>You can delete your account from the in-app Account screen (when available). Deletion removes your user record, refresh tokens, device token, owned arenas and rule presets, and game memberships from our servers, and signs you out on the device. Games you hosted are removed with their event logs. For games you only joined, past event log text may still mention the display name you used until those events age out under the retention window above. Contact us if you cannot use the in-app flow.</p>
+  <p>Deleting your account removes your user record, refresh tokens, device token, owned arenas and rule presets, and game memberships from our servers, and signs you out on the device. Games you hosted are removed with their event logs. For games you only joined, past event-log text may still mention the display name you used until those events are removed with the game or age out under retention above. Contact us if you cannot use the in-app flow.</p>
+
+  <h2>Service providers and infrastructure</h2>
+  <p>We use third-party infrastructure <strong>only to operate Manhunt</strong>, not to sell your data or show ads. Depending on how this beta is hosted, that may include:</p>
+  <table>
+    <thead>
+      <tr><th>Category</th><th>Examples in this beta</th><th>Role</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Edge / tunnel / DNS</td><td><strong>Cloudflare</strong> (Tunnel, DNS, and/or Pages)</td><td>HTTPS ingress and static hosting</td></tr>
+      <tr><td>Policy hosting</td><td><strong>GitHub Pages</strong></td><td>Publishes this privacy policy</td></tr>
+      <tr><td>Database</td><td><strong>PostgreSQL</strong> on the game host</td><td>Stores account and game data</td></tr>
+      <tr><td>Operator host</td><td>Beta operator’s computer running the API</td><td>Processes gameplay in real time</td></tr>
+      <tr><td>Push (optional)</td><td><strong>Apple Push Notification service (APNs)</strong></td><td>Optional push alerts</td></tr>
+      <tr><td>Device OS</td><td>Apple iOS / browser vendors</td><td>Location, storage, notification settings</td></tr>
+    </tbody>
+  </table>
+  <p>These providers process data on our behalf to deliver the service. They may process limited technical data (for example IP addresses and connection logs) under their own infrastructure policies when you connect to their networks.</p>
+  <p>We do <strong>not</strong> currently integrate third-party advertising, analytics, or crash-reporting SDKs in the beta apps.</p>
+
+  <h2>Security</h2>
+  <ul>
+    <li>API traffic uses <strong>HTTPS</strong>.</li>
+    <li>Sensitive location-related payloads are encrypted with <strong>AES-256-GCM</strong> before storage (trail key held by the host).</li>
+    <li>Access to the beta host and database is limited to operators running the game.</li>
+    <li>Session secrets on device use platform storage (Keychain on iOS; browser storage on the web MVP).</li>
+  </ul>
+  <p>No method of transmission or storage is 100% secure. If we become aware of a security incident that affects your personal data, we will take reasonable steps to investigate and will notify affected beta testers via the contact channel we have (for example email replies from support, in-app notes, or an update to this policy) as appropriate for the severity and what contact information we hold.</p>
 
   <h2>No ads or tracking</h2>
-  <p>Manhunt does not sell personal data, show third-party ads, or use tracking for advertising. We use HTTPS for API traffic.</p>
+  <p>Manhunt does not sell personal data, show third-party ads, or use tracking for advertising.</p>
 
   <h2>Contact</h2>
   <p>Email: <a href="mailto:support@manhunt.pivotlattice.app">support@manhunt.pivotlattice.app</a>.</p>
 
   <h2>Policy updates</h2>
-  <p>We may update this policy for beta releases. Material changes will be reflected on this page. Continued use after an update means you accept the revised policy.</p>
+  <p>We may update this policy for beta releases. The <strong>effective date</strong> and <strong>last updated</strong> date appear at the top of this document. Material changes will be reflected in the published version at the URL configured in the app (<code>ManhuntPrivacyPolicyURL</code>). Continued use after an update means you accept the revised policy.</p>
 </body>
 </html>

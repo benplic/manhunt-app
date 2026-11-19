@@ -1,0 +1,38 @@
+.qr-show {
+  max-width: 22rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  text-align: center;
+}
+
+.qr-show h1 {
+  margin: 0 0 0.5rem;
+}
+
+.qr-show p {
+  color: #555;
+  line-height: 1.4;
+}
+
+.qr-show img {
+  display: block;
+  margin: 1rem auto;
+  background: #fff;
+}
+
+.qr-show button {
+  margin-top: 0.75rem;
+  padding: 0.7rem 1.2rem;
+  border: none;
+  border-radius: 6px;
+  background: #1a1a1a;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.qr-show .error {
+  color: #a40000;
+}

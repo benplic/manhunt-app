@@ -1,0 +1,114 @@
+.live-map {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  position: relative;
+}
+
+.live-map .map-frame--hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.live-map .qr-overlay {
+  flex: 1;
+  overflow: auto;
+  background: #f7f5f1;
+}
+
+.live-map header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  background: rgba(247, 245, 241, 0.95);
+  border-bottom: 1px solid #ddd;
+}
+
+.live-map h1 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.live-map header p {
+  margin: 0.15rem 0 0;
+  color: #555;
+  font-size: 0.85rem;
+  text-transform: capitalize;
+}
+
+.live-map .actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.live-map header button {
+  padding: 0.55rem 0.85rem;
+  border: none;
+  border-radius: 6px;
+  background: #1a1a1a;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.live-map header button.secondary {
+  background: #445;
+}
+
+.live-map .map-frame {
+  flex: 1;
+  min-height: 240px;
+}
+
+.live-map .toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.65rem 1rem;
+  background: rgba(247, 245, 241, 0.95);
+  border-top: 1px solid #ddd;
+}
+
+.live-map .toolbar button {
+  padding: 0.55rem 0.85rem;
+  border: none;
+  border-radius: 6px;
+  background: #1a1a1a;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.live-map .toolbar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.live-map .toolbar button.danger {
+  background: #7a1f1f;
+}
+
+.live-map .hint,
+.live-map .qr-note,
+.live-map .error {
+  margin: 0;
+  padding: 0.55rem 1rem;
+  font-size: 0.85rem;
+}
+
+.live-map .error {
+  color: #a40000;
+}
+
+.live-map .qr-note {
+  background: #eef4ea;
+}

@@ -39,3 +39,8 @@ xcuserdata/
 *.swp
 playtest-logs/
 .worktrees/
+
+# Web (Vite)
+web/node_modules/
+web/dist/
+web/coverage/

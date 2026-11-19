@@ -1,0 +1,78 @@
+.lobby {
+  max-width: 24rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+.lobby h1 {
+  margin: 0 0 0.35rem;
+}
+
+.lobby .code {
+  margin: 0 0 1.25rem;
+  font-size: 1.1rem;
+}
+
+.lobby .code strong {
+  letter-spacing: 0.12em;
+}
+
+.lobby h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.lobby ul {
+  list-style: none;
+  margin: 0 0 1.25rem;
+  padding: 0;
+}
+
+.lobby li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid #ddd;
+}
+
+.lobby .meta {
+  color: #555;
+  font-size: 0.85rem;
+  text-transform: capitalize;
+}
+
+.lobby button {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: none;
+  border-radius: 6px;
+  background: #1a1a1a;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.lobby button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.lobby .linkish {
+  margin-top: 1rem;
+  background: transparent;
+  color: #1a4b8c;
+  width: auto;
+  padding: 0;
+}
+
+.lobby .waiting,
+.lobby .hint {
+  color: #555;
+}
+
+.lobby .error {
+  color: #a40000;
+}

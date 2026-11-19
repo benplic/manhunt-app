@@ -54,12 +54,18 @@ class Settings(BaseSettings):
     manhunt_apns_bundle_id: str = "app.manhunt.ios"
     manhunt_apns_production: bool = False
     manhunt_demo_controls: bool | None = None
+    # Comma-separated browser origins for the static web client (Vite + Pages).
+    manhunt_cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     @property
     def demo_controls_enabled(self) -> bool:
         if self.manhunt_demo_controls is not None:
             return self.manhunt_demo_controls
         return self.manhunt_env in {"local", "test", "home"}
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [part.strip() for part in self.manhunt_cors_origins.split(",") if part.strip()]
 
     def validate_startup(self) -> None:
         """Refuse to boot if fake sign-in or a published default secret is on."""
