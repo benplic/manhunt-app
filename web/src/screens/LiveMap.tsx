@@ -10,7 +10,7 @@ import { startLivePresence } from '../geo/presence'
 import { requestHuntWakeLock } from '../geo/wakeLock'
 import { watchVisibleLocation } from '../geo/watchVisible'
 import type { GeoFix } from '../geo/watchVisible'
-import { fitAndClampToArena, recenterOnArena } from '../map/arenaCamera'
+import { fitArenaOnce, recenterOnArena } from '../map/arenaCamera'
 import { formatClock } from '../map/clock'
 import { ensureLeafletDefaultIcons } from '../map/leafletIcons'
 import { pinsFromView } from '../map/pins'
@@ -80,7 +80,8 @@ export function LiveMap({
   const markersRef = useRef<Map<string, L.Marker>>(new Map())
   const revealRef = useRef<Map<string, L.Circle>>(new Map())
   const arenaCircleRef = useRef<L.Circle | null>(null)
-  const fittedRef = useRef(false)
+  /** Last arenaKey we framed — re-fit only when the circle identity changes. */
+  const fittedArenaKeyRef = useRef<string>('')
   const [localNote, setLocalNote] = useState<string | null>(null)
   const [accuracyM, setAccuracyM] = useState<number | null>(null)
   const [panel, setPanel] = useState<Panel>('map')
@@ -125,22 +126,30 @@ export function LiveMap({
       return
     }
     ensureLeafletDefaultIcons()
-    const map = L.map(mapEl.current, { zoomControl: false, attributionControl: false }).setView(
-      [40.66, -73.96],
-      15,
-    )
+    // Default zoom controls stay off; pinch / two-finger pan are unbounded.
+    const map = L.map(mapEl.current, {
+      zoomControl: true,
+      attributionControl: false,
+      // Keep gestures on the map, not the page underneath.
+      dragging: true,
+      touchZoom: true,
+      scrollWheelZoom: true,
+      doubleClickZoom: true,
+      boxZoom: true,
+    }).setView([40.66, -73.96], 15)
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap',
       maxZoom: 19,
     }).addTo(map)
     mapRef.current = map
-    fittedRef.current = false
+    fittedArenaKeyRef.current = ''
     return () => {
       map.remove()
       mapRef.current = null
       markersRef.current.clear()
       revealRef.current.clear()
       arenaCircleRef.current = null
+      fittedArenaKeyRef.current = ''
     }
   }, [])
 
@@ -154,17 +163,24 @@ export function LiveMap({
     }
     const id = window.setTimeout(() => map.invalidateSize(), 0)
     return () => window.clearTimeout(id)
-  }, [panel])
+  }, [panel, view.phase])
+
+  const arenaCircle = view.arena?.boundary_circle
+  const arenaKey = arenaCircle
+    ? `${arenaCircle.center.lat},${arenaCircle.center.lon},${arenaCircle.radius_m}`
+    : ''
 
   useEffect(() => {
     const map = mapRef.current
     if (!map) {
       return
     }
-    const circle = view.arena?.boundary_circle
-    if (!circle) {
+    // arenaKey is the stable identity; view.arena object identity changes every tick.
+    const circle = arenaCircle
+    if (!circle || !arenaKey) {
       arenaCircleRef.current?.remove()
       arenaCircleRef.current = null
+      fittedArenaKeyRef.current = ''
       return
     }
     const latLng: L.LatLngExpression = [circle.center.lat, circle.center.lon]
@@ -180,11 +196,14 @@ export function LiveMap({
       arenaCircleRef.current.setLatLng(latLng)
       arenaCircleRef.current.setRadius(circle.radius_m)
     }
-    // Clamp to the play circle once we know it (and again if the host resizes).
-    fitAndClampToArena(map, circle, L)
-    fittedRef.current = true
-    window.setTimeout(() => map.invalidateSize(), 0)
-  }, [view.arena])
+    // Frame once per arena identity. Re-fitting every WS tick snapped pan/zoom.
+    if (fittedArenaKeyRef.current !== arenaKey) {
+      fitArenaOnce(map, circle, L)
+      fittedArenaKeyRef.current = arenaKey
+      window.setTimeout(() => map.invalidateSize(), 0)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [arenaKey])
 
   useEffect(() => {
     const map = mapRef.current

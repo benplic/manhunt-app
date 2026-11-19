@@ -9,7 +9,7 @@ vi.mock('../geo/wakeLock', () => ({
 }))
 
 vi.mock('../map/arenaCamera', () => ({
-  fitAndClampToArena: vi.fn(),
+  fitArenaOnce: vi.fn(),
   recenterOnArena: vi.fn(),
 }))
 
