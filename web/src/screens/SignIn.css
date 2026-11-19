@@ -1,0 +1,72 @@
+.sign-in {
+  max-width: 22rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+.sign-in h1 {
+  margin: 0 0 0.35rem;
+  font-size: 2rem;
+  letter-spacing: -0.02em;
+}
+
+.sign-in .lede {
+  margin: 0 0 1.5rem;
+  color: #444;
+  line-height: 1.4;
+}
+
+.sign-in form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.sign-in label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.sign-in input {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  font: inherit;
+  font-weight: 400;
+}
+
+.sign-in button {
+  margin-top: 0.35rem;
+  padding: 0.75rem 1rem;
+  border: none;
+  border-radius: 6px;
+  background: #1a1a1a;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sign-in button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.sign-in .error {
+  margin: 0;
+  color: #a40000;
+  font-size: 0.9rem;
+}
+
+.sign-in .footer-links {
+  margin-top: 1.5rem;
+  font-size: 0.85rem;
+}
+
+.sign-in .footer-links a {
+  color: #1a4b8c;
+}

@@ -1,0 +1,89 @@
+.home {
+  max-width: 24rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+.home header h1 {
+  margin: 0;
+  font-size: 1.75rem;
+}
+
+.home header p {
+  margin: 0.25rem 0 1.5rem;
+  color: #555;
+}
+
+.home section {
+  margin-bottom: 1.5rem;
+}
+
+.home h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+}
+
+.home .hint {
+  margin: 0 0 0.75rem;
+  color: #555;
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.home form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.home label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.home input {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #bbb;
+  border-radius: 6px;
+  font: inherit;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.home button {
+  padding: 0.7rem 1rem;
+  border: none;
+  border-radius: 6px;
+  background: #1a1a1a;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.home button:disabled {
+  opacity: 0.6;
+}
+
+.home .linkish {
+  margin-top: 1rem;
+  background: transparent;
+  color: #1a4b8c;
+  padding: 0;
+}
+
+.home .error {
+  color: #a40000;
+}
+
+.home .status {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: #f2f2f2;
+  border-radius: 6px;
+}
