@@ -62,7 +62,7 @@ describe('QrScan', () => {
     })
   })
 
-  it('shows the server error when the tag is rejected', async () => {
+  it('shows the server error when the tag is rejected and offers retry', async () => {
     claimQrTag.mockRejectedValue(new ApiError('TOO_FAR', 'Too far to tag.', 409))
     render(
       <QrScan
@@ -74,6 +74,7 @@ describe('QrScan', () => {
       />,
     )
     expect(await screen.findByText(/too far to tag/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument()
   })
 
   it('can close without scanning', async () => {

@@ -48,6 +48,7 @@ export function LiveMap({
   const isHider = view.you.role === 'hider'
   const isSeeker = view.you.role === 'seeker'
   const isHost = view.you.is_host
+  const overlayOpen = panel !== 'map'
 
   useEffect(() => {
     if (!mapEl.current || mapRef.current) {
@@ -67,6 +68,19 @@ export function LiveMap({
       markersRef.current.clear()
     }
   }, [])
+
+  // Keep the Leaflet container mounted under QR overlays; refresh size when returning.
+  useEffect(() => {
+    if (panel !== 'map') {
+      return
+    }
+    const map = mapRef.current
+    if (!map) {
+      return
+    }
+    const id = window.setTimeout(() => map.invalidateSize(), 0)
+    return () => window.clearTimeout(id)
+  }, [panel])
 
   useEffect(() => {
     const map = mapRef.current
@@ -140,27 +154,10 @@ export function LiveMap({
     }
   }
 
-  if (panel === 'show' && qrToken) {
-    return <QrShow token={qrToken} onClose={() => setPanel('map')} />
-  }
-  if (panel === 'scan') {
-    return (
-      <QrScan
-        gameId={view.game_id}
-        onClose={() => setPanel('map')}
-        onTagged={() => {
-          setLocalNote('Tag accepted.')
-          setPanel('map')
-        }}
-        onSignedOut={onSignedOut}
-      />
-    )
-  }
-
   const alert = note ?? localNote
 
   return (
-    <main className="live-map">
+    <main className={`live-map${overlayOpen ? ' live-map--overlay' : ''}`}>
       <header>
         <div>
           <h1>Live map</h1>
@@ -177,35 +174,67 @@ export function LiveMap({
           </button>
         </div>
       </header>
-      <div className="map-frame" ref={mapEl} role="presentation" />
-      <div className="toolbar">
-        {isHider ? (
-          <button
-            type="button"
-            disabled={!qrToken}
-            onClick={() => setPanel('show')}
-          >
-            Show QR
-          </button>
-        ) : null}
-        {isSeeker ? (
-          <button type="button" onClick={() => setPanel('scan')}>
-            Scan QR
-          </button>
-        ) : null}
-        {isHost ? (
-          <button type="button" className="danger" disabled={ending} onClick={() => void onEnd()}>
-            {ending ? 'Ending…' : 'End hunt'}
-          </button>
-        ) : null}
-      </div>
-      {isHider && !qrToken ? <p className="qr-note">Waiting for a tag QR from the server…</p> : null}
-      {alert ? (
-        <p className="error" role="alert">
-          {alert}
-        </p>
+      {/* Map stays mounted so Show/Scan overlays do not orphan the Leaflet instance. */}
+      <div
+        className={`map-frame${overlayOpen ? ' map-frame--hidden' : ''}`}
+        ref={mapEl}
+        role="presentation"
+        aria-hidden={overlayOpen}
+      />
+      {!overlayOpen ? (
+        <>
+          <div className="toolbar">
+            {isHider ? (
+              <button type="button" disabled={!qrToken} onClick={() => setPanel('show')}>
+                Show QR
+              </button>
+            ) : null}
+            {isSeeker ? (
+              <button type="button" onClick={() => setPanel('scan')}>
+                Scan QR
+              </button>
+            ) : null}
+            {isHost ? (
+              <button
+                type="button"
+                className="danger"
+                disabled={ending}
+                onClick={() => void onEnd()}
+              >
+                {ending ? 'Ending…' : 'End hunt'}
+              </button>
+            ) : null}
+          </div>
+          {isHider && !qrToken ? (
+            <p className="qr-note">Waiting for a tag QR from the server…</p>
+          ) : null}
+          {alert ? (
+            <p className="error" role="alert">
+              {alert}
+            </p>
+          ) : null}
+          <p className="hint">Keep this tab visible and the screen on for GPS.</p>
+        </>
       ) : null}
-      <p className="hint">Keep this tab visible and the screen on for GPS.</p>
+
+      {panel === 'show' && qrToken ? (
+        <div className="qr-overlay">
+          <QrShow token={qrToken} onClose={() => setPanel('map')} />
+        </div>
+      ) : null}
+      {panel === 'scan' ? (
+        <div className="qr-overlay">
+          <QrScan
+            gameId={view.game_id}
+            onClose={() => setPanel('map')}
+            onTagged={() => {
+              setLocalNote('Tag accepted.')
+              setPanel('map')
+            }}
+            onSignedOut={onSignedOut}
+          />
+        </div>
+      ) : null}
     </main>
   )
 }

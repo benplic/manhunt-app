@@ -22,8 +22,14 @@
   min-height: 220px;
 }
 
-.qr-scan button {
+.qr-scan .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   margin-top: 0.75rem;
+}
+
+.qr-scan button {
   padding: 0.7rem 1.2rem;
   border: none;
   border-radius: 6px;

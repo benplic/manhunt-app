@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { PlayerView } from '../api/types'
 import { LiveMap } from './LiveMap'
@@ -8,6 +9,7 @@ vi.mock('leaflet', () => {
     setView: vi.fn().mockReturnThis(),
     remove: vi.fn(),
     fitBounds: vi.fn(),
+    invalidateSize: vi.fn(),
   }
   const marker = {
     addTo: vi.fn().mockReturnThis(),
@@ -30,6 +32,22 @@ vi.mock('leaflet', () => {
 
 vi.mock('../map/leafletIcons', () => ({
   ensureLeafletDefaultIcons: vi.fn(),
+}))
+
+vi.mock('./QrShow', () => ({
+  QrShow: ({ onClose }: { onClose: () => void }) => (
+    <button type="button" onClick={onClose}>
+      Close show
+    </button>
+  ),
+}))
+
+vi.mock('./QrScan', () => ({
+  QrScan: ({ onClose }: { onClose: () => void }) => (
+    <button type="button" onClick={onClose}>
+      Close scan
+    </button>
+  ),
 }))
 
 const view: PlayerView = {
@@ -80,5 +98,27 @@ describe('LiveMap', () => {
     await waitFor(() => {
       expect(watchLocation).toHaveBeenCalled()
     })
+  })
+
+  it('keeps the map frame mounted under the Scan QR overlay', async () => {
+    const user = userEvent.setup()
+    const socket = { sendLocation: vi.fn() } as never
+    render(
+      <LiveMap
+        view={view}
+        socket={socket}
+        qrToken={null}
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    const frame = document.querySelector('.map-frame')
+    expect(frame).toBeTruthy()
+    await user.click(screen.getByRole('button', { name: /scan qr/i }))
+    expect(document.querySelector('.map-frame')).toBe(frame)
+    expect(screen.getByRole('button', { name: /close scan/i })).toBeInTheDocument()
   })
 })

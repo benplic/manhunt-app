@@ -35,6 +35,14 @@ function App() {
     setQrToken(null)
   }
 
+  function applyView(next: PlayerView) {
+    // Result only needs the last view; stop the socket as soon as the hunt ends.
+    if (next.phase === 'ended') {
+      tearDownSocket()
+    }
+    setGameView(next)
+  }
+
   function clearGame() {
     tearDownSocket()
     setGameView(null)
@@ -54,14 +62,16 @@ function App() {
       setSocketNote(null)
       return
     }
-
+    if (gameView.phase === 'ended') {
+      return
+    }
     if (socketRef.current) {
       return
     }
 
     const socket = new GameSocket()
     socketRef.current = socket
-    socket.onView = (next) => setGameView(next)
+    socket.onView = (next) => applyView(next)
     socket.onQr = (token) => setQrToken(token)
     socket.onError = (err) => setSocketNote(err.message)
     socket.onRemoved = () => {
@@ -75,7 +85,7 @@ function App() {
       lastSeq: socket.lastSeq,
     })
     setSocketReady(true)
-  }, [gameView?.game_id])
+  }, [gameView?.game_id, gameView?.phase])
 
   async function leaveCurrentGame() {
     if (!gameView) {
@@ -103,7 +113,7 @@ function App() {
     return (
       <Lobby
         view={gameView}
-        onView={setGameView}
+        onView={applyView}
         onLeave={() => void leaveCurrentGame()}
         onSignedOut={signOut}
         socketNote={socketNote}
@@ -136,7 +146,7 @@ function App() {
         socket={socketRef.current}
         qrToken={qrToken}
         note={socketNote}
-        onView={setGameView}
+        onView={applyView}
         onLeave={() => void leaveCurrentGame()}
         onSignedOut={signOut}
       />

@@ -27,8 +27,23 @@ export function QrScan({
 }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [paused, setPaused] = useState(false)
   const claimedRef = useRef(false)
   const scannerRef = useRef<Html5Qrcode | null>(null)
+
+  async function stopScanner() {
+    const active = scannerRef.current
+    if (!active) {
+      return
+    }
+    try {
+      await active.stop()
+      active.clear()
+    } catch {
+      // TODO: surface scanner cleanup failures if they become common on iOS.
+    }
+    scannerRef.current = null
+  }
 
   async function claim(token: string) {
     if (claimedRef.current || busy) {
@@ -37,13 +52,15 @@ export function QrScan({
     claimedRef.current = true
     setBusy(true)
     setError(null)
+    // Stop the camera immediately so failed claims do not spam /tags/qr at 8 fps.
+    await stopScanner()
+    setPaused(true)
     try {
       await withAuthRetry((access) =>
         claimQrTag({ token: access, gameId, qrToken: token }),
       )
       onTagged()
     } catch (err) {
-      claimedRef.current = false
       if (err instanceof SessionExpiredError) {
         onSignedOut()
         return
@@ -54,9 +71,18 @@ export function QrScan({
     }
   }
 
+  function retryScan() {
+    claimedRef.current = false
+    setError(null)
+    setPaused(false)
+  }
+
   useEffect(() => {
     if (injectScan) {
       void claim(injectScan)
+      return
+    }
+    if (paused) {
       return
     }
 
@@ -83,19 +109,10 @@ export function QrScan({
 
     return () => {
       stopped = true
-      const active = scannerRef.current
-      scannerRef.current = null
-      if (active) {
-        void active
-          .stop()
-          .then(() => active.clear())
-          .catch(() => {
-            // TODO: surface scanner cleanup failures if they become common on iOS.
-          })
-      }
+      void stopScanner()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameId, injectScan])
+  }, [gameId, injectScan, paused])
 
   return (
     <main className="qr-scan">
@@ -108,9 +125,16 @@ export function QrScan({
           {error}
         </p>
       ) : null}
-      <button type="button" onClick={onClose}>
-        Close
-      </button>
+      <div className="actions">
+        {paused && error ? (
+          <button type="button" onClick={retryScan}>
+            Try again
+          </button>
+        ) : null}
+        <button type="button" onClick={onClose}>
+          Close
+        </button>
+      </div>
     </main>
   )
 }

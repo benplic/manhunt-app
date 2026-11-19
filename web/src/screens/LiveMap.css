@@ -3,6 +3,22 @@
   flex-direction: column;
   height: 100vh;
   font-family: 'Segoe UI', system-ui, sans-serif;
+  position: relative;
+}
+
+.live-map .map-frame--hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.live-map .qr-overlay {
+  flex: 1;
+  overflow: auto;
+  background: #f7f5f1;
 }
 
 .live-map header {
