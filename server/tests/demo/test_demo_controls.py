@@ -11,7 +11,7 @@ from app.main import create_app
 def _auth(client: TestClient, name: str) -> dict:
     res = client.post(
         "/v1/auth/dev",
-        json={"display_name": name, "installation_id": str(uuid4())},
+        json={"display_name": name, "installation_id": str(uuid4()), "age": 18},
     )
     assert res.status_code == 200
     return res.json()

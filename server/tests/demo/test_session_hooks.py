@@ -70,7 +70,7 @@ def test_tick_all_respects_demo_speed_and_lobby_hold() -> None:
 def test_ws_ignores_human_location_in_demo_game(client: TestClient) -> None:
     auth = client.post(
         "/v1/auth/dev",
-        json={"display_name": "Casey", "installation_id": str(uuid4())},
+        json={"display_name": "Casey", "installation_id": str(uuid4()), "age": 18},
     ).json()
     headers = {"Authorization": f"Bearer {auth['access_token']}"}
     joined = client.post("/v1/games/join", headers=headers, json={"join_code": "PARK42"}).json()
@@ -108,7 +108,7 @@ def test_restart_marks_sample_game_abandoned_and_allows_new_park42(tmp_path) -> 
     with TestClient(app) as client:
         auth = client.post(
             "/v1/auth/dev",
-            json={"display_name": "Casey", "installation_id": str(uuid4())},
+            json={"display_name": "Casey", "installation_id": str(uuid4()), "age": 18},
         ).json()
         headers = {"Authorization": f"Bearer {auth['access_token']}"}
         first = client.post("/v1/games/join", headers=headers, json={"join_code": "PARK42"}).json()
@@ -120,7 +120,7 @@ def test_restart_marks_sample_game_abandoned_and_allows_new_park42(tmp_path) -> 
         assert UUID(gid) not in restarted.state.manager.sessions
         auth2 = client.post(
             "/v1/auth/dev",
-            json={"display_name": "Morgan", "installation_id": str(uuid4())},
+            json={"display_name": "Morgan", "installation_id": str(uuid4()), "age": 18},
         ).json()
         headers2 = {"Authorization": f"Bearer {auth2['access_token']}"}
         second = client.post("/v1/games/join", headers=headers2, json={"join_code": "PARK42"})

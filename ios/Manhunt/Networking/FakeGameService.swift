@@ -9,7 +9,9 @@ final class FakeGameService: GameService {
     private(set) var appleSignIns = 0
     private(set) var refreshCalls = 0
     private(set) var signInCalls = 0
+    private(set) var deleteAccountCalls = 0
     private(set) var lastSignInDisplayName: String?
+    private(set) var lastSignInAge: Int?
     private var signedIn: UserDTO?
 
     var currentUser: UserDTO? { signedIn }
@@ -38,8 +40,18 @@ final class FakeGameService: GameService {
         [Arena.sampleSquare(), Arena.riversideSample(), Arena.schoolyardSample()]
     }
 
-    func signIn(displayName: String, installationId: String) async throws -> AuthOut {
+    func signIn(displayName: String, installationId: String, age: Int) async throws -> AuthOut {
         _ = installationId
+        lastSignInAge = age
+        if age < 13 {
+            throw ServiceError(
+                code: .tooYoung,
+                message: "Manhunt is not available for people under 13."
+            )
+        }
+        if !DisplayNameRules.isAllowed(displayName) {
+            throw ServiceError(code: .nameBlocked, message: "That display name is not allowed.")
+        }
         return signInSync(displayName)
     }
 
@@ -77,6 +89,11 @@ final class FakeGameService: GameService {
             throw ServiceError(code: .unauthorized, message: "Not signed in.")
         }
         return signedIn
+    }
+
+    func deleteAccount() async throws {
+        deleteAccountCalls += 1
+        signedIn = nil
     }
 
     func refresh(refreshToken: String) async throws -> AuthOut {
@@ -237,28 +254,64 @@ final class FakeGameService: GameService {
     }
 
     func rematchSync(gameID: UUID) throws -> PlayerViewDTO {
-        guard let old = games[gameID] else {
+        guard var old = games[gameID] else {
             throw ServiceError(code: .gameNotFound, message: "Game not found.")
-        }
-        guard old.youAreHost else {
-            throw ServiceError(code: .notHost, message: "Only the host can do that.")
         }
         guard old.phase == .ended else {
             throw ServiceError(code: .wrongPhase, message: "Rematch is only available after the hunt ends.")
         }
         let you = signedIn
-        let hostID = you?.id ?? old.players.first(where: \.isHost)?.id ?? UUID()
-        let hostName = you?.displayName ?? old.players.first(where: \.isHost)?.name ?? "You"
-        let id = UUID()
-        let game = FakeGame(
-            id: id,
-            joinCode: JoinCode.generate(using: &rng),
-            youAreHost: true,
-            players: [
-                FakePlayer(id: hostID, name: hostName, role: .unassigned, isHost: true),
-            ]
-        )
-        games[id] = game
+        let youAreHost = old.youAreHost
+        if youAreHost {
+            if let existing = old.rematchGameID, let lobby = games[existing] {
+                return lobby.view()
+            }
+            let id = UUID()
+            let hostID = you?.id ?? old.players.first(where: \.isHost)?.id ?? UUID()
+            let hostName = you?.displayName ?? old.players.first(where: \.isHost)?.name ?? "You"
+            let game = FakeGame(
+                id: id,
+                joinCode: JoinCode.generate(using: &rng),
+                youAreHost: true,
+                players: [
+                    FakePlayer(id: hostID, name: hostName, role: .unassigned, isHost: true),
+                ]
+            )
+            games[id] = game
+            old.rematchGameID = id
+            games[gameID] = old
+            return game.view()
+        }
+        guard let rematchID = old.rematchGameID, var lobby = games[rematchID] else {
+            throw ServiceError(
+                code: .rematchNotReady,
+                message: "Host hasn't started a rematch yet."
+            )
+        }
+        let guestID = you?.id ?? UUID()
+        let guestName = you?.displayName ?? "Guest"
+        if !lobby.players.contains(where: { $0.id == guestID }) {
+            lobby.players.append(
+                FakePlayer(id: guestID, name: guestName, role: .unassigned, isHost: false)
+            )
+        }
+        lobby.youAreHost = false
+        games[rematchID] = lobby
+        return lobby.view()
+    }
+
+    /// Test helper: mark PARK42 (or any id) ended so Results rematch can run as a guest.
+    func markEnded(_ gameID: UUID) {
+        games[gameID]?.phase = .ended
+    }
+
+    func forceEndedGuestView(gameID: UUID) throws -> PlayerViewDTO {
+        guard var game = games[gameID] else {
+            throw ServiceError(code: .gameNotFound, message: "Game not found.")
+        }
+        game.phase = .ended
+        game.youAreHost = false
+        games[gameID] = game
         return game.view()
     }
 
@@ -332,11 +385,6 @@ final class FakeGameService: GameService {
     func claimQR(gameID: UUID, token: String) async throws {
         guard games[gameID] != nil else { throw ServiceError(code: .gameNotFound, message: "") }
         if token.isEmpty { throw ServiceError(code: .tokenInvalid, message: "Empty token.") }
-    }
-
-    func claimUWB(gameID: UUID, hiderID: UUID) async throws {
-        guard games[gameID] != nil else { throw ServiceError(code: .gameNotFound, message: "") }
-        _ = hiderID
     }
 
     /// Tests hold the preset screen closed until the schema fetch finishes.
@@ -619,6 +667,7 @@ private struct FakeGame {
     var virtualLocation: DemoPointDTO? = DemoPointDTO(lat: 40.6617, lon: -73.9690)
     var botModes: [UUID: String] = [:]
     var reveals: [RevealDTO] = []
+    var rematchGameID: UUID?
 
     func view() -> PlayerViewDTO {
         let you = players.first(where: { $0.isHost == youAreHost }) ?? players[0]

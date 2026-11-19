@@ -316,6 +316,7 @@ struct PlayerDTO: Codable, Identifiable, Hashable {
     var points: Int? = nil
     var pointsEarned: Int? = nil
     /// True after a convert-tag; Rescue can turn them back into a hider.
+    /// Older servers omit the key — default false so views still decode.
     var convertedFromHider: Bool = false
     var location: LocationDTO?
 
@@ -331,6 +332,46 @@ struct PlayerDTO: Codable, Identifiable, Hashable {
         case pointsEarned = "points_earned"
         case convertedFromHider = "converted_from_hider"
         case location
+    }
+
+    init(
+        playerId: UUID,
+        displayName: String,
+        avatarUrl: String? = nil,
+        role: PlayerRole,
+        status: PlayerStatus,
+        isHost: Bool,
+        points: Int? = nil,
+        pointsEarned: Int? = nil,
+        convertedFromHider: Bool = false,
+        location: LocationDTO? = nil
+    ) {
+        self.playerId = playerId
+        self.displayName = displayName
+        self.avatarUrl = avatarUrl
+        self.role = role
+        self.status = status
+        self.isHost = isHost
+        self.points = points
+        self.pointsEarned = pointsEarned
+        self.convertedFromHider = convertedFromHider
+        self.location = location
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        playerId = try container.decode(UUID.self, forKey: .playerId)
+        displayName = try container.decode(String.self, forKey: .displayName)
+        avatarUrl = try container.decodeIfPresent(String.self, forKey: .avatarUrl)
+        role = try container.decode(PlayerRole.self, forKey: .role)
+        status = try container.decode(PlayerStatus.self, forKey: .status)
+        isHost = try container.decode(Bool.self, forKey: .isHost)
+        points = try container.decodeIfPresent(Int.self, forKey: .points)
+        pointsEarned = try container.decodeIfPresent(Int.self, forKey: .pointsEarned)
+        // Swift's synthesized Decodable still requires keys for non-Optional
+        // properties even when they have defaults — tolerate pre-rescue servers.
+        convertedFromHider = try container.decodeIfPresent(Bool.self, forKey: .convertedFromHider) ?? false
+        location = try container.decodeIfPresent(LocationDTO.self, forKey: .location)
     }
 }
 

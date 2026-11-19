@@ -197,11 +197,13 @@ SCHEMAS: dict[str, dict[str, Any]] = {
     "tag_policy": {
         "version": 1,
         "title": "Tag",
-        "blurb": "Ultra Wideband confirms the tag. A rotating code is the fallback.",
+        "blurb": "Seekers scan a rotating QR code while GPS pairing is satisfied.",
         "locked": True,
+        # Host editor hides this card; engine still loads classic defaults (pairing_m=30).
+        "hidden": True,
         "field_order": ["method", "radius_m", "result", "pairing_m"],
         "fields": {
-            "method": _enum("Method", ["qr", "uwb"], "qr", ["QR code", "Ultra Wideband"]),
+            "method": _enum("Method", ["qr"], "qr", ["QR code"]),
             "radius_m": _number("Radius", 1, 5, 2, step=0.5, suffix="m"),
             "result": _enum(
                 "Result",
@@ -209,7 +211,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
                 "eliminate",
                 ["Eliminate", "Join seekers"],
             ),
-            "pairing_m": _int("Pairing", 5, 80, 30, step=5, suffix="m"),
+            "pairing_m": _int("Pairing", 30, 30, 30, step=5, suffix="m"),
         },
     },
     "zone_policy": {

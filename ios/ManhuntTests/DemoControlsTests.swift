@@ -82,7 +82,7 @@ final class DemoControlsTests: XCTestCase {
 
     func testFakeGameServiceDemoActionsUpdateState() async throws {
         let fake = FakeGameService()
-        _ = try await fake.signIn(displayName: "Casey Lee", installationId: "test-install")
+        _ = try await fake.signIn(displayName: "Casey Lee", installationId: "test-install", age: 18)
         let lobby = try await fake.joinDemoAsHost()
         XCTAssertEqual(lobby.demo?.controlsEnabled, true)
 

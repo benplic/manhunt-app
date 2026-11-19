@@ -19,7 +19,6 @@ final class LiveGameService: GameService {
     var onReconnect: ((Bool) -> Void)?
     /// Fired when the server removes this player (`type: removed` or close 4403).
     var onRemoved: (() -> Void)?
-    var onUWBPeers: (([UWBPeer]) -> Void)?
     var onSendFailure: ((String) -> Void)? {
         get { socket.onSendFailure }
         set { socket.onSendFailure = newValue }
@@ -31,7 +30,6 @@ final class LiveGameService: GameService {
         socket.onQR = { [weak self] token in self?.onQR?(token) }
         socket.onEvent = { [weak self] banner in self?.onEvent?(banner) }
         socket.onReconnect = { [weak self] reconnecting in self?.onReconnect?(reconnecting) }
-        socket.onUWBPeers = { [weak self] peers in self?.onUWBPeers?(peers) }
         socket.onRemoved = { [weak self] in self?.onRemoved?() }
         client.refreshAccessToken = { [weak self] in
             try await self?.rotateAccessToken()
@@ -62,11 +60,11 @@ final class LiveGameService: GameService {
         client.baseURL = url
     }
 
-    func signIn(displayName: String, installationId: String) async throws -> AuthOut {
+    func signIn(displayName: String, installationId: String, age: Int) async throws -> AuthOut {
         client.devAuthSecret = devAuthSecret
         let auth: AuthOut = try await client.post(
             "/v1/auth/dev",
-            body: DevAuthBody(displayName: displayName, installationId: installationId)
+            body: DevAuthBody(displayName: displayName, installationId: installationId, age: age)
         )
         client.token = auth.accessToken
         refreshToken = auth.refreshToken
@@ -85,6 +83,12 @@ final class LiveGameService: GameService {
 
     func me() async throws -> UserDTO {
         try await client.get("/v1/me")
+    }
+
+    func deleteAccount() async throws {
+        try await client.delete("/v1/me")
+        client.token = nil
+        refreshToken = nil
     }
 
     func registerDeviceToken(_ token: String) async throws {
@@ -206,21 +210,6 @@ final class LiveGameService: GameService {
             "/v1/games/\(gameID.uuidString)/tags/qr",
             body: QRBody(token: token)
         )
-    }
-
-    func claimUWB(gameID: UUID, hiderID: UUID) async throws {
-        let _: [String: String] = try await client.post(
-            "/v1/games/\(gameID.uuidString)/tags/uwb",
-            body: UwbTagBody(hiderId: hiderID)
-        )
-    }
-
-    func sendUWBToken(_ token: String) {
-        socket.sendUWBToken(token)
-    }
-
-    func sendUWBRange(peerID: UUID, distanceM: Double) {
-        socket.sendUWBRange(peerID: peerID, distanceM: distanceM)
     }
 
     func connect(gameID: UUID) {

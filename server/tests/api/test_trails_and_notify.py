@@ -30,7 +30,8 @@ def _send_fix(client: TestClient, game_id: str, token: str, point) -> None:
                 },
             }
         )
-        ws.receive_json()
+        ws.send_json({"type": "ping", "data": {}})
+        assert ws.receive_json()["type"] == "pong"
 
 
 def test_host_trail_read_writes_audit_without_logging_coordinates(tmp_path, caplog) -> None:

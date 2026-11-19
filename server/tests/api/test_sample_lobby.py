@@ -22,7 +22,7 @@ def test_generate_skips_the_sample_code() -> None:
 def _auth(client: TestClient, name: str) -> dict:
     return client.post(
         "/v1/auth/dev",
-        json={"display_name": name, "installation_id": str(uuid4())},
+        json={"display_name": name, "installation_id": str(uuid4()), "age": 18},
     ).json()
 
 
@@ -103,6 +103,26 @@ def test_second_park42_join_reuses_the_lobby(client: TestClient) -> None:
     view = client.get(f"/v1/games/{game_id}", headers=first).json()
     # The second person joins the same lobby. Bots are not created again.
     assert len(view["players"]) == 7
+
+
+def test_park42_join_recycles_a_started_sample(client: TestClient) -> None:
+    host = _headers(_auth(client, "Casey"))
+    first = client.post("/v1/games/join", headers=host, json={"join_code": "PARK42"})
+    assert first.status_code == 200
+    old_id = first.json()["id"]
+    # Advance past lobby so a stranger cannot sit down.
+    for _ in range(30):
+        client.app.state.manager.tick_all()
+    started = client.get(f"/v1/games/{old_id}", headers=host).json()
+    assert started["phase"] != "lobby"
+
+    stranger = _headers(_auth(client, "Morgan"))
+    recycled = client.post("/v1/games/join", headers=stranger, json={"join_code": "PARK42"})
+    assert recycled.status_code == 200
+    assert recycled.json()["id"] != old_id
+    view = client.get(f"/v1/games/{recycled.json()['id']}", headers=stranger).json()
+    assert view["phase"] == "lobby"
+    assert view["you"]["is_host"] is True
 
 
 def test_park42_uses_circle_arena_zones_and_shrink(client: TestClient) -> None:

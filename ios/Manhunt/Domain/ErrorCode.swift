@@ -15,6 +15,7 @@ enum ErrorCode: String, Codable, Equatable {
     case gameFull = "GAME_FULL"
     case displayNameTaken = "DISPLAY_NAME_TAKEN"
     case wrongPhase = "WRONG_PHASE"
+    case rematchNotReady = "REMATCH_NOT_READY"
     case needBothRoles = "NEED_BOTH_ROLES"
     case tokenInvalid = "TOKEN_INVALID"
     case tokenExpired = "TOKEN_EXPIRED"
@@ -30,5 +31,7 @@ enum ErrorCode: String, Codable, Equatable {
     case needsTarget = "NEEDS_TARGET"
     case targetOutside = "TARGET_OUTSIDE"
     case rateLimited = "RATE_LIMITED"
+    case tooYoung = "TOO_YOUNG"
+    case nameBlocked = "NAME_BLOCKED"
     case `internal` = "INTERNAL"
 }

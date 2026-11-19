@@ -73,10 +73,12 @@ struct LiveGameView: View {
                    let banner = store.match?.snapshot.banners.last {
                     self.banner(title: banner.title, detail: banner.detail, tint: tone(banner.tone))
                         .transition(.move(edge: .top).combined(with: .opacity))
+                        .allowsHitTesting(false)
                 }
                 if store.situation == .reconnecting {
                     banner(title: "Reconnecting", detail: "The last event will catch up when the socket returns.", tint: HuntColor.paper)
                         .transition(.move(edge: .top).combined(with: .opacity))
+                        .allowsHitTesting(false)
                 }
                 if store.situation == .outOfBounds {
                     let remaining = store.match?.snapshot.you.bounds.remainingS
@@ -86,6 +88,7 @@ struct LiveGameView: View {
                         tint: HuntColor.warning
                     )
                     .transition(.move(edge: .top).combined(with: .opacity))
+                    .allowsHitTesting(false)
                 }
                 if store.decoyPicking {
                     // Hide the dock while picking so HuntMap's Drop point stays tappable.
@@ -117,6 +120,7 @@ struct LiveGameView: View {
                 } else if HeadStartChrome.showsFloatingNotice(chrome),
                           let update = store.liveUpdate {
                     LiveUpdatePill(triggerKey: update.id.uuidString, text: update.text, tone: update.tone)
+                        .allowsHitTesting(false)
                 } else if HeadStartChrome.showsFloatingNotice(chrome),
                           store.match?.snapshot.banners.isEmpty != false,
                           store.situation != .reconnecting,
@@ -124,16 +128,14 @@ struct LiveGameView: View {
                           !store.paused,
                           let note = store.note {
                     LiveUpdatePill(triggerKey: "note:\(note)", text: note, tone: "info")
+                        .allowsHitTesting(false)
                 }
                 Spacer()
+                    .allowsHitTesting(false)
                 if !store.decoyPicking && !store.demoPicking {
                     LiveControls(
                         flashlightOn: store.flashlightOn,
-                        pingSoundEnabled: store.pingSoundEnabled,
-                        pingFlashlightEnabled: store.pingFlashlightEnabled,
                         onToggleFlashlight: store.toggleFlashlight,
-                        onTogglePingSound: store.setPingSoundEnabled,
-                        onTogglePingFlashlight: store.setPingFlashlightEnabled,
                         onTapSpeaker: store.tapVoicePlaceholder,
                         onTapMic: store.tapVoicePlaceholder
                     )
@@ -326,10 +328,6 @@ struct LiveGameView: View {
             case let .headStartWaiting(title, subtitle):
                 waitingCard(title: title, subtitle: subtitle)
             case .activeTagging:
-                if store.match?.snapshot.tagMethod == "uwb" {
-                    uwbTags
-                }
-                // Spec §5.6: QR stays available as the UWB fallback (and the default when method is qr).
                 scanTagButton
                 if let tagMessage = store.tagMessage {
                     Text(tagMessage)
@@ -451,31 +449,6 @@ struct LiveGameView: View {
         }
     }
 
-    private var uwbTags: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if store.uwbPeers.isEmpty {
-                Text("No hider in Ultra Wideband range.")
-                    .font(.caption)
-                    .foregroundStyle(HuntColor.muted)
-            }
-            ForEach(store.uwbPeers) { peer in
-                Button {
-                    store.claimUWB(hiderID: peer.id)
-                } label: {
-                    let distance = store.uwbDistance[peer.id].map { String(format: "%.1f m", $0) }
-                    Text(distance.map { "Tag \(peer.name) · \($0)" } ?? "Tag \(peer.name)")
-                        .font(.title3.weight(.bold))
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 52)
-                        .background(HuntColor.seeker, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .foregroundStyle(HuntColor.paper)
-                }
-                .buttonStyle(.huntPress(.medium))
-                .accessibilityIdentifier("uwb-tag")
-            }
-        }
-    }
-
     private func banner(
         title: String,
         detail: String,
@@ -503,6 +476,7 @@ struct LiveGameView: View {
         .background(HuntColor.ink.opacity(0.88), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .foregroundStyle(HuntColor.paper)
         .transition(.move(edge: .top).combined(with: .opacity))
+        .allowsHitTesting(action != nil)
     }
 
     private func tone(_ raw: String) -> Color {
@@ -521,8 +495,11 @@ struct LiveGameView: View {
 }
 
 private struct LeaderboardSheet: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.openURL) private var openURL
     var players: [VisualPlayer]
     var dismiss: () -> Void
+    @State private var pendingBlock: PendingBlock?
 
     var body: some View {
         NavigationStack {
@@ -551,6 +528,16 @@ private struct LeaderboardSheet: View {
                         Text("\(player.earned)")
                             .font(.headline.monospacedDigit())
                     }
+                    .contextMenu {
+                        if !player.isYou {
+                            if let url = store.reportMailURL(playerID: player.id, displayName: player.name) {
+                                Button("Report") { openURL(url) }
+                            }
+                            Button("Block", role: .destructive) {
+                                pendingBlock = PendingBlock(id: player.id, name: player.name)
+                            }
+                        }
+                    }
                 }
             }
             .navigationTitle("Leaderboard")
@@ -559,6 +546,23 @@ private struct LeaderboardSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done", action: dismiss)
                 }
+            }
+            .alert(
+                "Block this player?",
+                isPresented: Binding(
+                    get: { pendingBlock != nil },
+                    set: { if !$0 { pendingBlock = nil } }
+                )
+            ) {
+                Button("Block", role: .destructive) {
+                    if let pendingBlock {
+                        store.blockPlayer(pendingBlock.id, displayName: pendingBlock.name)
+                    }
+                    pendingBlock = nil
+                }
+                Button("Cancel", role: .cancel) { pendingBlock = nil }
+            } message: {
+                Text("Their pin stays on the map as “Blocked Player #…”. You can unblock them in Account.")
             }
         }
     }

@@ -11,7 +11,7 @@ from tests.engine.helpers import square
 def _auth(client: TestClient, name: str = "Casey") -> dict:
     response = client.post(
         "/v1/auth/dev",
-        json={"display_name": name, "installation_id": str(uuid4())},
+        json={"display_name": name, "installation_id": str(uuid4()), "age": 18},
     )
     assert response.status_code == 200, response.text
     return response.json()
@@ -108,7 +108,7 @@ def test_rematch_opens_a_new_lobby_with_same_rules(client: TestClient) -> None:
     assert guest_join.json()["id"] == new_id
 
 
-def test_rematch_rejects_non_host_and_live_games(client: TestClient) -> None:
+def test_rematch_rejects_live_games(client: TestClient) -> None:
     host = _auth(client, "Casey")
     headers = _headers(host["access_token"])
     arena = client.post(
@@ -122,31 +122,43 @@ def test_rematch_rejects_non_host_and_live_games(client: TestClient) -> None:
         headers=headers,
     )
     game_id = game.json()["id"]
-    guest = _auth(client, "Riley")
-    client.post(
-        "/v1/games/join",
-        json={"join_code": game.json()["join_code"]},
-        headers=_headers(guest["access_token"]),
-    )
-
     live = client.post(f"/v1/games/{game_id}/rematch", headers=headers)
     assert live.status_code == 409
     assert live.json()["error"]["code"] == "WRONG_PHASE"
 
-    client.post(
-        f"/v1/games/{game_id}/roles",
-        json={"mode": "manual", "assignments": {
-            host["user"]["id"]: "hider",
-            guest["user"]["id"]: "seeker",
-        }},
-        headers=headers,
-    )
-    client.post(f"/v1/games/{game_id}/start", headers=headers)
-    client.post(f"/v1/games/{game_id}/end", headers=headers)
 
+def test_guest_rematch_before_host_returns_rematch_not_ready(client: TestClient) -> None:
+    host = _auth(client, "Casey")
+    ended = _ended_game(client, host)
     denied = client.post(
-        f"/v1/games/{game_id}/rematch",
-        headers=_headers(guest["access_token"]),
+        f"/v1/games/{ended['id']}/rematch",
+        headers=_headers(ended["guest"]["access_token"]),
     )
-    assert denied.status_code == 403
-    assert denied.json()["error"]["code"] == "NOT_HOST"
+    assert denied.status_code == 409
+    body = denied.json()["error"]
+    assert body["code"] == "REMATCH_NOT_READY"
+    assert "host" in body["message"].lower()
+
+
+def test_guest_rematch_joins_host_lobby(client: TestClient) -> None:
+    host = _auth(client, "Casey")
+    ended = _ended_game(client, host)
+    game_id = ended["id"]
+    host_rematch = client.post(
+        f"/v1/games/{game_id}/rematch",
+        headers=ended["headers"],
+    )
+    assert host_rematch.status_code == 200, host_rematch.text
+    new_id = host_rematch.json()["game_id"]
+
+    guest_rematch = client.post(
+        f"/v1/games/{game_id}/rematch",
+        headers=_headers(ended["guest"]["access_token"]),
+    )
+    assert guest_rematch.status_code == 200, guest_rematch.text
+    body = guest_rematch.json()
+    assert body["game_id"] == new_id
+    assert body["phase"] == "lobby"
+    assert body["you"]["is_host"] is False
+    names = {p["display_name"] for p in body["players"]}
+    assert "Casey" in names and "Riley" in names

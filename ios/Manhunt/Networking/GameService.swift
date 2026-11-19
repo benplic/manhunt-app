@@ -4,9 +4,10 @@ import Foundation
 protocol GameService: AnyObject {
     var joinCalls: Int { get }
 
-    func signIn(displayName: String, installationId: String) async throws -> AuthOut
+    func signIn(displayName: String, installationId: String, age: Int) async throws -> AuthOut
     func signInWithApple(identityToken: String, displayName: String?) async throws -> AuthOut
     func me() async throws -> UserDTO
+    func deleteAccount() async throws
     func registerDeviceToken(_ token: String) async throws
     func arenas() async throws -> [Arena]
     func createArena(_ arena: Arena) async throws -> Arena
@@ -29,7 +30,6 @@ protocol GameService: AnyObject {
     func taunt(gameID: UUID) async throws -> PlayerViewDTO
     func view(gameID: UUID) async throws -> PlayerViewDTO
     func claimQR(gameID: UUID, token: String) async throws
-    func claimUWB(gameID: UUID, hiderID: UUID) async throws
     func purchase(
         gameID: UUID,
         powerID: String,

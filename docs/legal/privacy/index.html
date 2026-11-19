@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Manhunt Privacy Policy</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+      max-width: 40rem;
+      margin: 2rem auto;
+      padding: 0 1.25rem 3rem;
+    }
+    h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+    h2 { font-size: 1.15rem; margin-top: 1.75rem; }
+    .meta { opacity: 0.7; margin-bottom: 1.5rem; }
+    ul { padding-left: 1.2rem; }
+  </style>
+</head>
+<body>
+  <h1>Manhunt Privacy Policy</h1>
+  <p class="meta">Draft for external beta. Last updated: 2026-11-18.</p>
+
+  <h2>Who we are</h2>
+  <p>Manhunt is a location-based outdoor game operated for beta testing. This policy describes what we collect, how we use it, and your choices. Questions: <a href="mailto:support@manhunt.pivotlattice.app">support@manhunt.pivotlattice.app</a>.</p>
+
+  <h2>Data we collect</h2>
+  <ul>
+    <li><strong>Display name</strong> — shown to other players in your games.</li>
+    <li><strong>Age</strong> — collected at sign-in to enforce a minimum age of 13. We check it when you sign in and store it <strong>only on your device</strong> (<code>manhunt.ageYears</code>); we do not persist age on your server user record.</li>
+    <li><strong>Precise location</strong> — while a hunt is open, to enforce the play area, safe zones, tags, and safety features. Sent to our server and shared with other players in that game under the game rules.</li>
+    <li><strong>Installation identifier</strong> — a stable id for this app install, used for authentication and device management.</li>
+    <li><strong>Home auth secret</strong> — stored <strong>only on your device</strong> (Keychain) to restore your session; we do not log this value.</li>
+    <li><strong>Optional push notification token</strong> — if you enable notifications, we store a device token to send game-related alerts.</li>
+  </ul>
+  <p>We do not use advertising SDKs or cross-app tracking.</p>
+
+  <h2>How location is shared with other players</h2>
+  <p>During an active hunt, players in the same game can see positions and related gameplay state as defined by that hunt’s rules (including safety alerts where enabled). Location updates stop when the hunt ends or you leave. Manhunt requests <strong>When In Use</strong> location only; it does not ask for Always location access.</p>
+
+  <h2>Retention</h2>
+  <p>Gameplay and sensitive location trails on our servers are purged on a rolling basis, with a default <strong>7-day</strong> maximum retention for sensitive location history unless a shorter window applies to a specific feature. Account metadata is kept until you delete your account or we no longer need it to operate the service.</p>
+
+  <h2>Account deletion</h2>
+  <p>You can delete your account from the in-app Account screen (when available). Deletion removes your user record, refresh tokens, device token, owned arenas and rule presets, and game memberships from our servers, and signs you out on the device. Games you hosted are removed with their event logs. For games you only joined, past event log text may still mention the display name you used until those events age out under the retention window above. Contact us if you cannot use the in-app flow.</p>
+
+  <h2>No ads or tracking</h2>
+  <p>Manhunt does not sell personal data, show third-party ads, or use tracking for advertising. We use HTTPS for API traffic.</p>
+
+  <h2>Contact</h2>
+  <p>Email: <a href="mailto:support@manhunt.pivotlattice.app">support@manhunt.pivotlattice.app</a>.</p>
+
+  <h2>Policy updates</h2>
+  <p>We may update this policy for beta releases. Material changes will be reflected on this page. Continued use after an update means you accept the revised policy.</p>
+</body>
+</html>

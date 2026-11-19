@@ -59,6 +59,8 @@ final class AppStore {
     var serverURL: String
     /// Shared house key for the home server's dev sign-in. Not a per-player password.
     var devAuthSecret: String
+    /// Whole years, entered at sign-in and sent on dev auth.
+    var ageYears = ""
     var joinDraft = ""
     var joinMessage: String?
     var note: String?
@@ -77,6 +79,8 @@ final class AppStore {
     var showMoveSafePicker = false
     /// Demo walk target picker: pan the map and drop a destination for `move_me`.
     var demoPicking = false
+    /// First-hunt safety disclaimer; set when `enterLive()` is gated.
+    var showSafetyModal = false
     var tool: ArenaTool = .playArea
     var draftBoundary: [VisualPoint] = []
     var draftBoundaryCircle: CircleBoundary?
@@ -103,18 +107,9 @@ final class AppStore {
     var liveUpdate: LiveUpdate?
     var pingPulse: PingPulse?
     var flashlightOn = false
-    /// Opt-in: short system sound when a reveal ping fires. Default off.
-    var pingSoundEnabled = false
-    /// Opt-in: brief torch flash on ping. Default off; manual flashlight still works.
-    var pingFlashlightEnabled = false
-    /// Tests shorten the ping torch pulse so coverage stays fast.
-    var pingTorchFlashSeconds: TimeInterval = 0.25
     var timeline: [TimelineEventDTO] = []
-    var uwbPeers: [UWBPeer] = []
-    var uwbDistance: [UUID: Double] = [:]
     private var liveUpdateExpiryTask: Task<Void, Never>?
     private var noteExpiryTask: Task<Void, Never>?
-    private var pingTorchTask: Task<Void, Never>?
     private var presetReturn: AppScreen = .home
     private var sentLowBattery = false
     private var lastSentLocation: CLLocation?
@@ -122,17 +117,10 @@ final class AppStore {
     private let service: GameService
     private let fake: FakeGameService?
     private let live: LiveGameService?
-    private let ranger: UWBRanging
     private let keychain = KeychainStore()
     private let location = LocationReporter()
     private let defaults: UserDefaults
     private let torch: TorchControlling
-    private let pingSound: PingSoundPlaying
-    /// Last discovery token pushed to the server. Cleared on reconnect so a
-    /// rebuilt session gets a fresh publish. Compared by value so a rotated
-    /// local token is resent even mid-match.
-    private var lastUWBToken: String?
-    private var lastUWBRangeAt: [UUID: Date] = [:]
     /// APNs device token waiting for auth, then PUT /v1/me/device-token.
     private var pendingDeviceToken: String?
     /// Consecutive WebSocket send failures. Hiccup toast needs ≥2.
@@ -147,30 +135,41 @@ final class AppStore {
 
     static let serverURLKey = "manhunt.serverURL"
     static let devAuthSecretKey = "manhunt.devAuthSecret"
+    static let ageYearsKey = "manhunt.ageYears"
+    static let tooYoungNote = "Manhunt is not available for people under 13."
+    static let nameBlockedNote = "That display name is not allowed."
+    static let safetyAcknowledgedKey = "manhunt.hasAcknowledgedSafety"
+    static let safetyDisclaimerCopy =
+        "Play only where it is legal and safe. You are responsible for your surroundings. "
+        + "Manhunt is not for reckless use on public roads or anywhere you could hurt yourself or others."
+
+    var hasAcknowledgedSafety: Bool {
+        defaults.bool(forKey: Self.safetyAcknowledgedKey)
+    }
+
+    private var blockList: PlayerBlockList { PlayerBlockList(defaults: defaults) }
+    private var pendingEnterLive = false
 
     init(
         service: GameService,
         serverURL: String = AppStore.defaultServerURL(),
         defaults: UserDefaults = .standard,
-        torch: TorchControlling = DeviceTorch(),
-        pingSound: PingSoundPlaying = SystemPingSound()
+        torch: TorchControlling = DeviceTorch()
     ) {
         self.service = service
         self.fake = service as? FakeGameService
-        let liveService = service as? LiveGameService
-        self.live = liveService
-        self.ranger = UWBRangers.make(enabled: liveService != nil)
+        self.live = service as? LiveGameService
         self.defaults = defaults
         self.torch = torch
-        self.pingSound = pingSound
-        self.pingSoundEnabled = AppSettings.pingSoundEnabled(defaults: defaults)
-        self.pingFlashlightEnabled = AppSettings.pingFlashlightEnabled(defaults: defaults)
         if let stored = defaults.string(forKey: Self.serverURLKey), !stored.isEmpty {
             self.serverURL = stored
         } else {
             self.serverURL = serverURL
         }
-        self.devAuthSecret = defaults.string(forKey: Self.devAuthSecretKey) ?? ""
+        self.devAuthSecret = Self.loadHomeSecret(keychain: keychain, defaults: defaults)
+        if let storedAge = defaults.string(forKey: Self.ageYearsKey), !storedAge.isEmpty {
+            ageYears = storedAge
+        }
         if let fake {
             arenas = fake.storedArenas
         }
@@ -215,9 +214,6 @@ final class AppStore {
                 self?.handleRemovedFromLobby()
             }
         }
-        live?.onUWBPeers = { [weak self] peers in
-            self?.applyUWBPeers(peers)
-        }
         live?.onSendFailure = { [weak self] _ in
             Task { @MainActor in
                 self?.handleSendFailure()
@@ -249,11 +245,6 @@ final class AppStore {
             self?.situation = .reconnecting
             self?.note = "Location stream dropped. Reconnecting…"
         }
-        ranger.onDistance = { [weak self] id, meters in
-            Task { @MainActor in
-                self?.noteUWBDistance(id: id, meters: meters)
-            }
-        }
         let seeded = ProcessInfo.processInfo.environment["MANHUNT_SCREEN"]
         if let seeded, let mapped = AppScreen.fromLaunch(seeded) {
             screen = mapped
@@ -264,7 +255,9 @@ final class AppStore {
     }
 
     static func makePreview() -> AppStore {
-        AppStore(service: FakeGameService())
+        let store = AppStore(service: FakeGameService())
+        store.defaults.set(true, forKey: Self.safetyAcknowledgedKey)
+        return store
     }
 
     static func makeForLaunch() -> AppStore {
@@ -284,16 +277,74 @@ final class AppStore {
             ?? "http://localhost:8000"
     }
 
+    static func privacyPolicyURL() -> URL? {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "ManhuntPrivacyPolicyURL") as? String,
+              let url = URL(string: raw)
+        else { return nil }
+        return url
+    }
+
+    static func supportEmail() -> String? {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "ManhuntSupportEmail") as? String else {
+            return nil
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func supportMailURL() -> URL? {
+        guard let email = supportEmail() else { return nil }
+        return URL(string: "mailto:\(email)")
+    }
+
+    private static func loadHomeSecret(keychain: KeychainStore, defaults: UserDefaults) -> String {
+        if let existing = keychain.readHomeSecret(), !existing.isEmpty {
+            return existing
+        }
+        if let legacy = defaults.string(forKey: devAuthSecretKey), !legacy.isEmpty {
+            try? keychain.saveHomeSecret(legacy)
+            defaults.removeObject(forKey: devAuthSecretKey)
+            return legacy
+        }
+        return ""
+    }
+
+    private static func parseAgeYears(_ text: String) -> Int? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value = Int(trimmed), (0...120).contains(value) else { return nil }
+        return value
+    }
+
+    private func resolvedAgeForAuth() -> Int? {
+        if let fromField = Self.parseAgeYears(ageYears) {
+            return fromField
+        }
+        if let stored = defaults.string(forKey: Self.ageYearsKey) {
+            return Self.parseAgeYears(stored)
+        }
+        return nil
+    }
+
+    private func persistStoredAge(_ age: Int) {
+        let text = String(age)
+        ageYears = text
+        defaults.set(text, forKey: Self.ageYearsKey)
+    }
+
     var isHost: Bool { match?.snapshot.you.isHost ?? false }
     var isDemoGame: Bool { match?.snapshot.demo != nil }
     var demoControlsEnabled: Bool { match?.snapshot.demo?.controlsEnabled == true }
     var joinCode: String { match?.snapshot.joinCode ?? "" }
     var hostName: String {
-        match?.snapshot.players.first(where: \.isHost)?.displayName ?? "The host"
+        guard let host = match?.snapshot.players.first(where: \.isHost) else {
+            return "The host"
+        }
+        return blockList.displayName(for: host.playerId.uuidString, fallback: host.displayName)
     }
 
     var players: [VisualPlayer] {
         guard let match else { return SamplePark.players }
+        let list = blockList
         return match.snapshot.players.map { player in
             let point: VisualPoint
             if let loc = player.location {
@@ -304,9 +355,10 @@ final class AppStore {
             let spendable = player.points
                 ?? (player.playerId == match.snapshot.you.playerId ? match.snapshot.you.points : 0)
             let earned = player.pointsEarned ?? spendable
+            let id = player.playerId.uuidString
             return VisualPlayer(
-                id: player.playerId.uuidString,
-                name: player.displayName,
+                id: id,
+                name: list.displayName(for: id, fallback: player.displayName),
                 role: visualRole(player.role),
                 isYou: player.playerId == match.snapshot.you.playerId,
                 isHost: player.isHost,
@@ -360,8 +412,10 @@ final class AppStore {
 
     var liveReveals: [MapReveal] {
         guard let reveals = match?.snapshot.reveals else { return [] }
+        let list = blockList
         return reveals.map { pin in
-            let name: String = {
+            let id = pin.playerId.uuidString
+            let fallback: String = {
                 if let displayName = pin.displayName, !displayName.isEmpty {
                     return displayName
                 }
@@ -369,8 +423,8 @@ final class AppStore {
             }()
             return MapReveal(
                 id: pin.revealId.uuidString,
-                name: name,
-                playerID: pin.playerId.uuidString,
+                name: list.displayName(for: id, fallback: fallback),
+                playerID: id,
                 colorIndex: RevealPalette.index(for: pin.playerId),
                 center: VisualPoint(latitude: pin.lat, longitude: pin.lon),
                 radiusMeters: pin.radiusM
@@ -425,7 +479,20 @@ final class AppStore {
         lastError = nil
         note = nil
         defaults.set(serverURL, forKey: Self.serverURLKey)
-        defaults.set(devAuthSecret, forKey: Self.devAuthSecretKey)
+        try? keychain.saveHomeSecret(devAuthSecret)
+        guard let age = Self.parseAgeYears(ageYears) else {
+            note = "Enter your age as a number."
+            return
+        }
+        if age < 13 {
+            note = Self.tooYoungNote
+            return
+        }
+        if !DisplayNameRules.isAllowed(displayName) {
+            note = Self.nameBlockedNote
+            return
+        }
+        persistStoredAge(age)
         if let fake {
             fake.signInSync(displayName)
             session = Session(displayName: displayName, token: "fake")
@@ -467,19 +534,7 @@ final class AppStore {
         }
     }
 
-    func setPingSoundEnabled(_ enabled: Bool) {
-        pingSoundEnabled = enabled
-        AppSettings.setPingSoundEnabled(enabled, defaults: defaults)
-    }
-
-    func setPingFlashlightEnabled(_ enabled: Bool) {
-        pingFlashlightEnabled = enabled
-        AppSettings.setPingFlashlightEnabled(enabled, defaults: defaults)
-    }
-
     func toggleFlashlight() {
-        pingTorchTask?.cancel()
-        pingTorchTask = nil
         let target = !flashlightOn
         do {
             try torch.setOn(target)
@@ -494,8 +549,6 @@ final class AppStore {
     }
 
     func turnOffFlashlight() {
-        pingTorchTask?.cancel()
-        pingTorchTask = nil
         guard flashlightOn else { return }
         flashlightOn = false
         do {
@@ -510,31 +563,6 @@ final class AppStore {
     func tapVoicePlaceholder() {
         // TODO: replace with live radio mute / push-to-talk once audio transport is implemented.
         note = "Voice is coming soon."
-    }
-
-    /// Sound and optional torch flash for a reveal ping. Both are opt-in via AppSettings.
-    func handlePingAlerts() {
-        if pingSoundEnabled {
-            pingSound.play()
-        }
-        guard pingFlashlightEnabled else { return }
-        // Manual flashlight already on — leave it alone.
-        guard !flashlightOn else { return }
-        pingTorchTask?.cancel()
-        do {
-            try torch.setOn(true)
-            flashlightOn = true
-        } catch {
-            flashlightOn = false
-            return
-        }
-        let hold = pingTorchFlashSeconds
-        pingTorchTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(hold))
-            guard let self, !Task.isCancelled else { return }
-            self.pingTorchTask = nil
-            self.turnOffFlashlight()
-        }
     }
 
     func sendFix(from location: CLLocation, isFinal: Bool, battery: Float? = nil) {
@@ -601,6 +629,15 @@ final class AppStore {
         }
     }
 
+    func deleteAccount() async {
+        do {
+            try await service.deleteAccount()
+            signOut()
+        } catch {
+            note = "Could not delete your account. Try again or email support."
+        }
+    }
+
     func signOut() {
         turnOffFlashlight()
         decoyPicking = false
@@ -609,7 +646,6 @@ final class AppStore {
         showMoveSafePicker = false
         mapPickPowerID = nil
         demoPicking = false
-        stopUWB()
         live?.disconnect()
         live?.refreshToken = nil
         location.stop()
@@ -643,7 +679,6 @@ final class AppStore {
         showMoveSafePicker = false
         mapPickPowerID = nil
         demoPicking = false
-        stopUWB()
         location.stop()
         live?.disconnect()
         match = nil
@@ -832,7 +867,7 @@ final class AppStore {
         guard let fake else {
             let overrides = PresetOverrides.from(modules: modules, arena: selected)
             Task {
-                await syncDisplayNameBeforeMatchIfNeeded()
+                guard await syncDisplayNameBeforeMatchIfNeeded() else { return }
                 await createMatchRemote(arenaID: arenaID, presetID: presetID, overrides: overrides)
             }
             return
@@ -875,7 +910,7 @@ final class AppStore {
         guard let fake else {
             joinDraft = normalized
             Task {
-                await syncDisplayNameBeforeMatchIfNeeded()
+                guard await syncDisplayNameBeforeMatchIfNeeded() else { return }
                 await joinRemote(normalized)
             }
             return nil
@@ -984,7 +1019,6 @@ final class AppStore {
             }
         }
         sendFinalPing()
-        stopUWB()
         location.stop()
         live?.disconnect()
         screen = .results
@@ -1075,9 +1109,8 @@ final class AppStore {
         screen = .home
     }
 
-    /// Host-only: open a new lobby copying the ended hunt's arena + rules.
     func rematch() {
-        guard isHost, let id = match?.snapshot.gameId else { return }
+        guard let id = match?.snapshot.gameId else { return }
         lastError = nil
         if let fake {
             do {
@@ -1464,10 +1497,56 @@ final class AppStore {
     }
 
     /// Seekers who were converted from hiders and can be rescued.
+    /// Blocked players stay eligible — rescue UI shows their anonymized name via `players`.
     var rescueablePlayers: [PlayerDTO] {
         guard let match else { return [] }
         return match.snapshot.players.filter {
             $0.role == .seeker && $0.status == .active && $0.convertedFromHider
+        }
+    }
+
+    var blockedPlayers: [BlockedPlayerEntry] { blockList.entries }
+
+    func anonymizedBlockedName(for playerID: String) -> String? {
+        blockList.anonymizedName(for: playerID)
+    }
+
+    func reportMailURL(playerID: String, displayName: String) -> URL? {
+        guard let gameID = match?.snapshot.gameId,
+              let id = UUID(uuidString: playerID)
+        else { return nil }
+        return PlayerReportMail.url(
+            gameID: gameID,
+            playerID: id,
+            displayName: displayName,
+            supportEmail: Self.supportEmail()
+        )
+    }
+
+    func blockPlayer(_ playerID: String, displayName: String? = nil) {
+        let realName = match?.snapshot.players
+            .first { $0.playerId.uuidString == playerID }?
+            .displayName
+        let fromSnapshot = realName.flatMap { $0.isEmpty ? nil : $0 }
+        let fromArg = displayName.flatMap { $0.isEmpty ? nil : $0 }
+        var list = blockList
+        list.block(playerID, displayName: fromSnapshot ?? fromArg ?? "Player")
+        note = "Player blocked on this device."
+    }
+
+    func unblockPlayer(_ playerID: String) {
+        var list = blockList
+        list.unblock(playerID)
+        note = "Player unblocked."
+    }
+
+    /// One-time first-hunt safety disclaimer (UserDefaults). In-game banner ack is `acknowledgeSafety()`.
+    func acknowledgeSafetyDisclaimer() {
+        defaults.set(true, forKey: Self.safetyAcknowledgedKey)
+        showSafetyModal = false
+        if pendingEnterLive {
+            pendingEnterLive = false
+            performEnterLive()
         }
     }
 
@@ -1637,54 +1716,6 @@ final class AppStore {
         TrackerAvailability.syncEnabled(in: &modules)
     }
 
-    func claimUWB(hiderID: UUID) {
-        tagMessage = nil
-        guard let id = match?.snapshot.gameId else { return }
-        Task {
-            do {
-                try await service.claimUWB(gameID: id, hiderID: hiderID)
-                tagMessage = "Tag accepted."
-            } catch let error as ServiceError {
-                tagMessage = Self.copy(for: error.code)
-            } catch {
-                tagMessage = "Could not send the tag."
-            }
-        }
-    }
-
-    func applyUWBPeers(_ peers: [UWBPeer]) {
-        let ids = Set(peers.map(\.id))
-        uwbDistance = uwbDistance.filter { ids.contains($0.key) }
-        uwbPeers = peers
-        ranger.setPeers(peers)
-    }
-
-    func noteUWBDistance(id: UUID, meters: Double) {
-        uwbDistance[id] = meters
-        // Match the server drop rate of 2 per second so NI callbacks do not spam.
-        let now = Date()
-        if let last = lastUWBRangeAt[id], now.timeIntervalSince(last) < 0.5 {
-            return
-        }
-        lastUWBRangeAt[id] = now
-        live?.sendUWBRange(peerID: id, distanceM: meters)
-    }
-
-    private func publishUWBTokenIfNeeded() {
-        guard let live, match?.snapshot.tagMethod == "uwb" else { return }
-        guard let token = ranger.localToken(), token != lastUWBToken else { return }
-        live.sendUWBToken(token)
-        lastUWBToken = token
-    }
-
-    private func stopUWB() {
-        ranger.stop()
-        uwbPeers = []
-        uwbDistance = [:]
-        lastUWBToken = nil
-        lastUWBRangeAt = [:]
-    }
-
     func submitQR(_ token: String) {
         tagMessage = nil
         guard let id = match?.snapshot.gameId else { return }
@@ -1703,7 +1734,6 @@ final class AppStore {
     static func copy(for code: ErrorCode) -> String {
         switch code {
         case .notInPairingRange: return "Get closer. GPS says you are too far to tag."
-        case .notInRange: return "Ultra Wideband says you are still out of tag range."
         case .targetShielded: return "That hider has a shield up."
         case .targetInSafeZone: return "They are in a safe zone."
         case .tokenInvalid, .tokenExpired: return "That code is stale. Scan again."
@@ -1719,7 +1749,6 @@ final class AppStore {
         clearConnectionHiccup(restoreSituation: true)
         if PingDetector.didPing(previous: match?.snapshot, next: view) {
             pingPulse = PingPulse(role: view.you.role)
-            handlePingAlerts()
         }
         let anchor = ClockLead.anchor(
             previous: match?.snapshot,
@@ -1728,7 +1757,6 @@ final class AppStore {
             now: now
         )
         match = MatchHandle(snapshot: view, qrToken: match?.qrToken, clockAnchorAt: anchor)
-        publishUWBTokenIfNeeded()
         switch view.phase {
         case .ended:
             pingPulse = nil
@@ -1783,6 +1811,15 @@ final class AppStore {
     }
 
     private func enterLive() {
+        guard hasAcknowledgedSafety else {
+            pendingEnterLive = true
+            showSafetyModal = true
+            return
+        }
+        performEnterLive()
+    }
+
+    private func performEnterLive() {
         screen = .live
         // FakeGameService UI tests must not touch CoreLocation; demo games use virtual movement.
         if live != nil, match?.snapshot.demo == nil {
@@ -1928,8 +1965,6 @@ final class AppStore {
     func handleReconnect(_ reconnecting: Bool) {
         guard reconnecting else { return }
         situation = .reconnecting
-        // Server restart drops tokens. Force a republish on the next view.
-        lastUWBToken = nil
         if reconnectingSince == nil {
             reconnectingSince = Date()
         }
@@ -1946,7 +1981,6 @@ final class AppStore {
         showMoveSafePicker = false
         mapPickPowerID = nil
         demoPicking = false
-        stopUWB()
         location.stop()
         live?.disconnect()
         match = nil
@@ -1997,38 +2031,64 @@ final class AppStore {
         guard !trimmed.isEmpty else { return }
         guard session?.displayName != trimmed else { return }
         guard let fake else { return }
+        guard DisplayNameRules.isAllowed(trimmed) else {
+            note = Self.nameBlockedNote
+            return
+        }
         fake.signInSync(trimmed)
         session = Session(displayName: trimmed, token: session?.token ?? "fake")
         displayName = trimmed
     }
 
-    private func syncDisplayNameBeforeMatchIfNeeded() async {
+    @discardableResult
+    private func syncDisplayNameBeforeMatchIfNeeded() async -> Bool {
         let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        guard session?.displayName != trimmed else { return }
+        guard !trimmed.isEmpty else { return true }
+        guard session?.displayName != trimmed else { return true }
+        guard DisplayNameRules.isAllowed(trimmed) else {
+            note = Self.nameBlockedNote
+            return false
+        }
         if fake != nil {
             syncDisplayNameBeforeMatchIfNeededSync()
-            return
+            return session?.displayName == trimmed
+        }
+        guard let age = resolvedAgeForAuth() else {
+            note = "Enter your age on the sign-in screen before creating or joining a game."
+            return false
+        }
+        if age < 13 {
+            note = Self.tooYoungNote
+            return false
         }
         live?.updateBaseURL(URL(string: serverURL) ?? URL(string: "http://localhost:8000")!)
         live?.devAuthSecret = devAuthSecret
         do {
             let auth = try await service.signIn(
                 displayName: trimmed,
-                installationId: InstallationID.current(keychain: keychain)
+                installationId: InstallationID.current(keychain: keychain),
+                age: age
             )
             try? keychain.saveToken(auth.accessToken)
             if let refresh = auth.refreshToken {
                 try? keychain.saveRefreshToken(refresh)
                 live?.refreshToken = refresh
             }
+            persistStoredAge(age)
             session = Session(displayName: auth.user.displayName, token: auth.accessToken)
             displayName = auth.user.displayName
+            return true
+        } catch let error as ServiceError where error.code == .tooYoung || error.code == .nameBlocked {
+            displayName = trimmed
+            lastError = .service(error.code)
+            note = error.message.isEmpty ? (error.code == .tooYoung ? Self.tooYoungNote : Self.nameBlockedNote) : error.message
+            return false
         } catch {
             // Keep the typed name locally; create/join may still fail with the old token.
             displayName = trimmed
             lastError = .unreachable
             note = "Could not update your name. Is the home server running?"
+            return false
         }
     }
 
@@ -2057,12 +2117,20 @@ final class AppStore {
     private func signInRemote() async {
         live?.updateBaseURL(URL(string: serverURL) ?? URL(string: "http://localhost:8000")!)
         live?.devAuthSecret = devAuthSecret
+        guard let age = resolvedAgeForAuth() else {
+            note = "Enter your age as a number."
+            return
+        }
         do {
             let auth = try await service.signIn(
                 displayName: displayName,
-                installationId: InstallationID.current(keychain: keychain)
+                installationId: InstallationID.current(keychain: keychain),
+                age: age
             )
             await finishRemoteAuth(auth)
+        } catch let error as ServiceError where error.code == .tooYoung || error.code == .nameBlocked {
+            lastError = .service(error.code)
+            note = error.message
         } catch {
             lastError = .unreachable
             note = "Is the home server running? Could not reach \(serverURL)."
@@ -2088,6 +2156,9 @@ final class AppStore {
         if let refresh = auth.refreshToken {
             try? keychain.saveRefreshToken(refresh)
             live?.refreshToken = refresh
+        }
+        if let age = resolvedAgeForAuth() {
+            persistStoredAge(age)
         }
         session = Session(displayName: auth.user.displayName, token: auth.accessToken)
         displayName = auth.user.displayName

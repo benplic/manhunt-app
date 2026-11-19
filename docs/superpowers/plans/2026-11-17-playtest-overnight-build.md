@@ -112,7 +112,7 @@ flowchart TD
 
 **Do:**
 - `PowerChip.systemImage` + dock `Image(systemName:)`; symbols: ghost `eye.slash`, decoy `person.fill.questionmark`, radar `dot.radiowaves.left.and.right`, jammer `waveform.slash`, shield `shield.fill`, scan `viewfinder`, tracker `location.magnifyingglass`, lockdown `lock.shield.fill`.
-- README **Horizon** section: Capture the flag, Senior assassin, Persistent (college intermittent pings / denser near frequent places).
+- README **Horizon** section (ordered): Capture the flag → Senior assassin → Long-distance persistent → Ranked/public lobbies last. Plan files under `docs/superpowers/plans/2026-11-18-horizon-*.md`.
 
 **Batch 1 merge note:** If A and B both touch `session.py`, land A’s end-idempotent commit first or keep B’s streak field in `PlayerState` only.
 

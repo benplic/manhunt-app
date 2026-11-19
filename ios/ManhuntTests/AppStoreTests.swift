@@ -92,6 +92,92 @@ final class AppStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testSafetyDisclaimerGatesEnterLiveUntilAcknowledged() {
+        let suite = "manhunt.tests.safety.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = AppStore(service: FakeGameService(), defaults: defaults)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.randomizeRoles(seekerCount: 1)
+        XCTAssertFalse(store.hasAcknowledgedSafety)
+        XCTAssertNil(store.startMatch())
+        XCTAssertEqual(store.screen, .lobby)
+        XCTAssertTrue(store.showSafetyModal)
+        store.acknowledgeSafetyDisclaimer()
+        XCTAssertTrue(store.hasAcknowledgedSafety)
+        XCTAssertEqual(store.screen, .live)
+        XCTAssertFalse(store.showSafetyModal)
+    }
+
+    @MainActor
+    func testBlockedPlayerStaysInLobbyWithAnonymizedName() {
+        let suite = "manhunt.tests.blocklist.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: AppStore.safetyAcknowledgedKey)
+        let store = AppStore(service: FakeGameService(), defaults: defaults)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        let target = store.players[0]
+        store.blockPlayer(target.id, displayName: target.name)
+        let blocked = store.players.first { $0.id == target.id }
+        XCTAssertNotNil(blocked)
+        XCTAssertEqual(blocked?.name, "Blocked Player #1")
+        XCTAssertEqual(store.players.count, store.match?.snapshot.players.count)
+    }
+
+    @MainActor
+    func testBlockedPlayerRevealKeepsPinWithAnonymizedName() {
+        let suite = "manhunt.tests.blocklist.reveal.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = AppStore(service: FakeGameService(), defaults: defaults)
+        store.signInPreview()
+        let blockedPlayerID = UUID()
+        let revealID = UUID()
+        store.match = MatchHandle(
+            snapshot: PlayerViewDTO(
+                gameId: UUID(),
+                joinCode: "TEST01",
+                phase: .active,
+                phaseRemainingS: nil,
+                gameElapsedS: 0,
+                timeLimitRemainingS: 600,
+                timers: nil,
+                you: YouDTO(
+                    playerId: UUID(),
+                    role: .seeker,
+                    status: .active,
+                    isHost: true,
+                    bounds: BoundsDTO(phase: "inside", remainingS: nil),
+                    safeZone: nil,
+                    points: 0
+                ),
+                players: [],
+                reveals: [
+                    RevealDTO(
+                        revealId: revealID,
+                        playerId: blockedPlayerID,
+                        lat: 40.66,
+                        lon: -73.96,
+                        radiusM: 30,
+                        expiresInS: 8,
+                        displayName: "Casey"
+                    )
+                ],
+                banners: [],
+                result: nil
+            ),
+            qrToken: nil
+        )
+        XCTAssertEqual(store.liveReveals.count, 1)
+        store.blockPlayer(blockedPlayerID.uuidString, displayName: "Casey")
+        XCTAssertEqual(store.liveReveals.count, 1)
+        XCTAssertEqual(store.liveReveals.first?.name, "Blocked Player #1")
+    }
+
+    @MainActor
     func testActivePhaseDropsTheStartLine() {
         let store = AppStore.makePreview()
         store.signInPreview()
@@ -195,6 +281,7 @@ final class AppStoreTests: XCTestCase {
             defaults: defaults
         )
         store.displayName = "Casey"
+        store.ageYears = "18"
         store.signIn()
         XCTAssertEqual(store.note, WakeCopy.message)
     }
@@ -401,15 +488,45 @@ final class AppStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testRematchIsHostOnly() {
-        let store = AppStore.makePreview()
+    func testGuestRematchBeforeHostSurfacesRematchNotReady() {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
         store.signInPreview()
         _ = store.join(code: "PARK42")
+        fake.markEnded(store.match!.snapshot.gameId)
         store.screen = .results
-        let before = store.match?.snapshot.gameId
         store.rematch()
         XCTAssertEqual(store.screen, .results)
-        XCTAssertEqual(store.match?.snapshot.gameId, before)
+        XCTAssertEqual(store.lastError, .service(.rematchNotReady))
+        XCTAssertTrue(store.note?.lowercased().contains("host") == true)
+    }
+
+    @MainActor
+    func testGuestRematchJoinsHostLobby() throws {
+        let fake = FakeGameService()
+        let host = AppStore(service: fake)
+        host.signInPreview()
+        host.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        host.randomizeRoles(seekerCount: 1)
+        _ = host.startMatch()
+        host.endMatch()
+        let endedID = host.match!.snapshot.gameId
+        host.rematch()
+        let rematchID = host.match!.snapshot.gameId
+        XCTAssertNotEqual(rematchID, endedID)
+
+        _ = fake.signInSync("Riley Chen")
+        let guest = AppStore(service: fake)
+        guest.session = Session(displayName: "Riley Chen", token: "fake")
+        guest.match = MatchHandle(
+            snapshot: try fake.forceEndedGuestView(gameID: endedID),
+            qrToken: nil
+        )
+        guest.screen = .results
+        guest.rematch()
+        XCTAssertEqual(guest.screen, .lobby)
+        XCTAssertEqual(guest.match?.snapshot.gameId, rematchID)
+        XCTAssertFalse(guest.isHost)
     }
 
     @MainActor
@@ -475,7 +592,7 @@ final class AppStoreTests: XCTestCase {
     @MainActor
     func testRefreshRotatesTheFakeToken() async throws {
         let fake = FakeGameService()
-        _ = try await fake.signIn(displayName: "Casey", installationId: "test-install")
+        _ = try await fake.signIn(displayName: "Casey", installationId: "test-install", age: 18)
         let first = fake.signInSync("Casey").refreshToken
         XCTAssertNotNil(first)
         let rotated = try await fake.refresh(refreshToken: first!)
@@ -669,4 +786,213 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(store.mapPickPowerID, "move_safe")
         XCTAssertNotNil(store.moveSafeZoneId)
     }
+
+    func testAgeUnder13SetsTooYoungNote() async {
+        let fake = FakeGameService()
+        do {
+            _ = try await fake.signIn(displayName: "Casey", installationId: "test-install", age: 12)
+            XCTFail("Expected tooYoung")
+        } catch let error as ServiceError {
+            XCTAssertEqual(error.code, .tooYoung)
+        } catch {
+            XCTFail("Unexpected error \(error)")
+        }
+    }
+
+    @MainActor
+    func testSignInRejectsAgeUnder13WithNote() {
+        let store = AppStore.makePreview()
+        store.ageYears = "12"
+        store.signIn()
+        XCTAssertEqual(store.note, "Manhunt is not available for people under 13.")
+        XCTAssertEqual(store.screen, .signedOut)
+    }
+
+    @MainActor
+    func testDeleteAccountSignsOutAndHitsFake() async throws {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        XCTAssertNotNil(store.session?.token)
+        await store.deleteAccount()
+        XCTAssertEqual(fake.deleteAccountCalls, 1)
+        XCTAssertEqual(store.screen, .signedOut)
+        XCTAssertNil(store.session)
+    }
+
+    @MainActor
+    func testSignInPersistsAgeYearsToDefaults() {
+        let suite = "manhunt.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = AppStore(service: FakeGameService(), defaults: defaults)
+        store.ageYears = "24"
+        store.displayName = "Casey"
+        store.signIn()
+        XCTAssertEqual(defaults.string(forKey: AppStore.ageYearsKey), "24")
+    }
+
+    @MainActor
+    func testLaunchRestoresPersistedAgeYears() {
+        let suite = "manhunt.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("27", forKey: AppStore.ageYearsKey)
+        let store = AppStore(service: FakeGameService(), defaults: defaults)
+        XCTAssertEqual(store.ageYears, "27")
+    }
+
+    @MainActor
+    func testRenameReauthUsesStoredAgeWhenFieldEmpty() async throws {
+        let suite = "manhunt.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("29", forKey: AppStore.ageYearsKey)
+        let capture = CapturingLiveGameService()
+        let store = AppStore(service: capture, defaults: defaults)
+        store.arenas = [Arena.sampleSquare()]
+        store.session = Session(displayName: "Casey", token: "old")
+        store.displayName = "Morgan Reed"
+        store.ageYears = ""
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        let deadline = Date().addingTimeInterval(2)
+        while capture.lastSignInAge == nil, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(capture.lastSignInAge, 29)
+        XCTAssertNotEqual(capture.lastSignInAge, 18)
+    }
+
+    @MainActor
+    func testMissingAgeRefusesRenameReauthWithoutSendingEighteen() async throws {
+        let suite = "manhunt.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let capture = CapturingLiveGameService()
+        let store = AppStore(service: capture, defaults: defaults)
+        store.arenas = [Arena.sampleSquare()]
+        store.session = Session(displayName: "Casey", token: "old")
+        store.displayName = "Morgan Reed"
+        store.ageYears = ""
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertNil(capture.lastSignInAge)
+        XCTAssertEqual(
+            store.note,
+            "Enter your age on the sign-in screen before creating or joining a game."
+        )
+    }
+
+    @MainActor
+    func testRenameWithBlockedNameRefusesWithoutSigningIn() async throws {
+        let suite = "manhunt.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("22", forKey: AppStore.ageYearsKey)
+        let capture = CapturingLiveGameService()
+        let store = AppStore(service: capture, defaults: defaults)
+        store.arenas = [Arena.sampleSquare()]
+        store.session = Session(displayName: "Casey", token: "old")
+        store.displayName = "hello retard"
+        store.ageYears = "22"
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertNil(capture.lastSignInAge)
+        XCTAssertEqual(store.note, AppStore.nameBlockedNote)
+        XCTAssertEqual(store.session?.displayName, "Casey")
+    }
+
+    @MainActor
+    func testFakeRenameWithBlockedNameRefuses() {
+        let store = AppStore(service: FakeGameService())
+        store.arenas = [Arena.sampleSquare()]
+        store.signInPreview()
+        store.displayName = "hello retard"
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        XCTAssertEqual(store.note, AppStore.nameBlockedNote)
+        XCTAssertEqual(store.session?.displayName, "Casey Lee")
+    }
+}
+
+/// Non-fake `GameService` that records dev sign-in age for live-path store tests.
+private final class CapturingLiveGameService: GameService {
+    let joinCalls = 0
+    private(set) var lastSignInAge: Int?
+
+    private var stub: ServiceError {
+        ServiceError(code: .internal, message: "stub")
+    }
+
+    func signIn(displayName: String, installationId: String, age: Int) async throws -> AuthOut {
+        _ = installationId
+        lastSignInAge = age
+        let user = UserDTO(id: UUID(), displayName: displayName)
+        return AuthOut(
+            accessToken: "test",
+            expiresAt: "2099-01-01T00:00:00Z",
+            user: user,
+            refreshToken: "refresh"
+        )
+    }
+
+    func signInWithApple(identityToken: String, displayName: String?) async throws -> AuthOut {
+        throw stub
+    }
+
+    func me() async throws -> UserDTO { throw stub }
+    func deleteAccount() async throws { throw stub }
+    func registerDeviceToken(_ token: String) async throws { throw stub }
+    func arenas() async throws -> [Arena] { throw stub }
+    func createArena(_ arena: Arena) async throws -> Arena { throw stub }
+    func updateArena(_ arena: Arena) async throws -> Arena { throw stub }
+    func deleteArena(id: UUID) async throws { throw stub }
+    func createGame(
+        arenaID: UUID,
+        presetID: String,
+        overrides: [String: [String: RuleValue]]
+    ) async throws -> PlayerViewDTO {
+        throw stub
+    }
+    func timeline(gameID: UUID) async throws -> [TimelineEventDTO] { throw stub }
+    func join(code: String) async throws -> PlayerViewDTO { throw stub }
+    func randomizeRoles(gameID: UUID, seekerCount: Int) async throws -> PlayerViewDTO { throw stub }
+    func setRole(gameID: UUID, playerID: UUID, role: PlayerRole) async throws -> PlayerViewDTO { throw stub }
+    func start(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func pause(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func resume(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func end(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func rematch(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func leave(gameID: UUID) async throws { throw stub }
+    func removePlayer(gameID: UUID, playerID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func undoTag(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func ackSafety(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func taunt(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func view(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func claimQR(gameID: UUID, token: String) async throws { throw stub }
+    func purchase(
+        gameID: UUID,
+        powerID: String,
+        extra: [String: Double],
+        targetPlayerId: String?,
+        zoneId: String?
+    ) async throws -> PlayerViewDTO {
+        throw stub
+    }
+    func demo(gameID: UUID, action: String, params: [String: RuleValue]) async throws -> PlayerViewDTO {
+        throw stub
+    }
+    func fetchModules() async throws -> [VisualModule] { throw stub }
+    func savePreset(name: String, modules: [String: [String: RuleValue]]) async throws -> SavedPresetDTO {
+        throw stub
+    }
+    func updatePreset(
+        id: String,
+        name: String,
+        modules: [String: [String: RuleValue]]
+    ) async throws -> SavedPresetDTO {
+        throw stub
+    }
+    func deletePreset(id: String) async throws { throw stub }
+    func savedPresets() async throws -> [SavedPresetDTO] { throw stub }
+    func refresh(refreshToken: String) async throws -> AuthOut { throw stub }
 }

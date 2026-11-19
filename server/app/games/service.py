@@ -218,6 +218,16 @@ class GameService:
                     GameRow.status.notin_(["ended", "abandoned"]),
                 )
             )
+            # PARK42 is a singleton demo code. Once the sample leaves lobby,
+            # new phones cannot sit down (WRONG_PHASE). Retire that hunt and
+            # mint a fresh lobby unless this user is already on the roster.
+            if existing is not None:
+                membership = await session.get(GamePlayerRow, (existing.id, user.id))
+                live = self.manager.get(existing.id)
+                phase = live.state.phase if live is not None else existing.status
+                if membership is None and phase != "lobby":
+                    await self._retire_sample(session, existing, live)
+                    existing = None
             if existing is None:
                 return await self._create_sample(session, user)
         row = await session.scalar(
@@ -410,14 +420,43 @@ class GameService:
         return game
 
     async def rematch(self, session: AsyncSession, user: User, game_id: UUID) -> GameSession:
-        """Host-only: open a fresh lobby copying the ended game's arena + preset."""
-        row = await self.require_host(session, game_id, user)
+        """Host opens a fresh lobby; guests join it once the host has rematched."""
+        row, _ = await self.require_member(session, game_id, user)
         if row.status != "ended":
             raise ApiError(
                 ErrorCode.WRONG_PHASE,
                 "Rematch is only available after the hunt ends.",
                 status_code=409,
             )
+        is_host = row.host_id == user.id
+        if is_host:
+            return await self._host_rematch(session, user, row)
+
+        rematch_raw = (row.result or {}).get("rematch_game_id")
+        if not rematch_raw:
+            raise ApiError(
+                ErrorCode.REMATCH_NOT_READY,
+                "Host hasn't started a rematch yet.",
+                status_code=409,
+            )
+        try:
+            rematch_id = UUID(str(rematch_raw))
+        except (TypeError, ValueError) as exc:
+            raise ApiError(
+                ErrorCode.INTERNAL,
+                "Rematch lobby id is corrupt.",
+                status_code=500,
+            ) from exc
+        return await self._join_rematch_lobby(session, user, rematch_id)
+
+    async def _host_rematch(
+        self, session: AsyncSession, user: User, row: GameRow
+    ) -> GameSession:
+        existing = (row.result or {}).get("rematch_game_id")
+        if existing:
+            # Idempotent: host tapping twice returns the same lobby.
+            return await self._join_rematch_lobby(session, user, UUID(str(existing)), as_host=True)
+
         join_code = await self._unique_code(session)
         seed = random.SystemRandom().randint(1, 2**31 - 1)
         new_row = GameRow(
@@ -432,6 +471,9 @@ class GameService:
         )
         session.add(new_row)
         session.add(GamePlayerRow(game_id=new_row.id, user_id=user.id, role="unassigned"))
+        payload = dict(row.result or {})
+        payload["rematch_game_id"] = str(new_row.id)
+        row.result = payload
         await session.commit()
         game = self.manager.register(
             new_row.id,
@@ -443,6 +485,47 @@ class GameService:
         game.add_player(user.id, user.display_name, is_host=True)
         await self.persist_inputs(session, game)
         await session.commit()
+        return game
+
+    async def _join_rematch_lobby(
+        self,
+        session: AsyncSession,
+        user: User,
+        rematch_id: UUID,
+        *,
+        as_host: bool = False,
+    ) -> GameSession:
+        new_row = await session.get(GameRow, rematch_id)
+        if new_row is None or new_row.status not in {"lobby"}:
+            raise ApiError(
+                ErrorCode.GAME_NOT_FOUND,
+                "The rematch lobby is gone.",
+                status_code=404,
+            )
+        game = self._live(new_row)
+        if user.id in game.state.players:
+            return game
+        from sqlalchemy import func
+
+        count = await session.scalar(
+            select(func.count())
+            .select_from(GamePlayerRow)
+            .where(GamePlayerRow.game_id == rematch_id)
+        )
+        if (count or 0) >= 20:
+            raise ApiError(ErrorCode.GAME_FULL, "This lobby is full.", status_code=409)
+        self._reject_duplicate_display_name(game, user)
+        member = await session.get(GamePlayerRow, (rematch_id, user.id))
+        if member is None:
+            session.add(GamePlayerRow(game_id=rematch_id, user_id=user.id, role="unassigned"))
+        game.add_player(
+            user.id,
+            user.display_name,
+            is_host=as_host and new_row.host_id == user.id,
+        )
+        await self.persist_inputs(session, game)
+        await session.commit()
+        await self.manager.broadcast(rematch_id)
         return game
 
     async def remove_player(
@@ -543,22 +626,6 @@ class GameService:
                 token, game_id=game.state.game_id, key=game.qr_signing_key, now=game.clock.now()
             )
             game.claim_tag(TagClaim(user.id, hider_id, qr_token=token))
-        except GameRuleError as exc:
-            raise _http_for_rule(exc) from exc
-        async with self._persist_lock(game_id):
-            await self._persist_events(session, game)
-            row.status = game.state.phase
-            await session.commit()
-            self.finalize_persist(game)
-
-    async def uwb_tag(
-        self, session: AsyncSession, user: User, game_id: UUID, hider_id: UUID
-    ) -> None:
-        """Accept a tag from the two phones' stored ranges. The body has no distances."""
-        row, _ = await self.require_member(session, game_id, user)
-        game = self._live(row)
-        try:
-            game.claim_uwb(user.id, hider_id)
         except GameRuleError as exc:
             raise _http_for_rule(exc) from exc
         async with self._persist_lock(game_id):
@@ -755,6 +822,22 @@ class GameService:
                     _name_taken_message(user.display_name),
                     status_code=409,
                 )
+
+    async def _retire_sample(
+        self,
+        session: AsyncSession,
+        row: GameRow,
+        live: GameSession | None,
+    ) -> None:
+        """End an in-progress PARK42 so the reserved code can open a new lobby."""
+        if live is not None and live.state.phase != "ended":
+            live.end("Sample lobby recycled for a new PARK42 join.", winner="none")
+            await self._persist_events(session, live)
+            self.finalize_persist(live)
+        row.status = "ended"
+        if row.ended_at is None:
+            row.ended_at = datetime.now(UTC)
+        await session.commit()
 
     async def _create_sample(self, session: AsyncSession, host: User) -> GameRow:
         """PARK42: the host, five stable bots, classic rules, start after 30 lobby seconds."""

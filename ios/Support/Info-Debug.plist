@@ -41,11 +41,15 @@
 		<string>location</string>
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Manhunt uses your precise location while a game is open to enforce the play area, safe zones, and tags. The app does not request Always access.</string>
+	<string>Manhunt uses your precise location during an open hunt to enforce the play area, safe zones, and tags, and to show your position to other players under the game rules (including safety alerts). Location stays active for that hunt, including when the phone is locked. Manhunt does not request Always access.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Manhunt uses the camera so a seeker can scan a hider's rotating tag code.</string>
-	<key>NSNearbyInteractionUsageDescription</key>
-	<string>Manhunt uses Ultra Wideband to confirm that a tag happened within a few meters.</string>
+	<string>Manhunt uses the camera so a seeker can scan a hider's tag code, and may use the torch when you turn on the flashlight control.</string>
+	<key>ManhuntPrivacyPolicyURL</key>
+	<string>https://benplic.github.io/manhunt-app/</string>
+	<key>ManhuntSupportEmail</key>
+	<string>support@manhunt.pivotlattice.app</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSLocationDefaultAccuracyReduced</key>
 	<false/>
 	<key>ManhuntAPIBaseURL</key>

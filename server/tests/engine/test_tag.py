@@ -8,15 +8,6 @@ from app.errors import ErrorCode, GameRuleError
 from tests.engine.helpers import meters, reading, two_player_hunt
 
 
-def test_far_gps_pair_cannot_be_saved_by_a_fake_uwb_reading() -> None:
-    session, clock, hider, seeker = two_player_hunt()
-    session.record_location(seeker, reading(meters(40, 40), clock))
-    session.record_location(hider, reading(meters(160, 160), clock))
-    with pytest.raises(GameRuleError) as exc:
-        session.claim_tag(TagClaim(seeker, hider, seeker_range=1, hider_range=1))
-    assert exc.value.code == ErrorCode.NOT_IN_PAIRING_RANGE
-
-
 def test_inflated_accuracy_does_not_stretch_pairing() -> None:
     session, clock, hider, seeker = two_player_hunt()
     # 50 m apart. Pairing is 30. A 30 m claimed accuracy used to cover the gap.

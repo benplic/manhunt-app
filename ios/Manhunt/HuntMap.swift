@@ -31,8 +31,10 @@ struct HuntMap: View {
     @State private var crosshair = VisualPoint(latitude: 40.6616, longitude: -73.9688)
     @State private var glide = PlayerGlide()
     @State private var safeDim: Double = 0
+    @State private var glideAnimating = false
+    @State private var settleTask: Task<Void, Never>?
 
-    private var animates: Bool { glidePeople || zoneShrink != nil || safeDim > 0 || lockdownActive }
+    private var animates: Bool { glideAnimating || zoneShrink != nil || safeDim > 0 || lockdownActive }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animates)) { timeline in
@@ -41,11 +43,32 @@ struct HuntMap: View {
         .onAppear {
             glide.retarget(people, now: Date())
             safeDim = lockdownActive ? 1 : 0
+            markGlideNeedsFrames()
         }
-        .onChange(of: people) { _, updated in glide.retarget(updated, now: Date()) }
+        .onChange(of: people) { _, updated in
+            glide.retarget(updated, now: Date())
+            markGlideNeedsFrames()
+        }
         .onChange(of: lockdownActive) { _, active in
             withAnimation(.easeInOut(duration: 0.75)) {
                 safeDim = active ? 1 : 0
+            }
+        }
+    }
+
+    private func markGlideNeedsFrames() {
+        guard glidePeople else {
+            glideAnimating = false
+            settleTask?.cancel()
+            return
+        }
+        glideAnimating = true
+        settleTask?.cancel()
+        settleTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(PlayerGlide.maxDuration + 0.05))
+            guard !Task.isCancelled else { return }
+            if glide.isSettled(at: Date()) {
+                glideAnimating = false
             }
         }
     }
@@ -131,7 +154,7 @@ struct HuntMap: View {
                 }
             }
             .mapStyle(.hybrid(elevation: .flat, pointsOfInterest: .excludingAll))
-            .onMapCameraChange(frequency: .continuous) { context in
+            .onMapCameraChange(frequency: onCrosshair == nil ? .onEnd : .continuous) { context in
                 let center = context.region.center
                 crosshair = VisualPoint(latitude: center.latitude, longitude: center.longitude)
                 onCrosshair?(crosshair)

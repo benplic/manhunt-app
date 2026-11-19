@@ -5,7 +5,8 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
-        Group {
+        @Bindable var store = store
+        return Group {
             switch store.screen {
             case .signedOut:
                 SignInView()
@@ -38,6 +39,11 @@ struct RootView: View {
         .preferredColorScheme(.dark)
         .onChange(of: scenePhase) { _, phase in
             store.handleScenePhase(isBackground: phase == .background)
+        }
+        .alert("Play safely", isPresented: $store.showSafetyModal) {
+            Button("Continue") { store.acknowledgeSafetyDisclaimer() }
+        } message: {
+            Text(AppStore.safetyDisclaimerCopy)
         }
     }
 }

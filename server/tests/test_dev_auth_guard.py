@@ -52,12 +52,12 @@ def test_home_dev_auth_rejects_a_missing_party_secret(tmp_path) -> None:
     with TestClient(create_app(settings)) as client:
         missing = client.post(
             "/v1/auth/dev",
-            json={"display_name": "Casey", "installation_id": "phone-home-1"},
+            json={"display_name": "Casey", "installation_id": "phone-home-1", "age": 18},
         )
         assert missing.status_code == 403
         allowed = client.post(
             "/v1/auth/dev",
-            json={"display_name": "Casey", "installation_id": "phone-home-1"},
+            json={"display_name": "Casey", "installation_id": "phone-home-1", "age": 18},
             headers={"X-Manhunt-Dev-Secret": "home-party-secret"},
         )
         assert allowed.status_code == 200, allowed.text

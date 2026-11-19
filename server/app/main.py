@@ -85,18 +85,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 if row.inputs:
                     try:
                         logged = open_inputs(trail_key, row.inputs)
-                    except TrailKeyError:
-                        log.exception("inputs_unreadable game_id=%s", row.id)
+                        game = rebuild_session(
+                            game_id=row.id,
+                            arena=arena_from_dict(row.arena_snapshot),
+                            preset=row.preset_snapshot,
+                            seed=row.seed,
+                            join_code=row.join_code,
+                            inputs=logged,
+                            qr_key=settings.manhunt_qr_signing_key,
+                        )
+                    except Exception:
+                        # A single broken trail (e.g. move_safe to a missing zone)
+                        # must not keep the home server from booting.
+                        log.exception("game_rebuild_failed game_id=%s", row.id)
+                        row.status = "abandoned"
                         continue
-                    game = rebuild_session(
-                        game_id=row.id,
-                        arena=arena_from_dict(row.arena_snapshot),
-                        preset=row.preset_snapshot,
-                        seed=row.seed,
-                        join_code=row.join_code,
-                        inputs=logged,
-                        qr_key=settings.manhunt_qr_signing_key,
-                    )
                     manager.sessions[row.id] = game
                     restored += 1
                 elif row.status in {"head_start", "active", "paused"}:

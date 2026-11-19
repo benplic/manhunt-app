@@ -223,6 +223,11 @@ def _rescue(s: GameSession, kwargs: dict[str, Any]) -> None:
     )
 
 
+def _next_safe_name(zones: list[ArenaZone]) -> str:
+    existing = sum(1 for z in zones if z.kind == ZoneKind.SAFE)
+    return f"Safe {existing + 1}"
+
+
 def _create_safe(s: GameSession, kwargs: dict[str, Any]) -> None:
     point = GeoPoint(lat=float(kwargs["lat"]), lon=float(kwargs["lon"]))
     if not contains(point, s.state.arena.boundary):
@@ -231,7 +236,7 @@ def _create_safe(s: GameSession, kwargs: dict[str, Any]) -> None:
     radius_m = float(settings.get("create_safe_radius_m", 30))
     zone = ArenaZone(
         id=uuid4(),
-        name="New safe",
+        name=_next_safe_name(s.state.arena.zones),
         kind=ZoneKind.SAFE,
         shape=CircleShape(center=point, radius_m=radius_m),
     )

@@ -37,3 +37,5 @@ xcuserdata/
 # Editors
 .idea/
 *.swp
+playtest-logs/
+.worktrees/

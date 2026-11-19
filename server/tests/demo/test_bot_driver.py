@@ -132,7 +132,7 @@ def test_bots_hold_spawn_during_head_start_and_stay_inside_shrinking_circle() ->
 
 
 def test_bot_seeker_chases_and_tags_hider_even_with_human_seeker() -> None:
-    for method in ("qr", "uwb"):
+    for method in ("qr",):
         session, clock, _, bot_seeker, bot_hider = _setup_demo(seed=77, method=method)
         session.start()
         # Advance past head start (spawn lock may hold a tick or two for streak).

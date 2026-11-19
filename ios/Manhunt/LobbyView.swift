@@ -2,7 +2,9 @@ import SwiftUI
 
 struct LobbyView: View {
     @Environment(AppStore.self) private var store
+    @Environment(\.openURL) private var openURL
     @State private var confirmLeave = false
+    @State private var pendingBlock: PendingBlock?
 
     var body: some View {
         @Bindable var store = store
@@ -74,6 +76,16 @@ struct LobbyView: View {
                             }
                             .buttonStyle(.huntPress(.light))
                             .accessibilityLabel("\(player.name), \(player.role.rawValue)")
+                            .contextMenu {
+                                if !player.isYou {
+                                    if let url = store.reportMailURL(playerID: player.id, displayName: player.name) {
+                                        Button("Report") { openURL(url) }
+                                    }
+                                    Button("Block", role: .destructive) {
+                                        pendingBlock = PendingBlock(id: player.id, name: player.name)
+                                    }
+                                }
+                            }
 
                             if store.isHost, !player.isYou, !player.isHost {
                                 Button {
@@ -220,6 +232,23 @@ struct LobbyView: View {
         .alert("Leave this hunt?", isPresented: $confirmLeave) {
             Button("Leave", role: .destructive, action: store.goHome)
             Button("Cancel", role: .cancel) {}
+        }
+        .alert(
+            "Block this player?",
+            isPresented: Binding(
+                get: { pendingBlock != nil },
+                set: { if !$0 { pendingBlock = nil } }
+            )
+        ) {
+            Button("Block", role: .destructive) {
+                if let pendingBlock {
+                    store.blockPlayer(pendingBlock.id, displayName: pendingBlock.name)
+                }
+                pendingBlock = nil
+            }
+            Button("Cancel", role: .cancel) { pendingBlock = nil }
+        } message: {
+            Text("Their pin stays on the map as “Blocked Player #…”. You can unblock them in Account.")
         }
     }
 }

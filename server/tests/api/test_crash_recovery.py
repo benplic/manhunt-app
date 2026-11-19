@@ -27,9 +27,9 @@ def _send_fix(client: TestClient, game_id: str, token: str, point: GeoPoint) -> 
                 },
             }
         )
-        # The server broadcasts a view after a location; wait so persist finishes.
-        message = ws.receive_json()
-        assert message["type"] in {"view", "event"}
+        # Sync on ping so persist_location finishes before the socket closes (no view on location).
+        ws.send_json({"type": "ping", "data": {}})
+        assert ws.receive_json()["type"] == "pong"
 
 
 def test_restart_rebuilds_mid_game_phase_roles_points_and_locations(tmp_path) -> None:

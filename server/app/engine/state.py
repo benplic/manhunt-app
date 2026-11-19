@@ -92,9 +92,6 @@ class PlayerState:
     # Game second when the current hint was published. None means "recompute".
     hint_at_s: int | None = None
     hint_until_s: int | None = None
-    uwb_token: str | None = None
-    # This phone's own range to a peer: meters, game_elapsed_s. Not persisted.
-    uwb_ranges: dict[UUID, tuple[float, int]] = field(default_factory=dict)
     battery: float | None = None
     # Consecutive accurate in-spawn location fixes. Spawn lock needs 2 before counting.
     spawn_in_streak: int = 0
@@ -135,9 +132,6 @@ class GameState:
     lockdown_until_s: int | None = None
     jammer_until_s: int | None = None
     inputs: list[dict[str, Any]] = field(default_factory=list)
-    # Last uwb_peers payload sent to each socket. In memory only, so a restart
-    # makes phones publish discovery tokens again.
-    uwb_peer_signature: dict[UUID, tuple[str, ...]] = field(default_factory=dict)
     initial_radius_m: float | None = None
     last_zone_warned_step: int = 0
     # Extra seconds added to zone_shrink_schedule elapsed (Shrink Now).
