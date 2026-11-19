@@ -26,7 +26,7 @@ Each item is open until the acceptance line is true. Human items stay open until
 
 ### Phase 5
 
-- **5.6 TestFlight (human).** `.github/workflows/testflight.yml` archives with manual signing and uploads with `xcrun altool` when the `prod` environment has `BUILD_CERTIFICATE_BASE64`, `BUILD_PROVISION_PROFILE_BASE64`, `P12_PASSWORD`, `APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`, and `APP_STORE_CONNECT_API_KEY`. Acceptance: a human with the signing credentials runs that workflow and the build appears in TestFlight. Stays open until that person does it.
+- **5.6 TestFlight (human).** `.github/workflows/testflight.yml` archives with manual signing and uploads with `xcrun altool` when the `prod` environment has `BUILD_CERTIFICATE_BASE64`, `BUILD_PROVISION_PROFILE_BASE64`, `P12_PASSWORD`, `APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`, and `APP_STORE_CONNECT_API_KEY`. Acceptance: a human with the signing credentials runs that workflow and the build appears in TestFlight. Stays open until that person does it. Before archive: set Release `MANHUNT_API_BASE_URL` to the live cloud origin, publish [docs/legal/privacy.md](../../legal/privacy.md) to the HTTPS URL in `ManhuntPrivacyPolicyURL`, and replace support-email placeholders (README **External beta (Release)**).
 
 ### Demo
 

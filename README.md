@@ -61,6 +61,40 @@ Xcode → Debug → Simulate Location → Add GPX File to Project → `ios/Suppo
 
 Playtest checklist: [docs/superpowers/plans/2026-11-09-mvp-playtest.md](docs/superpowers/plans/2026-11-09-mvp-playtest.md)
 
+## External beta (Release)
+
+Use this for TestFlight and other **Release** builds. Home sideload **Debug** still uses the Server URL field and the home-host runbook above.
+
+### Cloud API URL (baked in Release)
+
+Release does not show a Server URL on sign-in. The API origin is compiled in via `MANHUNT_API_BASE_URL` → `ManhuntAPIBaseURL` in `ios/Support/Info.plist`. Before archiving for external testers, set the **Release** value in `ios/Manhunt.xcodeproj/project.pbxproj` to the live HTTPS cloud origin (today’s placeholder is `https://REPLACE_WITH_CLOUD_API_ORIGIN`). Debug keeps `http://localhost:8000` and the Server URL field.
+
+### Home key (party secret)
+
+Cloud/home beta sign-in uses **Play** with display name, age, and the **Home key**: the server’s `MANHUNT_DEV_AUTH_SECRET` from the untracked `.env` on the host (`server/.env.example`). The app stores it in the Keychain so testers are not asked on every launch. Sign in with Apple stays hidden in the repo until the paid Apple team is attached; see the Apple plan below.
+
+### Age 13+
+
+Sign-in requires age. The server and client reject ages under 13 (`TOO_YOUNG`). This is required for external beta, not only for App Store age rating.
+
+### Privacy policy and support
+
+- Policy source: [docs/legal/privacy.md](docs/legal/privacy.md). Publish that file to a **public HTTPS URL** (GitHub Pages, a static host, or similar).
+- Set `ManhuntPrivacyPolicyURL` in `ios/Support/Info.plist` to that URL (placeholder today: `https://REPLACE_WITH_PUBLISHED_PRIVACY_URL`). The in-app Privacy policy link and Account screen use this key.
+- Replace `ManhuntSupportEmail` in the same plist (and the contact lines in `docs/legal/privacy.md`) before shipping to testers.
+
+App Store Connect must list the same privacy and support URLs; that step is in the Apple plan, not in git.
+
+### Account deletion
+
+Testers can delete their account from **Home → Account → Delete account** (`DELETE /v1/me`). That hard-deletes the user and tokens on the server and signs out on the device. See the privacy policy for retention and anonymization on historical game rows.
+
+### Apple Developer Program (human)
+
+Enrollment, bundle id, Sign in with Apple entitlement, App Store Connect metadata, nutrition labels, and the first **external** TestFlight upload are **not** done in the compliance code path. Follow: [docs/superpowers/plans/2026-11-18-apple-developer-account.md](docs/superpowers/plans/2026-11-18-apple-developer-account.md).
+
+Repo-side beta compliance work is tracked in [docs/superpowers/plans/2026-11-18-beta-compliance.md](docs/superpowers/plans/2026-11-18-beta-compliance.md).
+
 ## Azure (Phase 2)
 
 Do not turn scale-to-zero on for a shared environment until crash recovery has been tested (`test_restart_rebuilds_mid_game_phase_roles_points_and_locations`). Bicep still ships `minReplicas: 0`.
@@ -95,11 +129,12 @@ On GitHub Actions macOS runners, CI picks an available iPhone 16 Pro simulator a
 
 ## Horizon
 
-Plans only — not in the MVP build:
+Long-term goals only — not in the MVP build. Priority order (do not skip ahead to public):
 
-- **Capture the flag** — objective / flag-based park mode
-- **Senior assassin** — longer-cycle elimination among a cohort
-- **Persistent** — friends-at-college intermittent location pings; denser pings and clues near frequent places (e.g. a favorite coffee shop)
+1. **[Capture the flag](docs/superpowers/plans/2026-11-18-horizon-capture-the-flag.md)** — objective / flag-based park mode
+2. **[Senior assassin](docs/superpowers/plans/2026-11-18-horizon-senior-assassin.md)** — longer-cycle elimination among a cohort
+3. **[Long-distance persistent](docs/superpowers/plans/2026-11-18-horizon-persistent-long-distance.md)** — friends-at-a-distance intermittent pings; denser clues near frequent places (e.g. a favorite coffee shop)
+4. **[Ranked / public lobbies](docs/superpowers/plans/2026-11-18-horizon-ranked-public-lobbies.md)** — stranger matchmaking and ladders (**last** of the four)
 
 ## License
 
