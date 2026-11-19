@@ -2,9 +2,13 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { ApiError } from '../api/client'
 import { createGame, joinGame } from '../api/games'
+import { SessionExpiredError, withAuthRetry } from '../api/session'
 import type { PlayerView } from '../api/types'
 import { clearSession, loadSession } from '../auth/storage'
 import './Home.css'
+
+/** Matches server/app/games/join_code.py ALPHABET (no I/L/O/0/1). */
+const JOIN_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 
 type Props = {
   onSignedOut: () => void
@@ -24,9 +28,19 @@ function readGps(): Promise<{ lat: number; lon: number }> {
       () => {
         reject(new Error('Location permission is required to create a game.'))
       },
-      { enableHighAccuracy: true, timeout: 15000 },
+      // maximumAge: 0 forces a fresh fix so the 400 m circle lands on the host now.
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     )
   })
+}
+
+function sanitizeJoinCode(raw: string): string {
+  return raw
+    .toUpperCase()
+    .split('')
+    .filter((ch) => JOIN_CODE_ALPHABET.includes(ch))
+    .slice(0, 6)
+    .join('')
 }
 
 export function Home({ onSignedOut, onEnteredGame }: Props) {
@@ -35,6 +49,14 @@ export function Home({ onSignedOut, onEnteredGame }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [lastView, setLastView] = useState<PlayerView | null>(null)
+
+  function handleAuthFailure(err: unknown): boolean {
+    if (err instanceof SessionExpiredError) {
+      onSignedOut()
+      return true
+    }
+    return false
+  }
 
   async function onCreate() {
     setError(null)
@@ -45,10 +67,13 @@ export function Home({ onSignedOut, onEnteredGame }: Props) {
     setBusy(true)
     try {
       const { lat, lon } = await readGps()
-      const view = await createGame({ token: session.accessToken, lat, lon })
+      const view = await withAuthRetry((token) => createGame({ token, lat, lon }))
       setLastView(view)
       onEnteredGame(view)
     } catch (err) {
+      if (handleAuthFailure(err)) {
+        return
+      }
       setError(err instanceof ApiError ? err.message : (err as Error).message)
     } finally {
       setBusy(false)
@@ -62,15 +87,20 @@ export function Home({ onSignedOut, onEnteredGame }: Props) {
       onSignedOut()
       return
     }
+    const code = sanitizeJoinCode(joinCode)
+    if (code.length !== 6) {
+      setError('Join codes are 6 characters.')
+      return
+    }
     setBusy(true)
     try {
-      const view = await joinGame({
-        token: session.accessToken,
-        joinCode: joinCode.trim(),
-      })
+      const view = await withAuthRetry((token) => joinGame({ token, joinCode: code }))
       setLastView(view)
       onEnteredGame(view)
     } catch (err) {
+      if (handleAuthFailure(err)) {
+        return
+      }
       setError(err instanceof ApiError ? err.message : (err as Error).message)
     } finally {
       setBusy(false)
@@ -105,9 +135,9 @@ export function Home({ onSignedOut, onEnteredGame }: Props) {
             <input
               name="joinCode"
               value={joinCode}
-              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+              onChange={(e) => setJoinCode(sanitizeJoinCode(e.target.value))}
               autoCapitalize="characters"
-              maxLength={8}
+              maxLength={6}
               required
             />
           </label>

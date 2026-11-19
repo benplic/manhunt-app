@@ -6,6 +6,10 @@ import {
 import { apiRequest } from './client'
 import type { AuthOut } from './types'
 
+function persistInstallationId(installationId: string): void {
+  localStorage.setItem('manhunt.installationId', installationId)
+}
+
 export class TooYoungError extends Error {
   constructor() {
     super('Manhunt is not available for people under 13.')
@@ -27,6 +31,7 @@ export async function signInDev(input: SignInInput): Promise<AuthOut> {
   }
 
   const installationId = input.installationId ?? getOrCreateInstallationId()
+  persistInstallationId(installationId)
   const auth = await apiRequest<AuthOut>('/v1/auth/dev', {
     method: 'POST',
     homeKey: input.homeKey,
