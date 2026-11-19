@@ -269,6 +269,19 @@ final class AppStore {
         return url
     }
 
+    static func supportEmail() -> String? {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "ManhuntSupportEmail") as? String else {
+            return nil
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func supportMailURL() -> URL? {
+        guard let email = supportEmail() else { return nil }
+        return URL(string: "mailto:\(email)")
+    }
+
     private static func loadHomeSecret(keychain: KeychainStore, defaults: UserDefaults) -> String {
         if let existing = keychain.readHomeSecret(), !existing.isEmpty {
             return existing
@@ -590,6 +603,17 @@ final class AppStore {
             guard !Task.isCancelled, let self else { return }
             if self.note == text {
                 self.note = nil
+            }
+        }
+    }
+
+    func deleteAccount() {
+        Task {
+            do {
+                try await service.deleteAccount()
+                signOut()
+            } catch {
+                note = "Could not delete your account. Try again or email support."
             }
         }
     }

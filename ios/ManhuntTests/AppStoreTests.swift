@@ -723,6 +723,22 @@ final class AppStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testDeleteAccountSignsOutAndHitsFake() async throws {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        XCTAssertNotNil(store.session?.token)
+        store.deleteAccount()
+        let deadline = Date().addingTimeInterval(1)
+        while fake.deleteAccountCalls == 0, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(fake.deleteAccountCalls, 1)
+        XCTAssertEqual(store.screen, .signedOut)
+        XCTAssertNil(store.session)
+    }
+
+    @MainActor
     func testSignInPersistsAgeYearsToDefaults() {
         let suite = "manhunt.tests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -812,6 +828,7 @@ private final class CapturingLiveGameService: GameService {
     }
 
     func me() async throws -> UserDTO { throw stub }
+    func deleteAccount() async throws { throw stub }
     func registerDeviceToken(_ token: String) async throws { throw stub }
     func arenas() async throws -> [Arena] { throw stub }
     func createArena(_ arena: Arena) async throws -> Arena { throw stub }

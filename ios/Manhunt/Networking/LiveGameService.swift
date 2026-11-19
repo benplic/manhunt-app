@@ -85,6 +85,12 @@ final class LiveGameService: GameService {
         try await client.get("/v1/me")
     }
 
+    func deleteAccount() async throws {
+        try await client.delete("/v1/me")
+        client.token = nil
+        refreshToken = nil
+    }
+
     func registerDeviceToken(_ token: String) async throws {
         struct Body: Encodable { var token: String }
         let _: EmptyBody = try await client.put("/v1/me/device-token", body: Body(token: token))

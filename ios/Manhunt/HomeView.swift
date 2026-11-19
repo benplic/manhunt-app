@@ -7,6 +7,7 @@ struct HomeView: View {
     @State private var renameArenaDraft = ""
     @State private var deletingArenaID: UUID?
     @State private var confirmSignOut = false
+    @State private var showAccount = false
 
     var body: some View {
         @Bindable var store = store
@@ -19,6 +20,10 @@ struct HomeView: View {
                             .foregroundStyle(HuntColor.paper)
                     }
                     Spacer()
+                    Button("Account") { showAccount = true }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(HuntColor.signal)
+                        .accessibilityIdentifier("open-account")
                     Button("Sign out") { confirmSignOut = true }
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(HuntColor.muted)
@@ -139,6 +144,9 @@ struct HomeView: View {
                 store.openInvite(payload)
             }
             .ignoresSafeArea()
+        }
+        .sheet(isPresented: $showAccount) {
+            AccountView()
         }
         .alert("Rename arena", isPresented: Binding(
             get: { renamingArenaID != nil },

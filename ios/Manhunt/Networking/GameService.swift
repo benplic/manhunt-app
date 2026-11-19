@@ -7,6 +7,7 @@ protocol GameService: AnyObject {
     func signIn(displayName: String, installationId: String, age: Int) async throws -> AuthOut
     func signInWithApple(identityToken: String, displayName: String?) async throws -> AuthOut
     func me() async throws -> UserDTO
+    func deleteAccount() async throws
     func registerDeviceToken(_ token: String) async throws
     func arenas() async throws -> [Arena]
     func createArena(_ arena: Arena) async throws -> Arena

@@ -9,6 +9,7 @@ final class FakeGameService: GameService {
     private(set) var appleSignIns = 0
     private(set) var refreshCalls = 0
     private(set) var signInCalls = 0
+    private(set) var deleteAccountCalls = 0
     private(set) var lastSignInDisplayName: String?
     private(set) var lastSignInAge: Int?
     private var signedIn: UserDTO?
@@ -88,6 +89,11 @@ final class FakeGameService: GameService {
             throw ServiceError(code: .unauthorized, message: "Not signed in.")
         }
         return signedIn
+    }
+
+    func deleteAccount() async throws {
+        deleteAccountCalls += 1
+        signedIn = nil
     }
 
     func refresh(refreshToken: String) async throws -> AuthOut {
