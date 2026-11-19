@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		B22E07AC30A2CAE4000A430B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B22E07AB30A2CAE4000A430B /* Assets.xcassets */; };
+		B22E07AD30A2CAE4000A430C /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B22E07AE30A2CAE4000A430C /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -24,6 +25,7 @@
 		A1000000000000000000000A /* Manhunt.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Manhunt.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000000000000000000000B /* ManhuntTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ManhuntTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B22E07AB30A2CAE4000A430B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B22E07AE30A2CAE4000A430C /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -59,10 +61,19 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		B22E07AF30A2CAE4000A430C /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				B22E07AE30A2CAE4000A430C /* PrivacyInfo.xcprivacy */,
+			);
+			path = Support;
+			sourceTree = "<group>";
+		};
 		A10000000000000000000009 = {
 			isa = PBXGroup;
 			children = (
 				B22E07AB30A2CAE4000A430B /* Assets.xcassets */,
+				B22E07AF30A2CAE4000A430C /* Support */,
 				A10000000000000000000005 /* Manhunt */,
 				A10000000000000000000006 /* ManhuntTests */,
 				A10000000000000000000008 /* Products */,
@@ -155,6 +166,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B22E07AC30A2CAE4000A430B /* Assets.xcassets in Resources */,
+				B22E07AD30A2CAE4000A430C /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -267,7 +279,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MANHUNT_API_BASE_URL = "http://localhost:8000";
+				MANHUNT_API_BASE_URL = "https://REPLACE_WITH_CLOUD_API_ORIGIN";
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.benjaminplichta.manhunt;
 				PRODUCT_NAME = "$(TARGET_NAME)";
