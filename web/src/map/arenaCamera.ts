@@ -6,29 +6,23 @@ export type ArenaCircle = {
 }
 
 /**
- * Fit the play circle, then clamp pan/zoom so phones cannot wander miles away.
- * Padding keeps a little street context around the yellow line.
+ * One-shot framing on the play circle. Pan and zoom stay unbounded afterward —
+ * clamping made every WebSocket view snap the camera back.
  */
-export function fitAndClampToArena(
+export function fitArenaOnce(
   map: L.Map,
   circle: ArenaCircle,
   leaflet: typeof L,
 ): void {
-  // Diameter * 1.15 → slight margin outside the yellow line.
+  // Clear any earlier clamp from a previous build still in memory during HMR.
+  map.setMaxBounds(null as unknown as L.LatLngBounds)
+  map.options.maxBoundsViscosity = 0
+  map.setMinZoom(0)
+  map.setMaxZoom(19)
   const viewBounds = leaflet
     .latLng(circle.center.lat, circle.center.lon)
     .toBounds(circle.radius_m * 2.3)
   map.fitBounds(viewBounds, { animate: false })
-  // Harder pan clamp than the view fit so a fling cannot leave the arena.
-  const panBounds = leaflet
-    .latLng(circle.center.lat, circle.center.lon)
-    .toBounds(circle.radius_m * 2.8)
-  map.setMaxBounds(panBounds)
-  map.options.maxBoundsViscosity = 1
-  const fitZoom = map.getBoundsZoom(viewBounds)
-  // Allow one notch of zoom-out for context; block regional zoom-outs.
-  map.setMinZoom(Math.max(fitZoom - 1, 13))
-  map.setMaxZoom(19)
 }
 
 export function recenterOnArena(

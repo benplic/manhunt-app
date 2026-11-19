@@ -1,35 +1,56 @@
+/* Full-bleed map under chrome. Flex-shrinking the map to 0 left a black void
+   after head start when banners/dock grew. */
 .live-map {
-  display: flex;
-  flex-direction: column;
+  position: relative;
   height: 100dvh;
   min-height: 100vh;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: manipulation;
   font-family: 'Segoe UI', system-ui, sans-serif;
-  position: relative;
   background: #0f1115;
   color: #f2f0ea;
 }
 
 .live-map .map-frame {
-  flex: 1 1 auto;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   width: 100%;
+  height: 100%;
+  /* Keep pinch/drag on the map, not the document. */
+  touch-action: none;
 }
 
 .live-map .map-frame--hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
+  visibility: hidden;
   pointer-events: none;
-  overflow: hidden;
+}
+
+.live-map .leaflet-container {
+  width: 100%;
+  height: 100%;
+  background: #1a1d24;
+  touch-action: none;
 }
 
 .live-map .qr-overlay {
-  flex: 1;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
+  z-index: 20;
   overflow: auto;
   background: #12141a;
   padding-bottom: env(safe-area-inset-bottom);
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Chrome floats above the full-bleed map; empty middle stays for pan/zoom. */
+.live-map .top-bar,
+.live-map .hud,
+.live-map .banners {
+  position: relative;
+  z-index: 10;
+  pointer-events: auto;
 }
 
 .live-map .top-bar {
@@ -39,7 +60,7 @@
   gap: 0.75rem;
   padding: 0.7rem 1rem;
   padding-top: max(0.7rem, env(safe-area-inset-top));
-  background: #12151c;
+  background: rgba(18, 21, 28, 0.94);
   border-bottom: 1px solid #2a2d36;
 }
 
@@ -115,7 +136,7 @@
   align-items: baseline;
   gap: 0.4rem 0.85rem;
   padding: 0.5rem 1rem;
-  background: #171a21;
+  background: rgba(23, 26, 33, 0.94);
   border-bottom: 1px solid #2a2d36;
 }
 
@@ -145,8 +166,10 @@
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  max-height: 28vh;
+  overflow: auto;
   padding: 0.45rem 1rem;
-  background: #1c1510;
+  background: rgba(28, 21, 16, 0.94);
   border-bottom: 1px solid #3a2a18;
 }
 
@@ -161,12 +184,20 @@
 }
 
 .live-map .bottom-stack {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   gap: 0;
-  background: #12151c;
+  background: rgba(18, 21, 28, 0.94);
   border-top: 1px solid #2a2d36;
   padding-bottom: max(0.55rem, env(safe-area-inset-bottom));
+  max-height: 42vh;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .live-map .dock {
