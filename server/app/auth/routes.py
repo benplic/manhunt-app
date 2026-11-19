@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.apple import verify_apple_token
+from app.auth.delete import delete_account
 from app.auth.names import assert_display_name_allowed, normalize_display_name
 from app.auth.refresh import mint_refresh, rotate_refresh, store_refresh
 from app.auth.tokens import issue_token
@@ -176,6 +177,17 @@ def bind_me_routes(get_session, current_user):
             session.add(DeviceToken(user_id=user.id, token=body.token))
         else:
             row.token = body.token
+        await session.commit()
+        return {"ok": True}
+
+    @me_router.delete("/me")
+    async def delete_me(
+        request: Request,
+        session: AsyncSession = Depends(get_session),
+        user=Depends(current_user),
+    ) -> dict:
+        manager = request.app.state.manager
+        await delete_account(session, user, manager=manager)
         await session.commit()
         return {"ok": True}
 
