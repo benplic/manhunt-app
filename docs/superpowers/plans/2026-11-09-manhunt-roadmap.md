@@ -306,6 +306,15 @@ Scale-to-zero only after Phase 2 crash recovery. Until then a replica that dies 
 - 5.3 Full arena editor (drag vertices, rename, delete). 5.4 Results timeline built from the event log. 5.5 Invite link and QR join (universal link).
 - 5.6 TestFlight archive and upload workflow (replaces weekly Xcode sideload; a human holds the signing credentials).
 
+## Horizon (long-term, after Phases 1–5)
+
+Not scheduled. Detailed TDD plans are written only when Scott opens a goal. Priority order is fixed — **ranked/public is last**:
+
+1. [Capture the flag](2026-11-18-horizon-capture-the-flag.md)
+2. [Senior assassin](2026-11-18-horizon-senior-assassin.md)
+3. [Long-distance persistent games](2026-11-18-horizon-persistent-long-distance.md)
+4. [Ranked / public lobbies](2026-11-18-horizon-ranked-public-lobbies.md)
+
 ## Worker playbook
 
 - Server: `cd server && python3 -m venv .venv && . .venv/bin/activate && pip install -e '.[dev]' && docker compose up -d db && pytest -q && ruff check .`
