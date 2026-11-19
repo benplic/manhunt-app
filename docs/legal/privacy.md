@@ -27,7 +27,7 @@ Gameplay and sensitive location trails on our servers are purged on a rolling ba
 
 ## Account deletion
 
-You can delete your account from the in-app Account screen (when available). Deletion removes your user record and tokens from our servers, anonymizes your display name on historical game data where needed, and signs you out on the device. Contact us if you cannot use the in-app flow.
+You can delete your account from the in-app Account screen (when available). Deletion removes your user record, refresh tokens, device token, owned arenas and rule presets, and game memberships from our servers, and signs you out on the device. Games you hosted are removed with their event logs. For games you only joined, past event log text may still mention the display name you used until those events age out under the retention window above. Contact us if you cannot use the in-app flow.
 
 ## No ads or tracking
 

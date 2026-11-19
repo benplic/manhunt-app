@@ -2011,6 +2011,10 @@ final class AppStore {
         guard !trimmed.isEmpty else { return }
         guard session?.displayName != trimmed else { return }
         guard let fake else { return }
+        guard DisplayNameRules.isAllowed(trimmed) else {
+            note = Self.nameBlockedNote
+            return
+        }
         fake.signInSync(trimmed)
         session = Session(displayName: trimmed, token: session?.token ?? "fake")
         displayName = trimmed
@@ -2021,9 +2025,13 @@ final class AppStore {
         let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return true }
         guard session?.displayName != trimmed else { return true }
+        guard DisplayNameRules.isAllowed(trimmed) else {
+            note = Self.nameBlockedNote
+            return false
+        }
         if fake != nil {
             syncDisplayNameBeforeMatchIfNeededSync()
-            return true
+            return session?.displayName == trimmed
         }
         guard let age = resolvedAgeForAuth() else {
             note = "Enter your age on the sign-in screen before creating or joining a game."
@@ -2050,6 +2058,11 @@ final class AppStore {
             session = Session(displayName: auth.user.displayName, token: auth.accessToken)
             displayName = auth.user.displayName
             return true
+        } catch let error as ServiceError where error.code == .tooYoung || error.code == .nameBlocked {
+            displayName = trimmed
+            lastError = .service(error.code)
+            note = error.message.isEmpty ? (error.code == .tooYoung ? Self.tooYoungNote : Self.nameBlockedNote) : error.message
+            return false
         } catch {
             // Keep the typed name locally; create/join may still fail with the old token.
             displayName = trimmed

@@ -878,6 +878,36 @@ final class AppStoreTests: XCTestCase {
             "Enter your age on the sign-in screen before creating or joining a game."
         )
     }
+
+    @MainActor
+    func testRenameWithBlockedNameRefusesWithoutSigningIn() async throws {
+        let suite = "manhunt.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("22", forKey: AppStore.ageYearsKey)
+        let capture = CapturingLiveGameService()
+        let store = AppStore(service: capture, defaults: defaults)
+        store.arenas = [Arena.sampleSquare()]
+        store.session = Session(displayName: "Casey", token: "old")
+        store.displayName = "hello retard"
+        store.ageYears = "22"
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertNil(capture.lastSignInAge)
+        XCTAssertEqual(store.note, AppStore.nameBlockedNote)
+        XCTAssertEqual(store.session?.displayName, "Casey")
+    }
+
+    @MainActor
+    func testFakeRenameWithBlockedNameRefuses() {
+        let store = AppStore(service: FakeGameService())
+        store.arenas = [Arena.sampleSquare()]
+        store.signInPreview()
+        store.displayName = "hello retard"
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        XCTAssertEqual(store.note, AppStore.nameBlockedNote)
+        XCTAssertEqual(store.session?.displayName, "Casey Lee")
+    }
 }
 
 /// Non-fake `GameService` that records dev sign-in age for live-path store tests.

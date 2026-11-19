@@ -125,7 +125,9 @@ def bind_auth_routes(get_session, get_settings, current_user):
         sub = await verify_apple_token(body.identity_token, settings.manhunt_apple_audience)
         user = await session.scalar(select(User).where(User.apple_sub == sub))
         if user is None:
-            name = (body.display_name or "Player").strip() or "Player"
+            # TODO: require age on Apple auth when Sign in with Apple ships (Apple plan).
+            name = normalize_display_name((body.display_name or "Player").strip() or "Player")
+            assert_display_name_allowed(name)
             user = User(apple_sub=sub, display_name=name)
             session.add(user)
             await session.commit()
