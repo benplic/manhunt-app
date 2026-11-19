@@ -23,6 +23,15 @@ def test_dev_auth_accepts_13(client: TestClient) -> None:
     assert response.status_code == 200
 
 
+def test_dev_auth_rejects_blocked_display_name(client: TestClient) -> None:
+    response = client.post(
+        "/v1/auth/dev",
+        json={"display_name": "hello retard", "installation_id": str(uuid4()), "age": 18},
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "NAME_BLOCKED"
+
+
 def _auth(client: TestClient, name: str = "Casey") -> dict:
     response = client.post(
         "/v1/auth/dev",

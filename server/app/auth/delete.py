@@ -19,18 +19,13 @@ from app.db.models import (
 )
 from app.realtime.manager import SessionManager
 
-_DELETED_DISPLAY = "Deleted player"
-
 
 def _anonymize_live_player(manager: SessionManager, game_id: UUID, user_id: UUID) -> None:
     live = manager.get(game_id)
     if live is None:
         return
-    player = live.state.players.get(user_id)
-    if player is None:
+    if live.state.players.pop(user_id, None) is None:
         return
-    player.display_name = _DELETED_DISPLAY
-    live.state.players.pop(user_id, None)
 
 
 async def delete_account(

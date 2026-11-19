@@ -409,7 +409,9 @@ final class AppStore {
 
     var liveReveals: [MapReveal] {
         guard let reveals = match?.snapshot.reveals else { return [] }
-        return reveals.map { pin in
+        return reveals
+            .filter { !blockList.isBlocked($0.playerId.uuidString) }
+            .map { pin in
             let name: String = {
                 if let displayName = pin.displayName, !displayName.isEmpty {
                     return displayName
@@ -624,14 +626,12 @@ final class AppStore {
         }
     }
 
-    func deleteAccount() {
-        Task {
-            do {
-                try await service.deleteAccount()
-                signOut()
-            } catch {
-                note = "Could not delete your account. Try again or email support."
-            }
+    func deleteAccount() async {
+        do {
+            try await service.deleteAccount()
+            signOut()
+        } catch {
+            note = "Could not delete your account. Try again or email support."
         }
     }
 

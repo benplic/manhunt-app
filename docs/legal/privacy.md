@@ -9,7 +9,7 @@ Manhunt is a location-based outdoor game operated for beta testing. This policy 
 ## Data we collect
 
 - **Display name** — shown to other players in your games.
-- **Age** — collected at sign-in to enforce a minimum age of 13. We store it on your account on our server.
+- **Age** — collected at sign-in to enforce a minimum age of 13. We check it when you sign in and store it **only on your device** (`manhunt.ageYears`); we do not persist age on your server user record.
 - **Precise location** — while a hunt is open, to enforce the play area, safe zones, tags, and safety features. Sent to our server and shared with other players in that game under the game rules.
 - **Installation identifier** — a stable id for this app install, used for authentication and device management.
 - **Home auth secret** — stored **only on your device** (Keychain) to restore your session; we do not log this value.

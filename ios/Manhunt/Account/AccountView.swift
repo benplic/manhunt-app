@@ -47,8 +47,12 @@ struct AccountView: View {
             }
             .alert("Delete your account?", isPresented: $confirmDelete) {
                 Button("Delete account", role: .destructive) {
-                    dismiss()
-                    store.deleteAccount()
+                    Task {
+                        await store.deleteAccount()
+                        if store.session == nil {
+                            dismiss()
+                        }
+                    }
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {

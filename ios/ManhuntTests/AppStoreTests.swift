@@ -125,6 +125,55 @@ final class AppStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testBlockedPlayerRevealHiddenFromMap() {
+        let suite = "manhunt.tests.blocklist.reveal.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = AppStore(service: FakeGameService(), defaults: defaults)
+        store.signInPreview()
+        let blockedPlayerID = UUID()
+        let revealID = UUID()
+        store.match = MatchHandle(
+            snapshot: PlayerViewDTO(
+                gameId: UUID(),
+                joinCode: "TEST01",
+                phase: .active,
+                phaseRemainingS: nil,
+                gameElapsedS: 0,
+                timeLimitRemainingS: 600,
+                timers: nil,
+                you: YouDTO(
+                    playerId: UUID(),
+                    role: .seeker,
+                    status: .active,
+                    isHost: true,
+                    bounds: BoundsDTO(phase: "inside", remainingS: nil),
+                    safeZone: nil,
+                    points: 0
+                ),
+                players: [],
+                reveals: [
+                    RevealDTO(
+                        revealId: revealID,
+                        playerId: blockedPlayerID,
+                        lat: 40.66,
+                        lon: -73.96,
+                        radiusM: 30,
+                        expiresInS: 8,
+                        displayName: "Blocked"
+                    )
+                ],
+                banners: [],
+                result: nil
+            ),
+            qrToken: nil
+        )
+        XCTAssertEqual(store.liveReveals.count, 1)
+        store.blockPlayer(blockedPlayerID.uuidString)
+        XCTAssertTrue(store.liveReveals.isEmpty)
+    }
+
+    @MainActor
     func testActivePhaseDropsTheStartLine() {
         let store = AppStore.makePreview()
         store.signInPreview()
@@ -761,11 +810,7 @@ final class AppStoreTests: XCTestCase {
         let store = AppStore(service: fake)
         store.signInPreview()
         XCTAssertNotNil(store.session?.token)
-        store.deleteAccount()
-        let deadline = Date().addingTimeInterval(1)
-        while fake.deleteAccountCalls == 0, Date() < deadline {
-            try await Task.sleep(nanoseconds: 20_000_000)
-        }
+        await store.deleteAccount()
         XCTAssertEqual(fake.deleteAccountCalls, 1)
         XCTAssertEqual(store.screen, .signedOut)
         XCTAssertNil(store.session)
