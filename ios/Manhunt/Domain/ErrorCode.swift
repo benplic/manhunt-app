@@ -31,5 +31,7 @@ enum ErrorCode: String, Codable, Equatable {
     case needsTarget = "NEEDS_TARGET"
     case targetOutside = "TARGET_OUTSIDE"
     case rateLimited = "RATE_LIMITED"
+    case tooYoung = "TOO_YOUNG"
+    case nameBlocked = "NAME_BLOCKED"
     case `internal` = "INTERNAL"
 }
