@@ -13,6 +13,7 @@ vi.mock('leaflet', () => {
     addTo: vi.fn().mockReturnThis(),
     setLatLng: vi.fn().mockReturnThis(),
     bindPopup: vi.fn().mockReturnThis(),
+    setPopupContent: vi.fn().mockReturnThis(),
     openPopup: vi.fn().mockReturnThis(),
     remove: vi.fn(),
   }
@@ -22,17 +23,13 @@ vi.mock('leaflet', () => {
       tileLayer: vi.fn(() => ({ addTo: vi.fn() })),
       marker: vi.fn(() => marker),
       latLngBounds: vi.fn(() => ({ pad: vi.fn().mockReturnValue({}) })),
+      Icon: { Default: { mergeOptions: vi.fn(), prototype: { options: {} } } },
     },
   }
 })
 
-vi.mock('../auth/storage', () => ({
-  loadSession: () => ({
-    accessToken: 'tok',
-    refreshToken: 'ref',
-    displayName: 'Casey',
-    userId: 'u1',
-  }),
+vi.mock('../map/leafletIcons', () => ({
+  ensureLeafletDefaultIcons: vi.fn(),
 }))
 
 const view: PlayerView = {
@@ -59,40 +56,24 @@ const view: PlayerView = {
 }
 
 describe('LiveMap', () => {
-  it('connects the game socket and watches visible GPS', async () => {
-    const connect = vi.fn()
-    const disconnect = vi.fn()
+  it('watches visible GPS and sends locations on the shared socket', async () => {
     const sendLocation = vi.fn()
     const watchLocation = vi.fn().mockReturnValue(() => undefined)
-    const createSocket = () =>
-      ({
-        connect,
-        disconnect,
-        sendLocation,
-        onView: null,
-        onQr: null,
-        onError: null,
-        lastSeq: undefined,
-      }) as never
+    const socket = { sendLocation } as never
 
     render(
       <LiveMap
         view={view}
-        onView={() => undefined}
+        socket={socket}
+        qrToken={null}
+        note={null}
         onLeave={() => undefined}
-        createSocket={createSocket}
         watchLocation={watchLocation}
       />,
     )
 
     expect(screen.getByText(/live map/i)).toBeInTheDocument()
     await waitFor(() => {
-      expect(connect).toHaveBeenCalledWith(
-        expect.objectContaining({
-          token: 'tok',
-          url: expect.stringContaining('/v1/games/game-1/ws'),
-        }),
-      )
       expect(watchLocation).toHaveBeenCalled()
     })
   })

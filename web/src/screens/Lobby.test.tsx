@@ -17,24 +17,6 @@ vi.mock('../api/session', () => ({
   SessionExpiredError: class SessionExpiredError extends Error {},
 }))
 
-vi.mock('../auth/storage', () => ({
-  loadSession: () => ({
-    accessToken: 'tok',
-    refreshToken: 'ref',
-    displayName: 'Casey',
-    userId: 'u1',
-  }),
-}))
-
-function fakeSocket() {
-  return {
-    connect: vi.fn(),
-    disconnect: vi.fn(),
-    onView: null,
-    onError: null,
-  } as never
-}
-
 const lobbyView = (overrides: Partial<PlayerView> = {}): PlayerView => ({
   game_id: 'game-1',
   join_code: 'ABCDEF',
@@ -72,7 +54,6 @@ describe('Lobby screen', () => {
         onView={() => undefined}
         onLeave={() => undefined}
         onSignedOut={() => undefined}
-        createSocket={fakeSocket}
       />,
     )
     expect(screen.getByText(/ABCDEF/)).toBeInTheDocument()
@@ -117,7 +98,6 @@ describe('Lobby screen', () => {
         onView={onView}
         onLeave={() => undefined}
         onSignedOut={() => undefined}
-        createSocket={fakeSocket}
       />,
     )
     await user.click(screen.getByRole('button', { name: /^start$/i }))
@@ -144,7 +124,6 @@ describe('Lobby screen', () => {
         onView={() => undefined}
         onLeave={() => undefined}
         onSignedOut={() => undefined}
-        createSocket={fakeSocket}
       />,
     )
     expect(screen.queryByRole('button', { name: /^start$/i })).not.toBeInTheDocument()

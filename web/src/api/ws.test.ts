@@ -24,9 +24,9 @@ class FakeWebSocket {
     this.sent.push(data)
   }
 
-  close() {
+  close(code = 1000) {
     this.readyState = FakeWebSocket.CLOSED
-    this.onclose?.(new CloseEvent('close'))
+    this.onclose?.(new CloseEvent('close', { code }))
   }
 
   emit(payload: unknown) {
@@ -54,16 +54,19 @@ describe('GameSocket', () => {
     vi.unstubAllGlobals()
   })
 
-  async function openSocket(socket: GameSocket, opts: { url?: string; token?: string; lastSeq?: number } = {}) {
+  async function openSocket(
+    socket: GameSocket,
+    opts: { url?: string; token?: string; lastSeq?: number; getToken?: () => string } = {},
+  ) {
     socket.connect({
       url: opts.url ?? 'wss://example.test/ws',
       token: opts.token ?? 'tok',
+      getToken: opts.getToken,
       lastSeq: opts.lastSeq,
     })
-    // FakeWebSocket opens on a microtask; do not runAllTimers (ping interval).
     await Promise.resolve()
     await Promise.resolve()
-    return FakeWebSocket.instances[0]
+    return FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
   }
 
   it('sends hello with token on open', async () => {
@@ -111,7 +114,7 @@ describe('GameSocket', () => {
     socket.disconnect()
   })
 
-  it('throttles location to at most once per second', async () => {
+  it('coalesces location bursts to the latest fix within one second', async () => {
     const socket = new GameSocket()
     const ws = await openSocket(socket)
     ws.sent = []
@@ -121,12 +124,10 @@ describe('GameSocket', () => {
     expect(ws.sent).toHaveLength(1)
 
     await vi.advanceTimersByTimeAsync(1000)
-    socket.sendLocation({ lat: 1.2, lon: 2.2, accuracyM: 5 })
     expect(ws.sent).toHaveLength(2)
-    expect(JSON.parse(ws.sent[0]).type).toBe('location')
-    expect(JSON.parse(ws.sent[0]).data).toEqual({
-      lat: 1,
-      lon: 2,
+    expect(JSON.parse(ws.sent[1]).data).toEqual({
+      lat: 1.1,
+      lon: 2.1,
       accuracy_m: 5,
       flag: 'normal',
     })
@@ -140,6 +141,39 @@ describe('GameSocket', () => {
 
     await vi.advanceTimersByTimeAsync(15000)
     expect(JSON.parse(ws.sent[0])).toEqual({ type: 'ping', data: {} })
+    socket.disconnect()
+  })
+
+  it('reconnects after an unexpected close and keeps lastSeq', async () => {
+    const socket = new GameSocket()
+    const ws = await openSocket(socket, { lastSeq: 9 })
+    ws.emit({ type: 'event', data: { seq: 12, type: 'tag', text: 'tagged' } })
+    expect(socket.lastSeq).toBe(12)
+
+    ws.close(1006)
+    await vi.advanceTimersByTimeAsync(1500)
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(FakeWebSocket.instances.length).toBeGreaterThan(1)
+    const reopened = FakeWebSocket.instances[FakeWebSocket.instances.length - 1]
+    expect(JSON.parse(reopened.sent[0])).toEqual({
+      type: 'hello',
+      data: { token: 'tok', last_seq: 12 },
+    })
+    socket.disconnect()
+  })
+
+  it('does not reconnect after a 4403 membership close', async () => {
+    const socket = new GameSocket()
+    const onRemoved = vi.fn()
+    socket.onRemoved = onRemoved
+    const ws = await openSocket(socket)
+    const before = FakeWebSocket.instances.length
+    ws.close(4403)
+    await vi.advanceTimersByTimeAsync(20000)
+    expect(onRemoved).toHaveBeenCalled()
+    expect(FakeWebSocket.instances.length).toBe(before)
     socket.disconnect()
   })
 })

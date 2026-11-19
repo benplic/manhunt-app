@@ -1,11 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { ApiError } from '../api/client'
-import { apiBaseUrl } from '../api/config'
 import { randomizeRoles, startGame } from '../api/games'
 import { SessionExpiredError, withAuthRetry } from '../api/session'
 import type { PlayerView } from '../api/types'
-import { GameSocket, wsUrlForGame } from '../api/ws'
-import { loadSession } from '../auth/storage'
 import './Lobby.css'
 
 type Props = {
@@ -13,35 +10,14 @@ type Props = {
   onView: (view: PlayerView) => void
   onLeave: () => void
   onSignedOut: () => void
-  createSocket?: () => GameSocket
+  socketNote?: string | null
 }
 
-export function Lobby({
-  view,
-  onView,
-  onLeave,
-  onSignedOut,
-  createSocket = () => new GameSocket(),
-}: Props) {
+export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const isHost = view.you.is_host
-
-  useEffect(() => {
-    const session = loadSession()
-    if (!session) {
-      return
-    }
-    const socket = createSocket()
-    socket.onView = (next) => onView(next)
-    socket.onError = (err) => setError(err.message)
-    socket.connect({
-      url: wsUrlForGame(apiBaseUrl(), view.game_id),
-      token: session.accessToken,
-    })
-    return () => socket.disconnect()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view.game_id])
+  const alert = error ?? socketNote ?? null
 
   async function onStart() {
     setError(null)
@@ -102,9 +78,9 @@ export function Lobby({
         <p className="hint">Need at least one guest before start.</p>
       ) : null}
 
-      {error ? (
+      {alert ? (
         <p className="error" role="alert">
-          {error}
+          {alert}
         </p>
       ) : null}
 
