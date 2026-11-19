@@ -133,6 +133,7 @@ final class AppStore {
 
     static let serverURLKey = "manhunt.serverURL"
     static let devAuthSecretKey = "manhunt.devAuthSecret"
+    static let ageYearsKey = "manhunt.ageYears"
     static let tooYoungNote = "Manhunt is not available for people under 13."
     static let nameBlockedNote = "That display name is not allowed."
 
@@ -153,6 +154,9 @@ final class AppStore {
             self.serverURL = serverURL
         }
         self.devAuthSecret = Self.loadHomeSecret(keychain: keychain, defaults: defaults)
+        if let storedAge = defaults.string(forKey: Self.ageYearsKey), !storedAge.isEmpty {
+            ageYears = storedAge
+        }
         if let fake {
             arenas = fake.storedArenas
         }
@@ -281,6 +285,22 @@ final class AppStore {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let value = Int(trimmed), (0...120).contains(value) else { return nil }
         return value
+    }
+
+    private func resolvedAgeForAuth() -> Int? {
+        if let fromField = Self.parseAgeYears(ageYears) {
+            return fromField
+        }
+        if let stored = defaults.string(forKey: Self.ageYearsKey) {
+            return Self.parseAgeYears(stored)
+        }
+        return nil
+    }
+
+    private func persistStoredAge(_ age: Int) {
+        let text = String(age)
+        ageYears = text
+        defaults.set(text, forKey: Self.ageYearsKey)
     }
 
     var isHost: Bool { match?.snapshot.you.isHost ?? false }
@@ -437,6 +457,7 @@ final class AppStore {
             note = Self.nameBlockedNote
             return
         }
+        persistStoredAge(age)
         if let fake {
             fake.signInSync(displayName)
             session = Session(displayName: displayName, token: "fake")
@@ -802,7 +823,7 @@ final class AppStore {
         guard let fake else {
             let overrides = PresetOverrides.from(modules: modules, arena: selected)
             Task {
-                await syncDisplayNameBeforeMatchIfNeeded()
+                guard await syncDisplayNameBeforeMatchIfNeeded() else { return }
                 await createMatchRemote(arenaID: arenaID, presetID: presetID, overrides: overrides)
             }
             return
@@ -845,7 +866,7 @@ final class AppStore {
         guard let fake else {
             joinDraft = normalized
             Task {
-                await syncDisplayNameBeforeMatchIfNeeded()
+                guard await syncDisplayNameBeforeMatchIfNeeded() else { return }
                 await joinRemote(normalized)
             }
             return nil
@@ -1916,13 +1937,22 @@ final class AppStore {
         displayName = trimmed
     }
 
-    private func syncDisplayNameBeforeMatchIfNeeded() async {
+    @discardableResult
+    private func syncDisplayNameBeforeMatchIfNeeded() async -> Bool {
         let trimmed = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        guard session?.displayName != trimmed else { return }
+        guard !trimmed.isEmpty else { return true }
+        guard session?.displayName != trimmed else { return true }
         if fake != nil {
             syncDisplayNameBeforeMatchIfNeededSync()
-            return
+            return true
+        }
+        guard let age = resolvedAgeForAuth() else {
+            note = "Enter your age on the sign-in screen before creating or joining a game."
+            return false
+        }
+        if age < 13 {
+            note = Self.tooYoungNote
+            return false
         }
         live?.updateBaseURL(URL(string: serverURL) ?? URL(string: "http://localhost:8000")!)
         live?.devAuthSecret = devAuthSecret
@@ -1930,20 +1960,23 @@ final class AppStore {
             let auth = try await service.signIn(
                 displayName: trimmed,
                 installationId: InstallationID.current(keychain: keychain),
-                age: Self.parseAgeYears(ageYears) ?? 18
+                age: age
             )
             try? keychain.saveToken(auth.accessToken)
             if let refresh = auth.refreshToken {
                 try? keychain.saveRefreshToken(refresh)
                 live?.refreshToken = refresh
             }
+            persistStoredAge(age)
             session = Session(displayName: auth.user.displayName, token: auth.accessToken)
             displayName = auth.user.displayName
+            return true
         } catch {
             // Keep the typed name locally; create/join may still fail with the old token.
             displayName = trimmed
             lastError = .unreachable
             note = "Could not update your name. Is the home server running?"
+            return false
         }
     }
 
@@ -1972,11 +2005,15 @@ final class AppStore {
     private func signInRemote() async {
         live?.updateBaseURL(URL(string: serverURL) ?? URL(string: "http://localhost:8000")!)
         live?.devAuthSecret = devAuthSecret
+        guard let age = resolvedAgeForAuth() else {
+            note = "Enter your age as a number."
+            return
+        }
         do {
             let auth = try await service.signIn(
                 displayName: displayName,
                 installationId: InstallationID.current(keychain: keychain),
-                age: Self.parseAgeYears(ageYears) ?? 18
+                age: age
             )
             await finishRemoteAuth(auth)
         } catch let error as ServiceError where error.code == .tooYoung || error.code == .nameBlocked {
@@ -2007,6 +2044,9 @@ final class AppStore {
         if let refresh = auth.refreshToken {
             try? keychain.saveRefreshToken(refresh)
             live?.refreshToken = refresh
+        }
+        if let age = resolvedAgeForAuth() {
+            persistStoredAge(age)
         }
         session = Session(displayName: auth.user.displayName, token: auth.accessToken)
         displayName = auth.user.displayName

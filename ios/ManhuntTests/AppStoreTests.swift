@@ -721,4 +721,149 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(store.note, "Manhunt is not available for people under 13.")
         XCTAssertEqual(store.screen, .signedOut)
     }
+
+    @MainActor
+    func testSignInPersistsAgeYearsToDefaults() {
+        let suite = "manhunt.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = AppStore(service: FakeGameService(), defaults: defaults)
+        store.ageYears = "24"
+        store.displayName = "Casey"
+        store.signIn()
+        XCTAssertEqual(defaults.string(forKey: AppStore.ageYearsKey), "24")
+    }
+
+    @MainActor
+    func testLaunchRestoresPersistedAgeYears() {
+        let suite = "manhunt.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("27", forKey: AppStore.ageYearsKey)
+        let store = AppStore(service: FakeGameService(), defaults: defaults)
+        XCTAssertEqual(store.ageYears, "27")
+    }
+
+    @MainActor
+    func testRenameReauthUsesStoredAgeWhenFieldEmpty() async throws {
+        let suite = "manhunt.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("29", forKey: AppStore.ageYearsKey)
+        let capture = CapturingLiveGameService()
+        let store = AppStore(service: capture, defaults: defaults)
+        store.arenas = [Arena.sampleSquare()]
+        store.session = Session(displayName: "Casey", token: "old")
+        store.displayName = "Morgan Reed"
+        store.ageYears = ""
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        let deadline = Date().addingTimeInterval(2)
+        while capture.lastSignInAge == nil, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(capture.lastSignInAge, 29)
+        XCTAssertNotEqual(capture.lastSignInAge, 18)
+    }
+
+    @MainActor
+    func testMissingAgeRefusesRenameReauthWithoutSendingEighteen() async throws {
+        let suite = "manhunt.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let capture = CapturingLiveGameService()
+        let store = AppStore(service: capture, defaults: defaults)
+        store.arenas = [Arena.sampleSquare()]
+        store.session = Session(displayName: "Casey", token: "old")
+        store.displayName = "Morgan Reed"
+        store.ageYears = ""
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertNil(capture.lastSignInAge)
+        XCTAssertEqual(
+            store.note,
+            "Enter your age on the sign-in screen before creating or joining a game."
+        )
+    }
+}
+
+/// Non-fake `GameService` that records dev sign-in age for live-path store tests.
+private final class CapturingLiveGameService: GameService {
+    let joinCalls = 0
+    private(set) var lastSignInAge: Int?
+
+    private var stub: ServiceError {
+        ServiceError(code: .internal, message: "stub")
+    }
+
+    func signIn(displayName: String, installationId: String, age: Int) async throws -> AuthOut {
+        _ = installationId
+        lastSignInAge = age
+        let user = UserDTO(id: UUID(), displayName: displayName)
+        return AuthOut(
+            accessToken: "test",
+            expiresAt: "2099-01-01T00:00:00Z",
+            user: user,
+            refreshToken: "refresh"
+        )
+    }
+
+    func signInWithApple(identityToken: String, displayName: String?) async throws -> AuthOut {
+        throw stub
+    }
+
+    func me() async throws -> UserDTO { throw stub }
+    func registerDeviceToken(_ token: String) async throws { throw stub }
+    func arenas() async throws -> [Arena] { throw stub }
+    func createArena(_ arena: Arena) async throws -> Arena { throw stub }
+    func updateArena(_ arena: Arena) async throws -> Arena { throw stub }
+    func deleteArena(id: UUID) async throws { throw stub }
+    func createGame(
+        arenaID: UUID,
+        presetID: String,
+        overrides: [String: [String: RuleValue]]
+    ) async throws -> PlayerViewDTO {
+        throw stub
+    }
+    func timeline(gameID: UUID) async throws -> [TimelineEventDTO] { throw stub }
+    func join(code: String) async throws -> PlayerViewDTO { throw stub }
+    func randomizeRoles(gameID: UUID, seekerCount: Int) async throws -> PlayerViewDTO { throw stub }
+    func setRole(gameID: UUID, playerID: UUID, role: PlayerRole) async throws -> PlayerViewDTO { throw stub }
+    func start(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func pause(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func resume(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func end(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func rematch(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func leave(gameID: UUID) async throws { throw stub }
+    func removePlayer(gameID: UUID, playerID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func undoTag(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func ackSafety(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func taunt(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func view(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
+    func claimQR(gameID: UUID, token: String) async throws { throw stub }
+    func purchase(
+        gameID: UUID,
+        powerID: String,
+        extra: [String: Double],
+        targetPlayerId: String?,
+        zoneId: String?
+    ) async throws -> PlayerViewDTO {
+        throw stub
+    }
+    func demo(gameID: UUID, action: String, params: [String: RuleValue]) async throws -> PlayerViewDTO {
+        throw stub
+    }
+    func fetchModules() async throws -> [VisualModule] { throw stub }
+    func savePreset(name: String, modules: [String: [String: RuleValue]]) async throws -> SavedPresetDTO {
+        throw stub
+    }
+    func updatePreset(
+        id: String,
+        name: String,
+        modules: [String: [String: RuleValue]]
+    ) async throws -> SavedPresetDTO {
+        throw stub
+    }
+    func deletePreset(id: String) async throws { throw stub }
+    func savedPresets() async throws -> [SavedPresetDTO] { throw stub }
+    func refresh(refreshToken: String) async throws -> AuthOut { throw stub }
 }

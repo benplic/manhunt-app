@@ -10,6 +10,7 @@ final class FakeGameService: GameService {
     private(set) var refreshCalls = 0
     private(set) var signInCalls = 0
     private(set) var lastSignInDisplayName: String?
+    private(set) var lastSignInAge: Int?
     private var signedIn: UserDTO?
 
     var currentUser: UserDTO? { signedIn }
@@ -40,6 +41,7 @@ final class FakeGameService: GameService {
 
     func signIn(displayName: String, installationId: String, age: Int) async throws -> AuthOut {
         _ = installationId
+        lastSignInAge = age
         if age < 13 {
             throw ServiceError(
                 code: .tooYoung,
