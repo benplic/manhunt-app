@@ -38,8 +38,17 @@ final class FakeGameService: GameService {
         [Arena.sampleSquare(), Arena.riversideSample(), Arena.schoolyardSample()]
     }
 
-    func signIn(displayName: String, installationId: String) async throws -> AuthOut {
+    func signIn(displayName: String, installationId: String, age: Int) async throws -> AuthOut {
         _ = installationId
+        if age < 13 {
+            throw ServiceError(
+                code: .tooYoung,
+                message: "Manhunt is not available for people under 13."
+            )
+        }
+        if !DisplayNameRules.isAllowed(displayName) {
+            throw ServiceError(code: .nameBlocked, message: "That display name is not allowed.")
+        }
         return signInSync(displayName)
     }
 

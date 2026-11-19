@@ -161,9 +161,11 @@ struct QRBody: Encodable {
 struct DevAuthBody: Encodable {
     var displayName: String
     var installationId: String
+    var age: Int
     enum CodingKeys: String, CodingKey {
         case displayName = "display_name"
         case installationId = "installation_id"
+        case age
     }
 }
 

@@ -7,6 +7,7 @@ struct KeychainStore {
     var accessAccount: String = "session"
     var refreshAccount: String = "refresh"
     var installationAccount: String = "installation"
+    var homeSecretAccount: String = "home-secret"
 
     func saveToken(_ token: String) throws {
         try save(token, account: accessAccount)
@@ -30,6 +31,14 @@ struct KeychainStore {
 
     func readInstallationID() -> String? {
         read(account: installationAccount)
+    }
+
+    func saveHomeSecret(_ secret: String) throws {
+        try save(secret, account: homeSecretAccount)
+    }
+
+    func readHomeSecret() -> String? {
+        read(account: homeSecretAccount)
     }
 
     func deleteToken() {

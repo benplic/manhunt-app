@@ -59,6 +59,8 @@ final class AppStore {
     var serverURL: String
     /// Shared house key for the home server's dev sign-in. Not a per-player password.
     var devAuthSecret: String
+    /// Whole years, entered at sign-in and sent on dev auth.
+    var ageYears = ""
     var joinDraft = ""
     var joinMessage: String?
     var note: String?
@@ -131,6 +133,8 @@ final class AppStore {
 
     static let serverURLKey = "manhunt.serverURL"
     static let devAuthSecretKey = "manhunt.devAuthSecret"
+    static let tooYoungNote = "Manhunt is not available for people under 13."
+    static let nameBlockedNote = "That display name is not allowed."
 
     init(
         service: GameService,
@@ -148,7 +152,7 @@ final class AppStore {
         } else {
             self.serverURL = serverURL
         }
-        self.devAuthSecret = defaults.string(forKey: Self.devAuthSecretKey) ?? ""
+        self.devAuthSecret = Self.loadHomeSecret(keychain: keychain, defaults: defaults)
         if let fake {
             arenas = fake.storedArenas
         }
@@ -252,6 +256,31 @@ final class AppStore {
     nonisolated static func defaultServerURL() -> String {
         Bundle.main.object(forInfoDictionaryKey: "ManhuntAPIBaseURL") as? String
             ?? "http://localhost:8000"
+    }
+
+    static func privacyPolicyURL() -> URL? {
+        guard let raw = Bundle.main.object(forInfoDictionaryKey: "ManhuntPrivacyPolicyURL") as? String,
+              let url = URL(string: raw)
+        else { return nil }
+        return url
+    }
+
+    private static func loadHomeSecret(keychain: KeychainStore, defaults: UserDefaults) -> String {
+        if let existing = keychain.readHomeSecret(), !existing.isEmpty {
+            return existing
+        }
+        if let legacy = defaults.string(forKey: devAuthSecretKey), !legacy.isEmpty {
+            try? keychain.saveHomeSecret(legacy)
+            defaults.removeObject(forKey: devAuthSecretKey)
+            return legacy
+        }
+        return ""
+    }
+
+    private static func parseAgeYears(_ text: String) -> Int? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let value = Int(trimmed), (0...120).contains(value) else { return nil }
+        return value
     }
 
     var isHost: Bool { match?.snapshot.you.isHost ?? false }
@@ -395,7 +424,19 @@ final class AppStore {
         lastError = nil
         note = nil
         defaults.set(serverURL, forKey: Self.serverURLKey)
-        defaults.set(devAuthSecret, forKey: Self.devAuthSecretKey)
+        try? keychain.saveHomeSecret(devAuthSecret)
+        guard let age = Self.parseAgeYears(ageYears) else {
+            note = "Enter your age as a number."
+            return
+        }
+        if age < 13 {
+            note = Self.tooYoungNote
+            return
+        }
+        if !DisplayNameRules.isAllowed(displayName) {
+            note = Self.nameBlockedNote
+            return
+        }
         if let fake {
             fake.signInSync(displayName)
             session = Session(displayName: displayName, token: "fake")
@@ -1888,7 +1929,8 @@ final class AppStore {
         do {
             let auth = try await service.signIn(
                 displayName: trimmed,
-                installationId: InstallationID.current(keychain: keychain)
+                installationId: InstallationID.current(keychain: keychain),
+                age: Self.parseAgeYears(ageYears) ?? 18
             )
             try? keychain.saveToken(auth.accessToken)
             if let refresh = auth.refreshToken {
@@ -1933,9 +1975,13 @@ final class AppStore {
         do {
             let auth = try await service.signIn(
                 displayName: displayName,
-                installationId: InstallationID.current(keychain: keychain)
+                installationId: InstallationID.current(keychain: keychain),
+                age: Self.parseAgeYears(ageYears) ?? 18
             )
             await finishRemoteAuth(auth)
+        } catch let error as ServiceError where error.code == .tooYoung || error.code == .nameBlocked {
+            lastError = .service(error.code)
+            note = error.message
         } catch {
             lastError = .unreachable
             note = "Is the home server running? Could not reach \(serverURL)."

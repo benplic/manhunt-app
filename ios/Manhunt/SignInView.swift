@@ -1,4 +1,3 @@
-import AuthenticationServices
 import SwiftUI
 
 struct SignInView: View {
@@ -33,6 +32,16 @@ struct SignInView: View {
                         .background(HuntColor.ink, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .foregroundStyle(HuntColor.paper)
                         .accessibilityIdentifier("display-name")
+                    Text("Age")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(HuntColor.muted)
+                    TextField("18", text: $store.ageYears)
+                        .keyboardType(.numberPad)
+                        .padding(12)
+                        .background(HuntColor.ink, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .foregroundStyle(HuntColor.paper)
+                        .accessibilityIdentifier("sign-in-age")
+                    #if DEBUG
                     Text("Server URL")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(HuntColor.muted)
@@ -44,6 +53,7 @@ struct SignInView: View {
                         .background(HuntColor.ink, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .foregroundStyle(HuntColor.paper)
                         .accessibilityIdentifier("server-url")
+                    #endif
                     Text("Home key")
                         .font(.caption.weight(.bold))
                         .foregroundStyle(HuntColor.muted)
@@ -54,6 +64,13 @@ struct SignInView: View {
                         .background(HuntColor.ink, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .foregroundStyle(HuntColor.paper)
                         .accessibilityIdentifier("dev-auth-secret")
+                }
+
+                if let url = AppStore.privacyPolicyURL() {
+                    Link("Privacy policy", destination: url)
+                        .font(.footnote)
+                        .foregroundStyle(HuntColor.signal)
+                        .accessibilityIdentifier("privacy-policy-link")
                 }
 
                 if let note = store.note {
@@ -72,20 +89,7 @@ struct SignInView: View {
                 }
                 .buttonStyle(.huntPress(.medium))
                 .accessibilityIdentifier("sign-in")
-                SignInWithAppleButton(.signIn) { request in
-                    request.requestedScopes = [.fullName]
-                } onCompletion: { result in
-                    if case let .success(auth) = result,
-                       let credential = auth.credential as? ASAuthorizationAppleIDCredential,
-                       let token = AppleSignIn.identityToken(from: credential)
-                    {
-                        store.signInWithApple(identityToken: token)
-                    }
-                }
-                .signInWithAppleButtonStyle(.white)
-                .frame(height: 54)
-                .accessibilityIdentifier("sign-in-apple")
-                Text("Precise location stays on during a game. Manhunt does not ask for Always. Display name is for home games; Sign in with Apple is for cloud games.")
+                Text("Precise location stays on during a game. Manhunt does not ask for Always.")
                     .font(.footnote)
                     .foregroundStyle(HuntColor.muted)
                     .fixedSize(horizontal: false, vertical: true)

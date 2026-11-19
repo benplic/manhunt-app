@@ -195,6 +195,7 @@ final class AppStoreTests: XCTestCase {
             defaults: defaults
         )
         store.displayName = "Casey"
+        store.ageYears = "18"
         store.signIn()
         XCTAssertEqual(store.note, WakeCopy.message)
     }
@@ -505,7 +506,7 @@ final class AppStoreTests: XCTestCase {
     @MainActor
     func testRefreshRotatesTheFakeToken() async throws {
         let fake = FakeGameService()
-        _ = try await fake.signIn(displayName: "Casey", installationId: "test-install")
+        _ = try await fake.signIn(displayName: "Casey", installationId: "test-install", age: 18)
         let first = fake.signInSync("Casey").refreshToken
         XCTAssertNotNil(first)
         let rotated = try await fake.refresh(refreshToken: first!)
@@ -698,5 +699,26 @@ final class AppStoreTests: XCTestCase {
         XCTAssertTrue(store.decoyPicking)
         XCTAssertEqual(store.mapPickPowerID, "move_safe")
         XCTAssertNotNil(store.moveSafeZoneId)
+    }
+
+    func testAgeUnder13SetsTooYoungNote() async {
+        let fake = FakeGameService()
+        do {
+            _ = try await fake.signIn(displayName: "Casey", installationId: "test-install", age: 12)
+            XCTFail("Expected tooYoung")
+        } catch let error as ServiceError {
+            XCTAssertEqual(error.code, .tooYoung)
+        } catch {
+            XCTFail("Unexpected error \(error)")
+        }
+    }
+
+    @MainActor
+    func testSignInRejectsAgeUnder13WithNote() {
+        let store = AppStore.makePreview()
+        store.ageYears = "12"
+        store.signIn()
+        XCTAssertEqual(store.note, "Manhunt is not available for people under 13.")
+        XCTAssertEqual(store.screen, .signedOut)
     }
 }
