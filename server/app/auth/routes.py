@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.apple import verify_apple_token
+from app.auth.names import assert_display_name_allowed, normalize_display_name
 from app.auth.refresh import mint_refresh, rotate_refresh, store_refresh
 from app.auth.tokens import issue_token
 from app.db.models import DeviceToken, User
@@ -16,6 +17,7 @@ class DevAuthIn(BaseModel):
     display_name: str = Field(min_length=1, max_length=40)
     # Stable per-install id so two phones can share a display name before Apple auth.
     installation_id: str = Field(min_length=8, max_length=80)
+    age: int = Field(ge=0, le=120)
 
 
 class AppleAuthIn(BaseModel):
@@ -92,8 +94,15 @@ def bind_auth_routes(get_session, get_settings, current_user):
         if settings.manhunt_env == "home" or settings.manhunt_dev_auth_secret:
             if not _dev_secret_ok(dev_secret or "", settings.manhunt_dev_auth_secret):
                 raise ApiError(ErrorCode.FORBIDDEN, "Dev sign-in is disabled.", status_code=403)
+        if body.age < 13:
+            raise ApiError(
+                ErrorCode.TOO_YOUNG,
+                "Manhunt is not available for people under 13.",
+                status_code=403,
+            )
+        assert_display_name_allowed(body.display_name)
+        name = normalize_display_name(body.display_name)
         handle = _install_handle(body.installation_id)
-        name = body.display_name.strip()
         user = await session.scalar(select(User).where(User.dev_handle == handle))
         if user is None:
             user = User(dev_handle=handle, display_name=name)

@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 def _auth(client: TestClient, name: str) -> dict:
     response = client.post(
         "/v1/auth/dev",
-        json={"display_name": name, "installation_id": str(uuid4())},
+        json={"display_name": name, "installation_id": str(uuid4()), "age": 18},
     )
     assert response.status_code == 200, response.text
     return response.json()

@@ -6,10 +6,27 @@ from app.engine.arena import arena_to_dict
 from tests.engine.helpers import meters, square
 
 
+def test_dev_auth_rejects_under_13(client: TestClient) -> None:
+    response = client.post(
+        "/v1/auth/dev",
+        json={"display_name": "Kid", "installation_id": str(uuid4()), "age": 12},
+    )
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "TOO_YOUNG"
+
+
+def test_dev_auth_accepts_13(client: TestClient) -> None:
+    response = client.post(
+        "/v1/auth/dev",
+        json={"display_name": "Teen", "installation_id": str(uuid4()), "age": 13},
+    )
+    assert response.status_code == 200
+
+
 def _auth(client: TestClient, name: str = "Casey") -> dict:
     response = client.post(
         "/v1/auth/dev",
-        json={"display_name": name, "installation_id": str(uuid4())},
+        json={"display_name": name, "installation_id": str(uuid4()), "age": 18},
     )
     assert response.status_code == 200, response.text
     return response.json()
@@ -28,7 +45,7 @@ def test_apple_rejects_garbage(client: TestClient) -> None:
 def test_refresh_rotates(client: TestClient) -> None:
     first = client.post(
         "/v1/auth/dev",
-        json={"display_name": "Casey", "installation_id": str(uuid4())},
+        json={"display_name": "Casey", "installation_id": str(uuid4()), "age": 18},
     )
     assert first.status_code == 200
     body = first.json()
@@ -215,11 +232,11 @@ def test_leave_drops_the_player_from_the_live_roster(client: TestClient) -> None
 def test_dev_auth_same_name_different_installs(client: TestClient) -> None:
     first = client.post(
         "/v1/auth/dev",
-        json={"display_name": "Casey", "installation_id": "phone-alpha"},
+        json={"display_name": "Casey", "installation_id": "phone-alpha", "age": 18},
     )
     second = client.post(
         "/v1/auth/dev",
-        json={"display_name": "Casey", "installation_id": "phone-bravo"},
+        json={"display_name": "Casey", "installation_id": "phone-bravo", "age": 18},
     )
     assert first.status_code == 200
     assert second.status_code == 200
@@ -231,11 +248,11 @@ def test_dev_auth_same_name_different_installs(client: TestClient) -> None:
 def test_dev_auth_same_install_renames_display_name(client: TestClient) -> None:
     first = client.post(
         "/v1/auth/dev",
-        json={"display_name": "Casey", "installation_id": "phone-rename"},
+        json={"display_name": "Casey", "installation_id": "phone-rename", "age": 18},
     )
     renamed = client.post(
         "/v1/auth/dev",
-        json={"display_name": "Casey Lee", "installation_id": "phone-rename"},
+        json={"display_name": "Casey Lee", "installation_id": "phone-rename", "age": 18},
     )
     assert first.status_code == 200
     assert renamed.status_code == 200
@@ -246,11 +263,11 @@ def test_dev_auth_same_install_renames_display_name(client: TestClient) -> None:
 def test_join_rejects_duplicate_display_name(client: TestClient) -> None:
     host = client.post(
         "/v1/auth/dev",
-        json={"display_name": "Casey", "installation_id": "host-phone"},
+        json={"display_name": "Casey", "installation_id": "host-phone", "age": 18},
     ).json()
     guest = client.post(
         "/v1/auth/dev",
-        json={"display_name": "casey", "installation_id": "guest-phone"},
+        json={"display_name": "casey", "installation_id": "guest-phone", "age": 18},
     ).json()
     arena = client.post(
         "/v1/arenas",

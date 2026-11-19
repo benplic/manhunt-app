@@ -22,7 +22,7 @@ def test_generate_skips_the_sample_code() -> None:
 def _auth(client: TestClient, name: str) -> dict:
     return client.post(
         "/v1/auth/dev",
-        json={"display_name": name, "installation_id": str(uuid4())},
+        json={"display_name": name, "installation_id": str(uuid4()), "age": 18},
     ).json()
 
 

@@ -10,7 +10,7 @@ def test_full_demo_game_plays_through_head_start_reveal_and_bot_tags(
 ) -> None:
     auth = client.post(
         "/v1/auth/dev",
-        json={"display_name": "Casey", "installation_id": str(uuid4())},
+        json={"display_name": "Casey", "installation_id": str(uuid4()), "age": 18},
     ).json()
     headers = {"Authorization": f"Bearer {auth['access_token']}"}
 
@@ -73,7 +73,7 @@ def test_demo_game_exercises_zone_shrink_and_safe_zone_with_human_hider(
 ) -> None:
     auth = client.post(
         "/v1/auth/dev",
-        json={"display_name": "Casey", "installation_id": str(uuid4())},
+        json={"display_name": "Casey", "installation_id": str(uuid4()), "age": 18},
     ).json()
     headers = {"Authorization": f"Bearer {auth['access_token']}"}
     joined = client.post("/v1/games/join", headers=headers, json={"join_code": "PARK42"})
