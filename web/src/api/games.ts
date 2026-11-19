@@ -60,3 +60,41 @@ export async function joinGame(input: JoinGameInput): Promise<PlayerView> {
     token: input.token,
   })
 }
+
+export type RandomizeRolesInput = {
+  token: string
+  gameId: string
+  seekerCount?: number
+}
+
+/** Host assigns seekers. Server phase stays `lobby` until start. */
+export async function randomizeRoles(input: RandomizeRolesInput): Promise<PlayerView> {
+  return apiRequest<PlayerView>(`/v1/games/${input.gameId}/roles`, {
+    method: 'POST',
+    token: input.token,
+    body: { seeker_count: input.seekerCount ?? 1 },
+  })
+}
+
+export type StartGameInput = {
+  token: string
+  gameId: string
+}
+
+/**
+ * Host starts the hunt. Verified phases after start: `head_start` or `active`
+ * (classic preset uses head_start). Lobby is never returned from a successful start.
+ */
+export async function startGame(input: StartGameInput): Promise<PlayerView> {
+  return apiRequest<PlayerView>(`/v1/games/${input.gameId}/start`, {
+    method: 'POST',
+    token: input.token,
+  })
+}
+
+export async function leaveGame(input: { token: string; gameId: string }): Promise<void> {
+  await apiRequest<{ ok: boolean }>(`/v1/games/${input.gameId}/leave`, {
+    method: 'POST',
+    token: input.token,
+  })
+}

@@ -48,8 +48,6 @@ export function Home({ onSignedOut, onEnteredGame }: Props) {
   const [joinCode, setJoinCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [lastView, setLastView] = useState<PlayerView | null>(null)
-
   function handleAuthFailure(err: unknown): boolean {
     if (err instanceof SessionExpiredError) {
       onSignedOut()
@@ -68,7 +66,6 @@ export function Home({ onSignedOut, onEnteredGame }: Props) {
     try {
       const { lat, lon } = await readGps()
       const view = await withAuthRetry((token) => createGame({ token, lat, lon }))
-      setLastView(view)
       onEnteredGame(view)
     } catch (err) {
       if (handleAuthFailure(err)) {
@@ -95,7 +92,6 @@ export function Home({ onSignedOut, onEnteredGame }: Props) {
     setBusy(true)
     try {
       const view = await withAuthRetry((token) => joinGame({ token, joinCode: code }))
-      setLastView(view)
       onEnteredGame(view)
     } catch (err) {
       if (handleAuthFailure(err)) {
@@ -150,12 +146,6 @@ export function Home({ onSignedOut, onEnteredGame }: Props) {
       {error ? (
         <p className="error" role="alert">
           {error}
-        </p>
-      ) : null}
-
-      {lastView ? (
-        <p className="status" role="status">
-          In lobby · code {lastView.join_code} · phase {lastView.phase}
         </p>
       ) : null}
 

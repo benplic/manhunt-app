@@ -16,7 +16,8 @@ Sign in with display name, age (13+), and the host’s `MANHUNT_DEV_AUTH_SECRET`
 
 ## Notes
 
-- Location only while the tab is visible. Safari may suspend GPS when the screen locks — keep the screen on during a hunt.
+- Live map uses Leaflet + OSM tiles. Location is watched only while the tab is visible. Safari may suspend GPS when the screen locks — keep the screen on during a hunt.
+- Verified live phases from the server: `lobby` → `head_start` / `active` (classic), plus `paused` / `ended`.
 - Create always posts a fresh 400 m `boundary_circle` arena, then a classic game. No arena editor in v0.
 - Access token, refresh token, and home key live in `localStorage` (MVP). Treat the site origin as trusted; XSS can read the party secret.
 

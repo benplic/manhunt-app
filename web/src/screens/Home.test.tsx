@@ -39,6 +39,7 @@ describe('Home screen', () => {
 
   it('creates a game with a fresh GPS fix', async () => {
     const user = userEvent.setup()
+    const onEnteredGame = vi.fn()
     const getCurrentPosition = vi.fn((success: PositionCallback) => {
       success({
         coords: {
@@ -70,7 +71,7 @@ describe('Home screen', () => {
       players: [],
     })
 
-    render(<Home onSignedOut={() => undefined} onEnteredGame={() => undefined} />)
+    render(<Home onSignedOut={() => undefined} onEnteredGame={onEnteredGame} />)
     await user.click(screen.getByRole('button', { name: /create game/i }))
 
     await waitFor(() => {
@@ -84,7 +85,7 @@ describe('Home screen', () => {
         lat: 40.66,
         lon: -73.96,
       })
-      expect(screen.getByText(/ABCDEF/)).toBeInTheDocument()
+      expect(onEnteredGame).toHaveBeenCalledWith(expect.objectContaining({ join_code: 'ABCDEF' }))
     })
   })
 
@@ -130,6 +131,7 @@ describe('Home screen', () => {
 
   it('joins with a code', async () => {
     const user = userEvent.setup()
+    const onEnteredGame = vi.fn()
     joinGame.mockResolvedValue({
       game_id: 'game-2',
       join_code: 'ZZZZZZ',
@@ -138,13 +140,13 @@ describe('Home screen', () => {
       players: [],
     })
 
-    render(<Home onSignedOut={() => undefined} onEnteredGame={() => undefined} />)
+    render(<Home onSignedOut={() => undefined} onEnteredGame={onEnteredGame} />)
     await user.type(screen.getByLabelText(/join code/i), 'zzzzzz')
     await user.click(screen.getByRole('button', { name: /^join$/i }))
 
     await waitFor(() => {
       expect(joinGame).toHaveBeenCalledWith({ token: 'tok', joinCode: 'ZZZZZZ' })
-      expect(screen.getByText(/ZZZZZZ/)).toBeInTheDocument()
+      expect(onEnteredGame).toHaveBeenCalledWith(expect.objectContaining({ join_code: 'ZZZZZZ' }))
     })
   })
 })
