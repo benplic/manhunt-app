@@ -39,7 +39,13 @@ export type GameCreated = {
   status: string
 }
 
-/** Minimal player view fields needed for create/join MVP. */
+export type GameResult = {
+  winner: string
+  reason: string
+  ended_at: string | null
+}
+
+/** Minimal player view fields needed for the web MVP. */
 export type PlayerView = {
   game_id: string
   join_code: string
@@ -64,4 +70,5 @@ export type PlayerView = {
       kind: string
     } | null
   }>
+  result?: GameResult | null
 }

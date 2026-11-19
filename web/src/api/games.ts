@@ -98,3 +98,23 @@ export async function leaveGame(input: { token: string; gameId: string }): Promi
     token: input.token,
   })
 }
+
+export async function endGame(input: { token: string; gameId: string }): Promise<PlayerView> {
+  return apiRequest<PlayerView>(`/v1/games/${input.gameId}/end`, {
+    method: 'POST',
+    token: input.token,
+  })
+}
+
+/** Seeker claims a hider QR. Distance (30 m) is enforced server-side. */
+export async function claimQrTag(input: {
+  token: string
+  gameId: string
+  qrToken: string
+}): Promise<void> {
+  await apiRequest<{ result: string }>(`/v1/games/${input.gameId}/tags/qr`, {
+    method: 'POST',
+    token: input.token,
+    body: { token: input.qrToken },
+  })
+}

@@ -1,0 +1,39 @@
+.qr-scan {
+  max-width: 24rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 2.5rem;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+.qr-scan h1 {
+  margin: 0 0 0.35rem;
+}
+
+.qr-scan p {
+  color: #555;
+  line-height: 1.35;
+}
+
+.qr-scan .reader {
+  margin: 1rem 0;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #111;
+  min-height: 220px;
+}
+
+.qr-scan button {
+  margin-top: 0.75rem;
+  padding: 0.7rem 1.2rem;
+  border: none;
+  border-radius: 6px;
+  background: #1a1a1a;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.qr-scan .error {
+  color: #a40000;
+}

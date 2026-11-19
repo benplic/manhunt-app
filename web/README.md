@@ -19,8 +19,13 @@ Sign in with display name, age (13+), and the host’s `MANHUNT_DEV_AUTH_SECRET`
 - Live map uses Leaflet + OSM tiles. Location is watched only while the tab is visible. Safari may suspend GPS when the screen locks — keep the screen on during a hunt.
 - Verified live phases from the server: `lobby` → `head_start` / `active` (classic), plus `paused` / `ended`.
 - Create always posts a fresh 400 m `boundary_circle` arena, then a classic game. No arena editor in v0.
+- QR: hiders show `qr_token` via `qrcode`; seekers scan with `html5-qrcode` (no `BarcodeDetector` on iOS Safari). Tag distance stays server-side (~30 m).
 - Access token, refresh token, and home key live in `localStorage` (MVP). Treat the site origin as trusted; XSS can read the party secret.
 
 ## Deploy
 
-Build static assets with `npm run build` and host `dist/` on Cloudflare Pages (or any static HTTPS host). Set `VITE_API_BASE_URL` at build time. The API must allow the Pages origin via CORS (server change in a later task).
+1. `cd web && npm run build`
+2. Cloudflare Pages project, root `web/`, output `dist` (SPA fallback via `public/_redirects`)
+3. Build env: `VITE_API_BASE_URL=https://manhunt.pivotlattice.app`
+4. On the API host, set `MANHUNT_CORS_ORIGINS` to include the Pages HTTPS origin (defaults already cover local Vite)
+5. Confirm `GET /v1/healthz` on the API and open the Pages URL on a phone

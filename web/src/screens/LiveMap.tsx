@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { ApiError } from '../api/client'
+import { endGame } from '../api/games'
+import { SessionExpiredError, withAuthRetry } from '../api/session'
 import type { GameSocket } from '../api/ws'
 import { watchVisibleLocation } from '../geo/watchVisible'
 import { ensureLeafletDefaultIcons } from '../map/leafletIcons'
 import { pinsFromView } from '../map/pins'
 import type { PlayerView } from '../api/types'
+import { QrScan } from './QrScan'
+import { QrShow } from './QrShow'
 import './LiveMap.css'
 
 type Props = {
@@ -13,16 +18,22 @@ type Props = {
   socket: GameSocket
   qrToken: string | null
   note: string | null
+  onView: (view: PlayerView) => void
   onLeave: () => void
+  onSignedOut: () => void
   watchLocation?: typeof watchVisibleLocation
 }
+
+type Panel = 'map' | 'show' | 'scan'
 
 export function LiveMap({
   view,
   socket,
   qrToken,
   note,
+  onView,
   onLeave,
+  onSignedOut,
   watchLocation = watchVisibleLocation,
 }: Props) {
   const mapEl = useRef<HTMLDivElement | null>(null)
@@ -30,8 +41,13 @@ export function LiveMap({
   const markersRef = useRef<Map<string, L.Marker>>(new Map())
   const fittedRef = useRef(false)
   const [localNote, setLocalNote] = useState<string | null>(null)
+  const [panel, setPanel] = useState<Panel>('map')
+  const [ending, setEnding] = useState(false)
 
   const pins = useMemo(() => pinsFromView(view), [view])
+  const isHider = view.you.role === 'hider'
+  const isSeeker = view.you.role === 'seeker'
+  const isHost = view.you.is_host
 
   useEffect(() => {
     if (!mapEl.current || mapRef.current) {
@@ -77,7 +93,6 @@ export function LiveMap({
         markersRef.current.delete(id)
       }
     }
-    // Fit once when the first pins arrive so 1 Hz views do not fight pan/zoom.
     if (!fittedRef.current && pins.length > 0) {
       const bounds = L.latLngBounds(pins.map((p) => [p.lat, p.lon] as [number, number]))
       map.fitBounds(bounds.pad(0.35))
@@ -108,6 +123,40 @@ export function LiveMap({
     map.fitBounds(bounds.pad(0.35))
   }
 
+  async function onEnd() {
+    setEnding(true)
+    setLocalNote(null)
+    try {
+      const ended = await withAuthRetry((token) => endGame({ token, gameId: view.game_id }))
+      onView(ended)
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        onSignedOut()
+        return
+      }
+      setLocalNote(err instanceof ApiError ? err.message : (err as Error).message)
+    } finally {
+      setEnding(false)
+    }
+  }
+
+  if (panel === 'show' && qrToken) {
+    return <QrShow token={qrToken} onClose={() => setPanel('map')} />
+  }
+  if (panel === 'scan') {
+    return (
+      <QrScan
+        gameId={view.game_id}
+        onClose={() => setPanel('map')}
+        onTagged={() => {
+          setLocalNote('Tag accepted.')
+          setPanel('map')
+        }}
+        onSignedOut={onSignedOut}
+      />
+    )
+  }
+
   const alert = note ?? localNote
 
   return (
@@ -129,7 +178,28 @@ export function LiveMap({
         </div>
       </header>
       <div className="map-frame" ref={mapEl} role="presentation" />
-      {qrToken ? <p className="qr-note">QR token ready (scanner comes next)</p> : null}
+      <div className="toolbar">
+        {isHider ? (
+          <button
+            type="button"
+            disabled={!qrToken}
+            onClick={() => setPanel('show')}
+          >
+            Show QR
+          </button>
+        ) : null}
+        {isSeeker ? (
+          <button type="button" onClick={() => setPanel('scan')}>
+            Scan QR
+          </button>
+        ) : null}
+        {isHost ? (
+          <button type="button" className="danger" disabled={ending} onClick={() => void onEnd()}>
+            {ending ? 'Ending…' : 'End hunt'}
+          </button>
+        ) : null}
+      </div>
+      {isHider && !qrToken ? <p className="qr-note">Waiting for a tag QR from the server…</p> : null}
       {alert ? (
         <p className="error" role="alert">
           {alert}

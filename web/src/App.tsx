@@ -8,6 +8,7 @@ import { loadSession } from './auth/storage'
 import { Home } from './screens/Home'
 import { LiveMap } from './screens/LiveMap'
 import { Lobby } from './screens/Lobby'
+import { Result } from './screens/Result'
 import { SignIn } from './screens/SignIn'
 import './App.css'
 
@@ -32,6 +33,11 @@ function App() {
     socketRef.current = null
     setSocketReady(false)
     setQrToken(null)
+  }
+
+  function clearGame() {
+    tearDownSocket()
+    setGameView(null)
   }
 
   function signOut() {
@@ -105,7 +111,18 @@ function App() {
     )
   }
 
-  if (gameView && (isLive(gameView.phase) || gameView.phase === 'ended')) {
+  if (gameView && gameView.phase === 'ended') {
+    return (
+      <Result
+        view={gameView}
+        onDone={() => {
+          clearGame()
+        }}
+      />
+    )
+  }
+
+  if (gameView && isLive(gameView.phase)) {
     if (!socketReady || !socketRef.current) {
       return (
         <main className="home">
@@ -119,7 +136,9 @@ function App() {
         socket={socketRef.current}
         qrToken={qrToken}
         note={socketNote}
+        onView={setGameView}
         onLeave={() => void leaveCurrentGame()}
+        onSignedOut={signOut}
       />
     )
   }

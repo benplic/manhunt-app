@@ -56,7 +56,7 @@ const view: PlayerView = {
 }
 
 describe('LiveMap', () => {
-  it('watches visible GPS and sends locations on the shared socket', async () => {
+  it('watches visible GPS and offers Scan QR / End for a host seeker', async () => {
     const sendLocation = vi.fn()
     const watchLocation = vi.fn().mockReturnValue(() => undefined)
     const socket = { sendLocation } as never
@@ -67,12 +67,16 @@ describe('LiveMap', () => {
         socket={socket}
         qrToken={null}
         note={null}
+        onView={() => undefined}
         onLeave={() => undefined}
+        onSignedOut={() => undefined}
         watchLocation={watchLocation}
       />,
     )
 
     expect(screen.getByText(/live map/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /scan qr/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /end hunt/i })).toBeInTheDocument()
     await waitFor(() => {
       expect(watchLocation).toHaveBeenCalled()
     })
