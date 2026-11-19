@@ -4,6 +4,13 @@ import type { ArenaOut, GameCreated, PlayerView } from './types'
 /** Always mint a new play circle at the host GPS. Do not reuse prior arenas. */
 export const DEFAULT_ARENA_RADIUS_M = 400
 
+/**
+ * Web friends often join from outside the host's first GPS fix. Classic's 15 s
+ * out-of-bounds countdown auto-tags hiders and ends the hunt as "All hiders
+ * were tagged." Give a longer walk-in window for the browser MVP.
+ */
+export const WEB_OOB_COUNTDOWN_S = 60
+
 export type CreateGameInput = {
   token: string
   lat: number
@@ -33,7 +40,9 @@ export async function createGame(input: CreateGameInput): Promise<PlayerView> {
     body: {
       arena_id: arena.id,
       preset_id: 'classic',
-      overrides: {},
+      overrides: {
+        zone_policy: { oob_countdown: WEB_OOB_COUNTDOWN_S },
+      },
     },
   })
 

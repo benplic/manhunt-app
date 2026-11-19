@@ -43,6 +43,29 @@
   text-transform: capitalize;
 }
 
+.live-map .hud {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.65rem 1.25rem;
+  padding: 0.55rem 1rem;
+  background: #1a1a1a;
+  color: #f7f5f1;
+}
+
+.live-map .hud-clock {
+  font-size: 1.35rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.live-map .hud-sub {
+  font-size: 0.85rem;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+
 .live-map .actions {
   display: flex;
   gap: 0.5rem;
@@ -107,6 +130,11 @@
 
 .live-map .error {
   color: #a40000;
+}
+
+.live-map .error--oob {
+  background: #fde8e8;
+  font-weight: 600;
 }
 
 .live-map .qr-note {

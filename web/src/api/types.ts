@@ -50,11 +50,20 @@ export type PlayerView = {
   game_id: string
   join_code: string
   phase: string
+  /** Seconds left in head_start (or null outside that phase). */
+  phase_remaining_s?: number | null
+  /** Seconds left on the hunt clock. */
+  time_limit_remaining_s?: number | null
+  game_elapsed_s?: number
   you: {
     player_id: string
     role: string
     status: string
     is_host: boolean
+    bounds?: {
+      phase: string
+      remaining_s: number | null
+    }
   }
   players: Array<{
     player_id: string
@@ -70,5 +79,12 @@ export type PlayerView = {
       kind: string
     } | null
   }>
+  arena?: {
+    boundary?: Array<{ lat: number; lon: number }>
+    boundary_circle?: {
+      center: { lat: number; lon: number }
+      radius_m: number
+    } | null
+  } | null
   result?: GameResult | null
 }

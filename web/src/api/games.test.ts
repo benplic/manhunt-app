@@ -68,7 +68,9 @@ describe('createGame', () => {
     expect(JSON.parse(gameInit.body)).toEqual({
       arena_id: 'arena-1',
       preset_id: 'classic',
-      overrides: {},
+      overrides: {
+        zone_policy: { oob_countdown: 60 },
+      },
     })
 
     const [viewUrl, viewInit] = fetchMock.mock.calls[2]

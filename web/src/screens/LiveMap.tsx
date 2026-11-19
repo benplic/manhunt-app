@@ -6,6 +6,7 @@ import { endGame } from '../api/games'
 import { SessionExpiredError, withAuthRetry } from '../api/session'
 import type { GameSocket } from '../api/ws'
 import { watchVisibleLocation } from '../geo/watchVisible'
+import { formatClock } from '../map/clock'
 import { ensureLeafletDefaultIcons } from '../map/leafletIcons'
 import { pinsFromView } from '../map/pins'
 import type { PlayerView } from '../api/types'
@@ -26,6 +27,27 @@ type Props = {
 
 type Panel = 'map' | 'show' | 'scan'
 
+function phaseLabel(phase: string): string {
+  return phase.replaceAll('_', ' ')
+}
+
+function boundsMessage(view: PlayerView): string | null {
+  const bounds = view.you.bounds
+  if (!bounds || bounds.phase === 'inside') {
+    return null
+  }
+  if (bounds.phase === 'countdown' && bounds.remaining_s != null) {
+    return `Outside the play circle — ${bounds.remaining_s}s until auto-tag.`
+  }
+  if (bounds.phase === 'warning' || bounds.phase === 'countdown') {
+    return 'Outside the play circle — walk back in.'
+  }
+  if (bounds.phase === 'penalized') {
+    return 'Tagged out of bounds.'
+  }
+  return `Boundary: ${bounds.phase}`
+}
+
 export function LiveMap({
   view,
   socket,
@@ -39,6 +61,7 @@ export function LiveMap({
   const mapEl = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<L.Map | null>(null)
   const markersRef = useRef<Map<string, L.Marker>>(new Map())
+  const arenaCircleRef = useRef<L.Circle | null>(null)
   const fittedRef = useRef(false)
   const [localNote, setLocalNote] = useState<string | null>(null)
   const [panel, setPanel] = useState<Panel>('map')
@@ -49,6 +72,12 @@ export function LiveMap({
   const isSeeker = view.you.role === 'seeker'
   const isHost = view.you.is_host
   const overlayOpen = panel !== 'map'
+  const oobNote = boundsMessage(view)
+
+  const clockPrimary =
+    view.phase === 'head_start'
+      ? `Head start ${formatClock(view.phase_remaining_s)}`
+      : `Hunt ${formatClock(view.time_limit_remaining_s)}`
 
   useEffect(() => {
     if (!mapEl.current || mapRef.current) {
@@ -66,6 +95,7 @@ export function LiveMap({
       map.remove()
       mapRef.current = null
       markersRef.current.clear()
+      arenaCircleRef.current = null
     }
   }, [])
 
@@ -81,6 +111,32 @@ export function LiveMap({
     const id = window.setTimeout(() => map.invalidateSize(), 0)
     return () => window.clearTimeout(id)
   }, [panel])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) {
+      return
+    }
+    const circle = view.arena?.boundary_circle
+    if (!circle) {
+      arenaCircleRef.current?.remove()
+      arenaCircleRef.current = null
+      return
+    }
+    const latLng: L.LatLngExpression = [circle.center.lat, circle.center.lon]
+    if (!arenaCircleRef.current) {
+      arenaCircleRef.current = L.circle(latLng, {
+        radius: circle.radius_m,
+        color: '#1a1a1a',
+        weight: 2,
+        fillColor: '#1a1a1a',
+        fillOpacity: 0.06,
+      }).addTo(map)
+    } else {
+      arenaCircleRef.current.setLatLng(latLng)
+      arenaCircleRef.current.setRadius(circle.radius_m)
+    }
+  }, [view.arena])
 
   useEffect(() => {
     const map = mapRef.current
@@ -130,7 +186,17 @@ export function LiveMap({
 
   function recenter() {
     const map = mapRef.current
-    if (!map || pins.length === 0) {
+    if (!map) {
+      return
+    }
+    const circle = view.arena?.boundary_circle
+    if (circle) {
+      map.fitBounds(
+        L.latLng(circle.center.lat, circle.center.lon).toBounds(circle.radius_m * 2.2),
+      )
+      return
+    }
+    if (pins.length === 0) {
       return
     }
     const bounds = L.latLngBounds(pins.map((p) => [p.lat, p.lon] as [number, number]))
@@ -154,7 +220,7 @@ export function LiveMap({
     }
   }
 
-  const alert = note ?? localNote
+  const alert = oobNote ?? note ?? localNote
 
   return (
     <main className={`live-map${overlayOpen ? ' live-map--overlay' : ''}`}>
@@ -162,7 +228,7 @@ export function LiveMap({
         <div>
           <h1>Live map</h1>
           <p>
-            {view.phase.replace('_', ' ')} · {view.join_code} · you are {view.you.role}
+            {phaseLabel(view.phase)} · {view.join_code} · you are {view.you.role}
           </p>
         </div>
         <div className="actions">
@@ -174,6 +240,18 @@ export function LiveMap({
           </button>
         </div>
       </header>
+
+      {!overlayOpen ? (
+        <div className="hud" aria-live="polite">
+          <span className="hud-clock">{clockPrimary}</span>
+          {view.phase === 'head_start' ? (
+            <span className="hud-sub">Hunt clock {formatClock(view.time_limit_remaining_s)}</span>
+          ) : (
+            <span className="hud-sub">Elapsed {formatClock(view.game_elapsed_s)}</span>
+          )}
+        </div>
+      ) : null}
+
       {/* Map stays mounted so Show/Scan overlays do not orphan the Leaflet instance. */}
       <div
         className={`map-frame${overlayOpen ? ' map-frame--hidden' : ''}`}
@@ -209,11 +287,13 @@ export function LiveMap({
             <p className="qr-note">Waiting for a tag QR from the server…</p>
           ) : null}
           {alert ? (
-            <p className="error" role="alert">
+            <p className={`error${oobNote ? ' error--oob' : ''}`} role="alert">
               {alert}
             </p>
           ) : null}
-          <p className="hint">Keep this tab visible and the screen on for GPS.</p>
+          <p className="hint">
+            Stay inside the dark circle. Keep this tab visible and the screen on for GPS.
+          </p>
         </>
       ) : null}
 

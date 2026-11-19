@@ -19,11 +19,19 @@ vi.mock('leaflet', () => {
     openPopup: vi.fn().mockReturnThis(),
     remove: vi.fn(),
   }
+  const circle = {
+    addTo: vi.fn().mockReturnThis(),
+    setLatLng: vi.fn().mockReturnThis(),
+    setRadius: vi.fn().mockReturnThis(),
+    remove: vi.fn(),
+  }
   return {
     default: {
       map: vi.fn(() => map),
       tileLayer: vi.fn(() => ({ addTo: vi.fn() })),
       marker: vi.fn(() => marker),
+      circle: vi.fn(() => circle),
+      latLng: vi.fn(() => ({ toBounds: vi.fn().mockReturnValue({}) })),
       latLngBounds: vi.fn(() => ({ pad: vi.fn().mockReturnValue({}) })),
       Icon: { Default: { mergeOptions: vi.fn(), prototype: { options: {} } } },
     },
@@ -54,6 +62,9 @@ const view: PlayerView = {
   game_id: 'game-1',
   join_code: 'ABCDEF',
   phase: 'active',
+  phase_remaining_s: null,
+  time_limit_remaining_s: 1785,
+  game_elapsed_s: 75,
   you: { player_id: 'u1', role: 'seeker', status: 'active', is_host: true },
   players: [
     {
@@ -71,6 +82,9 @@ const view: PlayerView = {
       },
     },
   ],
+  arena: {
+    boundary_circle: { center: { lat: 40.1, lon: -73.1 }, radius_m: 400 },
+  },
 }
 
 describe('LiveMap', () => {
@@ -93,11 +107,41 @@ describe('LiveMap', () => {
     )
 
     expect(screen.getByText(/live map/i)).toBeInTheDocument()
+    expect(screen.getByText(/hunt 29:45/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /scan qr/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /end hunt/i })).toBeInTheDocument()
     await waitFor(() => {
       expect(watchLocation).toHaveBeenCalled()
     })
+  })
+
+  it('shows head-start countdown and out-of-bounds warning', () => {
+    const headStart: PlayerView = {
+      ...view,
+      phase: 'head_start',
+      phase_remaining_s: 45,
+      time_limit_remaining_s: 1800,
+      you: {
+        ...view.you,
+        role: 'hider',
+        is_host: false,
+        bounds: { phase: 'countdown', remaining_s: 12 },
+      },
+    }
+    render(
+      <LiveMap
+        view={headStart}
+        socket={{ sendLocation: vi.fn() } as never}
+        qrToken="tok"
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    expect(screen.getByText(/head start 0:45/i)).toBeInTheDocument()
+    expect(screen.getByText(/outside the play circle — 12s/i)).toBeInTheDocument()
   })
 
   it('keeps the map frame mounted under the Scan QR overlay', async () => {
