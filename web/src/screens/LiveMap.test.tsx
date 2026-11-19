@@ -144,6 +144,29 @@ describe('LiveMap', () => {
     expect(screen.getByText(/outside the play circle — 12s/i)).toBeInTheDocument()
   })
 
+  it('hides Scan QR during head start so a late claim cannot land on active', () => {
+    const headStart: PlayerView = {
+      ...view,
+      phase: 'head_start',
+      phase_remaining_s: 20,
+      you: { ...view.you, role: 'seeker', is_host: true },
+    }
+    render(
+      <LiveMap
+        view={headStart}
+        socket={{ sendLocation: vi.fn() } as never}
+        qrToken={null}
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: /scan qr/i })).not.toBeInTheDocument()
+    expect(screen.getByText(/cannot tag until head start ends/i)).toBeInTheDocument()
+  })
+
   it('keeps the map frame mounted under the Scan QR overlay', async () => {
     const user = userEvent.setup()
     const socket = { sendLocation: vi.fn() } as never

@@ -70,6 +70,16 @@
   opacity: 0.6;
 }
 
+.home button.secondary {
+  margin-top: 0.5rem;
+  width: 100%;
+  background: #445;
+}
+
+.home section > label {
+  margin-bottom: 0.65rem;
+}
+
 .home .linkish {
   margin-top: 1rem;
   background: transparent;

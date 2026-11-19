@@ -6,10 +6,21 @@ import { Lobby } from './Lobby'
 
 const randomizeRoles = vi.fn()
 const startGame = vi.fn()
+const setManualRoles = vi.fn()
+const setLobbyCircle = vi.fn()
+
+vi.mock('qrcode', () => ({
+  default: {
+    toDataURL: vi.fn().mockResolvedValue('data:image/png;base64,join'),
+  },
+}))
 
 vi.mock('../api/games', () => ({
+  DEFAULT_ARENA_RADIUS_M: 400,
   randomizeRoles: (...args: unknown[]) => randomizeRoles(...args),
   startGame: (...args: unknown[]) => startGame(...args),
+  setManualRoles: (...args: unknown[]) => setManualRoles(...args),
+  setLobbyCircle: (...args: unknown[]) => setLobbyCircle(...args),
 }))
 
 vi.mock('../api/session', () => ({
@@ -38,6 +49,9 @@ const lobbyView = (overrides: Partial<PlayerView> = {}): PlayerView => ({
       is_host: false,
     },
   ],
+  arena: {
+    boundary_circle: { center: { lat: 40.66, lon: -73.96 }, radius_m: 400 },
+  },
   ...overrides,
 })
 
@@ -45,9 +59,11 @@ describe('Lobby screen', () => {
   beforeEach(() => {
     randomizeRoles.mockReset()
     startGame.mockReset()
+    setManualRoles.mockReset()
+    setLobbyCircle.mockReset()
   })
 
-  it('shows the join code and players', () => {
+  it('shows the join code, join QR, and players', async () => {
     render(
       <Lobby
         view={lobbyView()}
@@ -59,9 +75,12 @@ describe('Lobby screen', () => {
     expect(screen.getByText(/ABCDEF/)).toBeInTheDocument()
     expect(screen.getByText(/Casey/)).toBeInTheDocument()
     expect(screen.getByText(/Riley/)).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByAltText(/join qr for abcdef/i)).toBeInTheDocument()
+    })
   })
 
-  it('host Start posts seeker_count 1 then start', async () => {
+  it('host Start randomizes when roles are incomplete then starts', async () => {
     const user = userEvent.setup()
     const onView = vi.fn()
     randomizeRoles.mockResolvedValue(
@@ -112,6 +131,56 @@ describe('Lobby screen', () => {
       expect(onView).toHaveBeenCalledWith(
         expect.objectContaining({ phase: 'head_start' }),
       )
+    })
+  })
+
+  it('host can assign roles manually without randomize on start', async () => {
+    const user = userEvent.setup()
+    const onView = vi.fn()
+    const assigned = lobbyView({
+      you: { player_id: 'u1', role: 'seeker', status: 'active', is_host: true },
+      players: [
+        {
+          player_id: 'u1',
+          display_name: 'Casey',
+          role: 'seeker',
+          status: 'active',
+          is_host: true,
+        },
+        {
+          player_id: 'u2',
+          display_name: 'Riley',
+          role: 'hider',
+          status: 'active',
+          is_host: false,
+        },
+      ],
+    })
+    setManualRoles.mockResolvedValue(assigned)
+    startGame.mockResolvedValue(lobbyView({ phase: 'head_start', ...assigned }))
+
+    const { rerender } = render(
+      <Lobby
+        view={lobbyView()}
+        onView={onView}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+      />,
+    )
+    await user.click(screen.getAllByRole('button', { name: /^seeker$/i })[0])
+    await waitFor(() => expect(setManualRoles).toHaveBeenCalled())
+    rerender(
+      <Lobby
+        view={assigned}
+        onView={onView}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+      />,
+    )
+    await user.click(screen.getByRole('button', { name: /^start$/i }))
+    await waitFor(() => {
+      expect(randomizeRoles).not.toHaveBeenCalled()
+      expect(startGame).toHaveBeenCalled()
     })
   })
 

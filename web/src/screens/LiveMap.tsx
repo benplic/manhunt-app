@@ -74,6 +74,14 @@ export function LiveMap({
   const overlayOpen = panel !== 'map'
   const oobNote = boundsMessage(view)
 
+  // Never leave the tag scanner open during head start (a claim in flight can
+  // land the moment the phase flips to active and end the hunt instantly).
+  useEffect(() => {
+    if (view.phase === 'head_start' && panel === 'scan') {
+      setPanel('map')
+    }
+  }, [view.phase, panel])
+
   const clockPrimary =
     view.phase === 'head_start'
       ? `Head start ${formatClock(view.phase_remaining_s)}`
@@ -267,10 +275,13 @@ export function LiveMap({
                 Show QR
               </button>
             ) : null}
-            {isSeeker ? (
+            {isSeeker && view.phase === 'active' ? (
               <button type="button" onClick={() => setPanel('scan')}>
                 Scan QR
               </button>
+            ) : null}
+            {isSeeker && view.phase === 'head_start' ? (
+              <p className="qr-note">Seekers cannot tag until head start ends.</p>
             ) : null}
             {isHost ? (
               <button

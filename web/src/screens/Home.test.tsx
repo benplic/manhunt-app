@@ -10,6 +10,7 @@ const refreshAccessToken = vi.fn()
 const clearSession = vi.fn()
 
 vi.mock('../api/games', () => ({
+  DEFAULT_ARENA_RADIUS_M: 400,
   createGame: (...args: unknown[]) => createGame(...args),
   joinGame: (...args: unknown[]) => joinGame(...args),
 }))
@@ -84,6 +85,7 @@ describe('Home screen', () => {
         token: 'tok',
         lat: 40.66,
         lon: -73.96,
+        radiusM: 400,
       })
       expect(onEnteredGame).toHaveBeenCalledWith(expect.objectContaining({ join_code: 'ABCDEF' }))
     })

@@ -22,6 +22,11 @@ class QrIn(BaseModel):
     token: str
 
 
+class LobbyCircleIn(BaseModel):
+    radius_m: float = Field(ge=30, le=2000)
+    center: dict[str, float] | None = None
+
+
 def _view(service: GameService, game, user_id: UUID) -> dict:
     from app.engine.views import build_view
 
@@ -71,6 +76,22 @@ def bind_game_routes(get_session, current_user, service: GameService):
         user=Depends(current_user),
     ) -> dict:
         game = await service.set_roles(session, user, game_id, body)
+        return _view(service, game, user.id)
+
+    @router.post("/games/{game_id}/arena")
+    async def lobby_arena(
+        game_id: UUID,
+        body: LobbyCircleIn,
+        session: AsyncSession = Depends(get_session),
+        user=Depends(current_user),
+    ) -> dict:
+        game = await service.set_lobby_circle(
+            session,
+            user,
+            game_id,
+            radius_m=body.radius_m,
+            center=body.center,
+        )
         return _view(service, game, user.id)
 
     @router.post("/games/{game_id}/start")

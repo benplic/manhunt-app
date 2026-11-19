@@ -1,14 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { ApiError } from '../api/client'
-import { createGame, joinGame } from '../api/games'
+import { createGame, DEFAULT_ARENA_RADIUS_M, joinGame } from '../api/games'
+import { parseJoinPayload, sanitizeJoinCode } from '../api/joinCode'
 import { SessionExpiredError, withAuthRetry } from '../api/session'
 import type { PlayerView } from '../api/types'
 import { clearSession, loadSession } from '../auth/storage'
+import { JoinScan } from './JoinScan'
 import './Home.css'
-
-/** Matches server/app/games/join_code.py ALPHABET (no I/L/O/0/1). */
-const JOIN_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 
 type Props = {
   onSignedOut: () => void
@@ -28,26 +27,41 @@ function readGps(): Promise<{ lat: number; lon: number }> {
       () => {
         reject(new Error('Location permission is required to create a game.'))
       },
-      // maximumAge: 0 forces a fresh fix so the 400 m circle lands on the host now.
+      // maximumAge: 0 forces a fresh fix so the circle lands on the host now.
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
     )
   })
 }
 
-function sanitizeJoinCode(raw: string): string {
-  return raw
-    .toUpperCase()
-    .split('')
-    .filter((ch) => JOIN_CODE_ALPHABET.includes(ch))
-    .slice(0, 6)
-    .join('')
+function joinFromLocation(): string {
+  try {
+    return parseJoinPayload(window.location.href)
+  } catch {
+    return ''
+  }
 }
 
 export function Home({ onSignedOut, onEnteredGame }: Props) {
   const session = loadSession()
-  const [joinCode, setJoinCode] = useState('')
+  const [joinCode, setJoinCode] = useState(() => joinFromLocation())
+  const [radiusM, setRadiusM] = useState(DEFAULT_ARENA_RADIUS_M)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [scanning, setScanning] = useState(false)
+
+  useEffect(() => {
+    const fromUrl = joinFromLocation()
+    if (fromUrl) {
+      setJoinCode(fromUrl)
+      // Drop the query so a refresh does not re-trigger join UX oddly.
+      const url = new URL(window.location.href)
+      if (url.searchParams.has('join')) {
+        url.searchParams.delete('join')
+        window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+      }
+    }
+  }, [])
+
   function handleAuthFailure(err: unknown): boolean {
     if (err instanceof SessionExpiredError) {
       onSignedOut()
@@ -65,7 +79,9 @@ export function Home({ onSignedOut, onEnteredGame }: Props) {
     setBusy(true)
     try {
       const { lat, lon } = await readGps()
-      const view = await withAuthRetry((token) => createGame({ token, lat, lon }))
+      const view = await withAuthRetry((token) =>
+        createGame({ token, lat, lon, radiusM }),
+      )
       onEnteredGame(view)
     } catch (err) {
       if (handleAuthFailure(err)) {
@@ -77,14 +93,13 @@ export function Home({ onSignedOut, onEnteredGame }: Props) {
     }
   }
 
-  async function onJoin(event: FormEvent) {
-    event.preventDefault()
+  async function joinWithCode(codeRaw: string) {
     setError(null)
     if (!session) {
       onSignedOut()
       return
     }
-    const code = sanitizeJoinCode(joinCode)
+    const code = sanitizeJoinCode(codeRaw)
     if (code.length !== 6) {
       setError('Join codes are 6 characters.')
       return
@@ -103,9 +118,27 @@ export function Home({ onSignedOut, onEnteredGame }: Props) {
     }
   }
 
+  async function onJoin(event: FormEvent) {
+    event.preventDefault()
+    await joinWithCode(joinCode)
+  }
+
   function signOut() {
     clearSession()
     onSignedOut()
+  }
+
+  if (scanning) {
+    return (
+      <JoinScan
+        onClose={() => setScanning(false)}
+        onCode={(code) => {
+          setScanning(false)
+          setJoinCode(code)
+          void joinWithCode(code)
+        }}
+      />
+    )
   }
 
   return (
@@ -117,15 +150,28 @@ export function Home({ onSignedOut, onEnteredGame }: Props) {
 
       <section>
         <h2>Create</h2>
-        <p className="hint">Drops a 400 m circle on your current location. Keep the tab open for GPS.</p>
-        <button type="button" onClick={onCreate} disabled={busy}>
+        <label>
+          Play circle radius (m)
+          <input
+            type="number"
+            min={30}
+            max={2000}
+            step={50}
+            value={radiusM}
+            onChange={(e) => setRadiusM(Number(e.target.value))}
+          />
+        </label>
+        <p className="hint">
+          Centers a {radiusM} m circle on your GPS. You can change it again in the lobby.
+        </p>
+        <button type="button" onClick={() => void onCreate()} disabled={busy}>
           Create game
         </button>
       </section>
 
       <section>
         <h2>Join</h2>
-        <form onSubmit={onJoin}>
+        <form onSubmit={(e) => void onJoin(e)}>
           <label>
             Join code
             <input
@@ -141,6 +187,9 @@ export function Home({ onSignedOut, onEnteredGame }: Props) {
             Join
           </button>
         </form>
+        <button type="button" className="secondary" disabled={busy} onClick={() => setScanning(true)}>
+          Scan join QR
+        </button>
       </section>
 
       {error ? (

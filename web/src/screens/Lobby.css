@@ -23,24 +23,74 @@
   font-size: 1rem;
 }
 
+.lobby section {
+  margin-bottom: 1.35rem;
+}
+
+.lobby .join-qr img {
+  display: block;
+  margin: 0.5rem 0;
+  background: #fff;
+}
+
 .lobby ul {
   list-style: none;
-  margin: 0 0 1.25rem;
+  margin: 0 0 0.75rem;
   padding: 0;
 }
 
 .lobby li {
   display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid #ddd;
+}
+
+.lobby li > div:first-child {
+  display: flex;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.55rem 0;
-  border-bottom: 1px solid #ddd;
 }
 
 .lobby .meta {
   color: #555;
   font-size: 0.85rem;
   text-transform: capitalize;
+}
+
+.lobby .role-toggles {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.lobby .role-toggles button {
+  width: auto;
+  flex: 1;
+  padding: 0.4rem 0.55rem;
+  background: #e8e4dc;
+  color: #1a1a1a;
+  font-size: 0.85rem;
+}
+
+.lobby .role-toggles button.active {
+  background: #1a1a1a;
+  color: #fff;
+}
+
+.lobby label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.65rem;
+  font-size: 0.9rem;
+}
+
+.lobby input[type='number'] {
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font: inherit;
 }
 
 .lobby button {
@@ -53,6 +103,11 @@
   font: inherit;
   font-weight: 600;
   cursor: pointer;
+  margin-bottom: 0.5rem;
+}
+
+.lobby button.secondary {
+  background: #445;
 }
 
 .lobby button:disabled {
@@ -71,6 +126,7 @@
 .lobby .waiting,
 .lobby .hint {
   color: #555;
+  font-size: 0.9rem;
 }
 
 .lobby .error {

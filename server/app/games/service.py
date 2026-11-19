@@ -23,6 +23,8 @@ from app.db.models import (
 from app.demo.bots import BotDriver
 from app.demo.state import DemoState
 from app.engine.arena import (
+    PLAY_CIRCLE_MAX_M,
+    PLAY_CIRCLE_MIN_M,
     PLAY_CIRCLE_STEPS,
     Arena,
     ArenaZone,
@@ -340,6 +342,67 @@ class GameService:
             member = await session.get(GamePlayerRow, (game_id, player.player_id))
             if member:
                 member.role = player.role
+        await self.persist_inputs(session, game)
+        await session.commit()
+        await self.manager.broadcast(game_id)
+        return game
+
+    async def set_lobby_circle(
+        self,
+        session: AsyncSession,
+        user: User,
+        game_id: UUID,
+        *,
+        radius_m: float,
+        center: dict[str, float] | None = None,
+    ) -> GameSession:
+        """Host resizes the play circle while still in lobby (web + friends)."""
+        row = await self.require_host(session, game_id, user)
+        if row.status != "lobby":
+            raise ApiError(
+                ErrorCode.WRONG_PHASE,
+                "Play area can only change in the lobby.",
+                status_code=409,
+            )
+        radius = float(radius_m)
+        if radius < PLAY_CIRCLE_MIN_M or radius > PLAY_CIRCLE_MAX_M:
+            raise ApiError(
+                ErrorCode.VALIDATION_FAILED,
+                f"Radius must be between {int(PLAY_CIRCLE_MIN_M)} and {int(PLAY_CIRCLE_MAX_M)} m.",
+                status_code=422,
+            )
+        current = arena_from_dict(row.arena_snapshot)
+        if center is not None:
+            mid = GeoPoint(lat=float(center["lat"]), lon=float(center["lon"]))
+        elif current.boundary_circle is not None:
+            mid = current.boundary_circle.center
+        elif current.boundary:
+            mid = current.boundary[0]
+        else:
+            raise ApiError(
+                ErrorCode.ARENA_INVALID,
+                "Lobby has no play circle to resize.",
+                status_code=422,
+            )
+        arena = Arena(
+            name=current.name or "Park circle",
+            boundary=circle_sample_ring(mid, radius, steps=PLAY_CIRCLE_STEPS),
+            boundary_circle=CircleShape(center=mid, radius_m=radius),
+            zones=current.zones,
+            id=current.id,
+        )
+        issues = validate_arena(arena)
+        if issues:
+            raise ApiError(
+                ErrorCode.ARENA_INVALID,
+                "Arena is not playable.",
+                status_code=422,
+                details={"issues": [i.code for i in issues]},
+            )
+        packed = arena_to_dict(arena)
+        row.arena_snapshot = packed
+        game = self._live(row)
+        game.state.arena = arena
         await self.persist_inputs(session, game)
         await session.commit()
         await self.manager.broadcast(game_id)

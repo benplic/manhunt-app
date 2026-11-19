@@ -86,6 +86,40 @@ export async function randomizeRoles(input: RandomizeRolesInput): Promise<Player
   })
 }
 
+export type ManualRolesInput = {
+  token: string
+  gameId: string
+  assignments: Record<string, 'seeker' | 'hider'>
+}
+
+/** Host sets each seat explicitly (web lobby role toggles). */
+export async function setManualRoles(input: ManualRolesInput): Promise<PlayerView> {
+  return apiRequest<PlayerView>(`/v1/games/${input.gameId}/roles`, {
+    method: 'POST',
+    token: input.token,
+    body: { mode: 'manual', assignments: input.assignments },
+  })
+}
+
+export type SetLobbyCircleInput = {
+  token: string
+  gameId: string
+  radiusM: number
+  center?: { lat: number; lon: number }
+}
+
+/** Host resizes the play circle before Start. */
+export async function setLobbyCircle(input: SetLobbyCircleInput): Promise<PlayerView> {
+  return apiRequest<PlayerView>(`/v1/games/${input.gameId}/arena`, {
+    method: 'POST',
+    token: input.token,
+    body: {
+      radius_m: input.radiusM,
+      ...(input.center ? { center: input.center } : {}),
+    },
+  })
+}
+
 export type StartGameInput = {
   token: string
   gameId: string
