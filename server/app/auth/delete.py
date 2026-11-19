@@ -30,6 +30,7 @@ def _anonymize_live_player(manager: SessionManager, game_id: UUID, user_id: UUID
     if player is None:
         return
     player.display_name = _DELETED_DISPLAY
+    live.state.players.pop(user_id, None)
 
 
 async def delete_account(
