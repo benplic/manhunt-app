@@ -114,19 +114,22 @@ The iOS client shows **Waking the hunt server…** and retries the first request
 ## Layout
 
 - `ios/` — SwiftUI client. Domain helpers, AppStore, FakeGameService, LiveGameService.
+- `web/` — Vite + React browser client (friends play without TestFlight). Host on Cloudflare Pages; see `web/README.md`.
 - `server/` — FastAPI game server (authoritative `GameSession`).
 - `infra/` — Azure Bicep (Phase 2).
 - `docker-compose.yml` — Postgres 16 + API + optional Cloudflare Tunnel.
+- `docs/legal/privacy/` — privacy policy on GitHub Pages (`benplic.github.io/manhunt-app`). Keep that site for legal only.
 
 ## Tests
 
 ```bash
 cd server && python3 -m venv .venv && . .venv/bin/activate && pip install -e '.[dev]' && pytest -q && ruff check .
 # or, with Docker only: docker compose --profile test run --rm server-test
+cd web && npm ci && npm test && npm run build
 cd ios && xcodebuild test -project Manhunt.xcodeproj -scheme Manhunt -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.4'
 ```
 
-On GitHub Actions macOS runners, CI picks an available iPhone 16 Pro simulator automatically (see `.github/workflows/ci.yml`).
+On GitHub Actions macOS runners, CI picks an available iPhone 16 Pro simulator automatically (see `.github/workflows/ci.yml`). A cancelled iOS job with no steps usually means the macOS runner never claimed the job (queue), not a test failure.
 
 ## Horizon
 
