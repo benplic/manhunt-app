@@ -72,7 +72,8 @@ export async function randomizeRoles(input: RandomizeRolesInput): Promise<Player
   return apiRequest<PlayerView>(`/v1/games/${input.gameId}/roles`, {
     method: 'POST',
     token: input.token,
-    body: { seeker_count: input.seekerCount ?? 1 },
+    // API requires mode; without it the host gets "mode must be random or manual."
+    body: { mode: 'random', seeker_count: input.seekerCount ?? 1 },
   })
 }
 
