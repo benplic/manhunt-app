@@ -45,7 +45,38 @@ export type GameResult = {
   ended_at: string | null
 }
 
-/** Minimal player view fields needed for the web MVP. */
+export type RevealPin = {
+  reveal_id: string
+  player_id: string
+  lat: number
+  lon: number
+  radius_m: number
+  expires_in_s: number
+  display_name: string
+}
+
+export type Banner = {
+  banner_id: string
+  tone: string
+  title: string
+  detail: string
+  player_id: string | null
+}
+
+export type ViewTimers = {
+  head_start_s?: number
+  time_limit_s?: number
+  reveal_interval_s?: number | null
+  next_reveal_in_s?: number | null
+  zone?: {
+    radius_m: number
+    next_radius_m: number
+    shrinks_in_s: number
+    interval_s: number
+  } | null
+}
+
+/** Player view fields the web client consumes. */
 export type PlayerView = {
   game_id: string
   join_code: string
@@ -55,11 +86,15 @@ export type PlayerView = {
   /** Seconds left on the hunt clock. */
   time_limit_remaining_s?: number | null
   game_elapsed_s?: number
+  timers?: ViewTimers
   you: {
     player_id: string
     role: string
     status: string
     is_host: boolean
+    points?: number
+    points_earned?: number
+    hint?: string | null
     bounds?: {
       phase: string
       remaining_s: number | null
@@ -71,6 +106,8 @@ export type PlayerView = {
     role: string
     status: string
     is_host: boolean
+    points?: number
+    points_earned?: number
     location?: {
       lat: number
       lon: number
@@ -79,6 +116,8 @@ export type PlayerView = {
       kind: string
     } | null
   }>
+  reveals?: RevealPin[]
+  banners?: Banner[]
   arena?: {
     boundary?: Array<{ lat: number; lon: number }>
     boundary_circle?: {

@@ -1,0 +1,78 @@
+.account {
+  max-width: 24rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+  padding-bottom: max(3rem, env(safe-area-inset-bottom));
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  color: #f2f0ea;
+}
+
+.account header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.account h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.account h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+}
+
+.account section {
+  margin-bottom: 1.75rem;
+}
+
+.account a {
+  color: #9ec5ff;
+}
+
+.account .hint,
+.account .empty,
+.account .was {
+  color: #b7b3a8;
+  font-size: 0.9rem;
+}
+
+.account ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.account li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.account li div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.account button {
+  min-height: 44px;
+  padding: 0.55rem 0.9rem;
+  border: 0;
+  border-radius: 0.55rem;
+  background: #2f6fed;
+  color: #fff;
+  font-weight: 600;
+}
+
+.account button.secondary {
+  background: #2a2a2a;
+  color: #f2f0ea;
+}

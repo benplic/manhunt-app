@@ -2,11 +2,9 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { signInDev, TooYoungError } from '../api/auth'
 import { ApiError } from '../api/client'
+import { PRIVACY_URL, SUPPORT_EMAIL } from '../api/legal'
 import { loadHomeKey } from '../auth/storage'
 import './SignIn.css'
-
-const PRIVACY_URL = 'https://benplic.github.io/manhunt-app/'
-const SUPPORT_EMAIL = 'support@manhunt.pivotlattice.app'
 
 type Props = {
   onSignedIn: () => void

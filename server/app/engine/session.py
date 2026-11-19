@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -408,5 +409,14 @@ def movement_too_fast(player: PlayerState, reading: LocationReading) -> bool:
         return False
     allowed_m = 8.0 * elapsed + 40.0
     return distance_m(player.location.point, reading.point) > allowed_m
+
+
+def note_presence(player: PlayerState, at: datetime) -> None:
+    """Refresh silence clock without moving the pin.
+
+    Browser GPS often teleports for one sample. Rejecting that jump must not
+    look like the player went dark.
+    """
+    player.last_location_at = at
 
 

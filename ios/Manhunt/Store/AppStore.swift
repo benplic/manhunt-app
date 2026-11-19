@@ -1724,11 +1724,19 @@ final class AppStore {
                 try await service.claimQR(gameID: id, token: token)
                 tagMessage = "Tag accepted."
             } catch let error as ServiceError {
-                tagMessage = Self.copy(for: error.code)
+                // Prefer server copy so web GPS "fuzzy" vs "too far" stays honest on iOS.
+                tagMessage = Self.copy(for: error)
             } catch {
                 tagMessage = "Could not send the tag."
             }
         }
+    }
+
+    static func copy(for error: ServiceError) -> String {
+        if !error.message.isEmpty, error.message != error.code.rawValue {
+            return error.message
+        }
+        return copy(for: error.code)
     }
 
     static func copy(for code: ErrorCode) -> String {

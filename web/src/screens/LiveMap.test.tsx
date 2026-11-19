@@ -4,6 +4,10 @@ import { describe, expect, it, vi } from 'vitest'
 import type { PlayerView } from '../api/types'
 import { LiveMap } from './LiveMap'
 
+vi.mock('../geo/wakeLock', () => ({
+  requestHuntWakeLock: vi.fn(async () => () => undefined),
+}))
+
 vi.mock('leaflet', () => {
   const map = {
     setView: vi.fn().mockReturnThis(),
@@ -65,7 +69,15 @@ const view: PlayerView = {
   phase_remaining_s: null,
   time_limit_remaining_s: 1785,
   game_elapsed_s: 75,
-  you: { player_id: 'u1', role: 'seeker', status: 'active', is_host: true },
+  timers: { next_reveal_in_s: 40 },
+  you: {
+    player_id: 'u1',
+    role: 'seeker',
+    status: 'active',
+    is_host: true,
+    points: 10,
+    hint: 'Warm · 40 m',
+  },
   players: [
     {
       player_id: 'u1',
@@ -73,6 +85,7 @@ const view: PlayerView = {
       role: 'seeker',
       status: 'active',
       is_host: true,
+      points: 10,
       location: {
         lat: 40.1,
         lon: -73.1,
@@ -85,10 +98,12 @@ const view: PlayerView = {
   arena: {
     boundary_circle: { center: { lat: 40.1, lon: -73.1 }, radius_m: 400 },
   },
+  banners: [],
+  reveals: [],
 }
 
 describe('LiveMap', () => {
-  it('watches visible GPS and offers Scan QR / End for a host seeker', async () => {
+  it('watches visible GPS and offers Scan tag / End for a host seeker', async () => {
     const sendLocation = vi.fn()
     const watchLocation = vi.fn().mockReturnValue(() => undefined)
     const socket = { sendLocation } as never
@@ -106,9 +121,11 @@ describe('LiveMap', () => {
       />,
     )
 
-    expect(screen.getByText(/live map/i)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /seeker/i })).toBeInTheDocument()
     expect(screen.getByText(/hunt 29:45/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /scan qr/i })).toBeInTheDocument()
+    expect(screen.getByText(/ping 0:40/i)).toBeInTheDocument()
+    expect(screen.getByText(/warm · 40 m/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /scan tag/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /end hunt/i })).toBeInTheDocument()
     await waitFor(() => {
       expect(watchLocation).toHaveBeenCalled()
@@ -144,7 +161,7 @@ describe('LiveMap', () => {
     expect(screen.getByText(/outside the play circle — 12s/i)).toBeInTheDocument()
   })
 
-  it('hides Scan QR during head start so a late claim cannot land on active', () => {
+  it('hides Scan tag during head start so a late claim cannot land on active', () => {
     const headStart: PlayerView = {
       ...view,
       phase: 'head_start',
@@ -163,11 +180,11 @@ describe('LiveMap', () => {
         watchLocation={() => () => undefined}
       />,
     )
-    expect(screen.queryByRole('button', { name: /scan qr/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /scan tag/i })).not.toBeInTheDocument()
     expect(screen.getByText(/cannot tag until head start ends/i)).toBeInTheDocument()
   })
 
-  it('keeps the map frame mounted under the Scan QR overlay', async () => {
+  it('keeps the map frame mounted under the Scan tag overlay', async () => {
     const user = userEvent.setup()
     const socket = { sendLocation: vi.fn() } as never
     render(
@@ -184,8 +201,28 @@ describe('LiveMap', () => {
     )
     const frame = document.querySelector('.map-frame')
     expect(frame).toBeTruthy()
-    await user.click(screen.getByRole('button', { name: /scan qr/i }))
+    await user.click(screen.getByRole('button', { name: /scan tag/i }))
     expect(document.querySelector('.map-frame')).toBe(frame)
     expect(screen.getByRole('button', { name: /close scan/i })).toBeInTheDocument()
+  })
+
+  it('shows going-dark copy when this player is signal_lost', () => {
+    const dark: PlayerView = {
+      ...view,
+      you: { ...view.you, status: 'signal_lost', role: 'hider', is_host: false },
+    }
+    render(
+      <LiveMap
+        view={dark}
+        socket={{ sendLocation: vi.fn() } as never}
+        qrToken="tok"
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    expect(screen.getByText(/you went dark/i)).toBeInTheDocument()
   })
 })

@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.auth.tokens import parse_token
-from app.engine.session import movement_too_fast
+from app.engine.session import movement_too_fast, note_presence
 from app.engine.state import LocationReading
 from app.errors import ApiError, GameRuleError
 from app.realtime.manager import SessionManager, envelope
@@ -116,6 +116,8 @@ def bind_ws(manager: SessionManager, get_settings, persist_location=None):
                     )
                     player = session.state.players.get(user_id)
                     if player is not None and movement_too_fast(player, reading):
+                        # Keep silence clock fresh; do not move the pin.
+                        note_presence(player, reading.recorded_at)
                         await ws.send_json(
                             envelope(
                                 "error",

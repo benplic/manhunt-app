@@ -43,3 +43,37 @@
 .qr-scan .error {
   color: #a40000;
 }
+
+.qr-scan .accuracy {
+  margin: 0.35rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.qr-scan .accuracy--warn,
+.qr-scan .held {
+  color: #8a4b00;
+}
+
+.qr-scan .manual {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.qr-scan .manual label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.qr-scan .manual input {
+  min-height: 44px;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font: inherit;
+}
