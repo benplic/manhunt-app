@@ -195,10 +195,10 @@ export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props)
               </div>
               <div className="player-actions">
                 {isHost ? (
-                  <div className="role-toggles">
+                  <div className="chip-row">
                     <button
                       type="button"
-                      className={player.role === 'seeker' ? 'active' : undefined}
+                      className={`chip${player.role === 'seeker' ? ' chip--active' : ''}`}
                       disabled={busy}
                       onClick={() => void onToggleRole(player.player_id, 'seeker')}
                     >
@@ -206,7 +206,7 @@ export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props)
                     </button>
                     <button
                       type="button"
-                      className={player.role === 'hider' ? 'active' : undefined}
+                      className={`chip${player.role === 'hider' ? ' chip--active' : ''}`}
                       disabled={busy}
                       onClick={() => void onToggleRole(player.player_id, 'hider')}
                     >
@@ -215,10 +215,10 @@ export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props)
                   </div>
                 ) : null}
                 {player.player_id !== view.you.player_id ? (
-                  <div className="role-toggles">
+                  <div className="chip-row safety-row">
                     <button
                       type="button"
-                      className="secondary"
+                      className="chip"
                       onClick={() => {
                         blockPlayer(player.player_id, player.display_name)
                         setNote('Player blocked on this device.')
@@ -227,7 +227,7 @@ export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props)
                       Block
                     </button>
                     <a
-                      className="secondary link-btn"
+                      className="chip"
                       href={reportMailto({
                         gameId: view.game_id,
                         playerId: player.player_id,

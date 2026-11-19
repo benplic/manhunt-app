@@ -46,6 +46,10 @@ export function Result({ view, onDone, onRematch, onSignedOut }: Props) {
     }
   }
 
+  const ranked = [...view.players].sort(
+    (a, b) => (b.points_earned ?? b.points ?? 0) - (a.points_earned ?? a.points ?? 0),
+  )
+
   return (
     <main className="result">
       <h1>{result ? winnerCopy(result.winner) : 'Hunt over'}</h1>
@@ -64,6 +68,21 @@ export function Result({ view, onDone, onRematch, onSignedOut }: Props) {
           Home
         </button>
       </div>
+      {ranked.length > 0 ? (
+        <section className="scores">
+          <h2>Scores</h2>
+          <ul>
+            {ranked.map((player) => (
+              <li key={player.player_id}>
+                <strong>{player.display_name}</strong>
+                <span>
+                  {player.role} · {player.points_earned ?? player.points ?? 0} pts
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
     </main>
   )
 }

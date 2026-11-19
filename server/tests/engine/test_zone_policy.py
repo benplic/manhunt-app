@@ -25,6 +25,26 @@ def test_out_of_bounds_countdown_eliminates_a_hider() -> None:
     assert any("out of bounds" in e.text.lower() for e in events)
 
 
+def test_out_of_bounds_does_not_eliminate_during_head_start() -> None:
+    """Walk-in / bad first GPS must not end the hunt before seekers can move."""
+    session, clock, hider, seeker = two_player_hunt(
+        overrides={
+            "head_start": {"enabled": True, "duration": 30},
+            "zone_policy": {"oob_countdown": 3},
+            "win": {"condition": "either"},
+        }
+    )
+    # two_player_hunt already burned 1s of head start; stay in head_start.
+    assert session.state.phase == "head_start"
+    session.record_location(hider, reading(meters(100, -80), clock, accuracy=5))
+    session.record_location(seeker, reading(meters(100, 100), clock, accuracy=5))
+    run_for(session, clock, 10)
+    assert session.state.phase == "head_start"
+    assert session.state.players[hider].status == "active"
+    assert session.state.players[hider].bounds_phase == "warning"
+    assert session.state.result is None
+
+
 def test_out_zone_beats_a_safe_zone_that_covers_the_same_ground() -> None:
     session, clock, hider, seeker = two_player_hunt()
     arena = gazebo_arena()

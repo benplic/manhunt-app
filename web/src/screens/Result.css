@@ -1,19 +1,24 @@
 .result {
-  max-width: 22rem;
+  max-width: 24rem;
+  min-height: 100dvh;
   margin: 0 auto;
   padding: 2rem 1.25rem;
   padding-bottom: max(2rem, env(safe-area-inset-bottom));
   font-family: 'Segoe UI', system-ui, sans-serif;
   color: #f2f0ea;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 .result h1 {
-  margin: 0 0 0.75rem;
+  margin: 0;
   letter-spacing: 0.04em;
 }
 
 .result .reason,
 .result .code {
+  margin: 0;
   color: #b7b3a8;
 }
 
@@ -22,15 +27,16 @@
 }
 
 .result .actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 0.65rem;
-  margin-top: 1.25rem;
+  margin-top: 0.5rem;
 }
 
 .result button {
   min-height: 44px;
-  padding: 0.75rem 1.2rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
   border: none;
   border-radius: 6px;
   background: #2f6fed;
@@ -42,4 +48,38 @@
 
 .result button.secondary {
   background: #2a2a2a;
+}
+
+.result .scores {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #2a2a2a;
+  flex: 1;
+}
+
+.result .scores h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+
+.result .scores ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.result .scores li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-bottom: 0.55rem;
+  border-bottom: 1px solid #222;
+}
+
+.result .scores span {
+  color: #b7b3a8;
+  text-transform: capitalize;
 }

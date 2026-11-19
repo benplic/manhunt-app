@@ -8,6 +8,11 @@ vi.mock('../geo/wakeLock', () => ({
   requestHuntWakeLock: vi.fn(async () => () => undefined),
 }))
 
+vi.mock('../map/arenaCamera', () => ({
+  fitAndClampToArena: vi.fn(),
+  recenterOnArena: vi.fn(),
+}))
+
 vi.mock('leaflet', () => {
   const map = {
     setView: vi.fn().mockReturnThis(),
@@ -121,7 +126,7 @@ describe('LiveMap', () => {
       />,
     )
 
-    expect(screen.getByRole('heading', { name: /seeker/i })).toBeInTheDocument()
+    expect(screen.getByText(/^seeker$/i)).toBeInTheDocument()
     expect(screen.getByText(/hunt 29:45/i)).toBeInTheDocument()
     expect(screen.getByText(/ping 0:40/i)).toBeInTheDocument()
     expect(screen.getByText(/warm · 40 m/i)).toBeInTheDocument()
