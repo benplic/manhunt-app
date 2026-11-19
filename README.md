@@ -67,7 +67,7 @@ Use this for TestFlight and other **Release** builds. Home sideload **Debug** st
 
 ### Cloud API URL (baked in Release)
 
-Release does not show a Server URL on sign-in. The API origin is compiled in via `MANHUNT_API_BASE_URL` → `ManhuntAPIBaseURL` in `ios/Support/Info.plist`. Before archiving for external testers, set the **Release** value in `ios/Manhunt.xcodeproj/project.pbxproj` to the live HTTPS cloud origin (today’s placeholder is `https://REPLACE_WITH_CLOUD_API_ORIGIN`). Debug keeps `http://localhost:8000` and the Server URL field.
+Release does not show a Server URL on sign-in. The API origin is compiled in via `MANHUNT_API_BASE_URL` → `ManhuntAPIBaseURL` in `ios/Support/Info.plist` (Release is `https://manhunt.pivotlattice.app`). Testers enter display name, age, and the home key only. Debug keeps `http://localhost:8000` and still shows the Server URL field for local work.
 
 ### Home key (party secret)
 
@@ -81,7 +81,7 @@ Sign-in requires age. The server and client reject ages under 13 (`TOO_YOUNG`). 
 
 - Policy source: [docs/legal/privacy.md](docs/legal/privacy.md). Publish that file to a **public HTTPS URL** (GitHub Pages, a static host, or similar).
 - Set `ManhuntPrivacyPolicyURL` in `ios/Support/Info.plist` to that URL (placeholder today: `https://REPLACE_WITH_PUBLISHED_PRIVACY_URL`). The in-app Privacy policy link and Account screen use this key.
-- Replace `ManhuntSupportEmail` in the same plist (and the contact lines in `docs/legal/privacy.md`) before shipping to testers.
+- Support email is `support@manhunt.pivotlattice.app` (`ManhuntSupportEmail` in the Info plists and `docs/legal/privacy.md`).
 
 App Store Connect must list the same privacy and support URLs; that step is in the Apple plan, not in git.
 

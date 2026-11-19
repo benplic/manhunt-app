@@ -4,7 +4,7 @@
 
 ## Who we are
 
-Manhunt is a location-based outdoor game operated for beta testing. This policy describes what we collect, how we use it, and your choices. Questions: **support@example.com** (placeholder until replaced).
+Manhunt is a location-based outdoor game operated for beta testing. This policy describes what we collect, how we use it, and your choices. Questions: **support@manhunt.pivotlattice.app**.
 
 ## Data we collect
 
@@ -35,7 +35,7 @@ Manhunt does not sell personal data, show third-party ads, or use tracking for a
 
 ## Contact
 
-Email: **support@example.com** (placeholder until replaced).
+Email: **support@manhunt.pivotlattice.app**.
 
 ## Policy updates
 

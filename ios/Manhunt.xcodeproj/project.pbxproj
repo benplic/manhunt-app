@@ -279,7 +279,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MANHUNT_API_BASE_URL = "https://REPLACE_WITH_CLOUD_API_ORIGIN";
+				MANHUNT_API_BASE_URL = "https://manhunt.pivotlattice.app";
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.benjaminplichta.manhunt;
 				PRODUCT_NAME = "$(TARGET_NAME)";
