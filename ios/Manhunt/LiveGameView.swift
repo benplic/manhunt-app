@@ -135,11 +135,7 @@ struct LiveGameView: View {
                 if !store.decoyPicking && !store.demoPicking {
                     LiveControls(
                         flashlightOn: store.flashlightOn,
-                        pingSoundEnabled: store.pingSoundEnabled,
-                        pingFlashlightEnabled: store.pingFlashlightEnabled,
                         onToggleFlashlight: store.toggleFlashlight,
-                        onTogglePingSound: store.setPingSoundEnabled,
-                        onTogglePingFlashlight: store.setPingFlashlightEnabled,
                         onTapSpeaker: store.tapVoicePlaceholder,
                         onTapMic: store.tapVoicePlaceholder
                     )
