@@ -70,6 +70,7 @@ describe('createGame', () => {
       preset_id: 'classic',
       overrides: {
         zone_policy: { oob_countdown: 60 },
+        signal_loss: { silence: 180, penalty: 'none' },
       },
     })
 

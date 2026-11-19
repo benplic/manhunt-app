@@ -6,8 +6,11 @@ import { endGame, pauseGame, resumeGame, undoLastTag } from '../api/games'
 import { SUPPORT_EMAIL } from '../api/legal'
 import { SessionExpiredError, withAuthRetry } from '../api/session'
 import type { GameSocket } from '../api/ws'
+import { startLivePresence } from '../geo/presence'
 import { requestHuntWakeLock } from '../geo/wakeLock'
 import { watchVisibleLocation } from '../geo/watchVisible'
+import type { GeoFix } from '../geo/watchVisible'
+import { fitAndClampToArena, recenterOnArena } from '../map/arenaCamera'
 import { formatClock } from '../map/clock'
 import { ensureLeafletDefaultIcons } from '../map/leafletIcons'
 import { pinsFromView } from '../map/pins'
@@ -39,6 +42,9 @@ function boundsMessage(view: PlayerView): string | null {
   const bounds = view.you.bounds
   if (!bounds || bounds.phase === 'inside') {
     return null
+  }
+  if (view.phase === 'head_start' && bounds.phase === 'warning') {
+    return 'Outside the play circle — walk in before the hunt starts.'
   }
   if (bounds.phase === 'countdown' && bounds.remaining_s != null) {
     return `Outside the play circle — ${bounds.remaining_s}s until auto-tag.`
@@ -174,6 +180,10 @@ export function LiveMap({
       arenaCircleRef.current.setLatLng(latLng)
       arenaCircleRef.current.setRadius(circle.radius_m)
     }
+    // Clamp to the play circle once we know it (and again if the host resizes).
+    fitAndClampToArena(map, circle, L)
+    fittedRef.current = true
+    window.setTimeout(() => map.invalidateSize(), 0)
   }, [view.arena])
 
   useEffect(() => {
@@ -236,15 +246,18 @@ export function LiveMap({
         markersRef.current.delete(id)
       }
     }
-    if (!fittedRef.current && pins.length > 0) {
-      const bounds = L.latLngBounds(pins.map((p) => [p.lat, p.lon] as [number, number]))
-      map.fitBounds(bounds.pad(0.35))
-      fittedRef.current = true
-    }
   }, [pins])
 
   useEffect(() => {
-    const stopWatch = watchLocation({
+    // Mac/desktop often never gets watchPosition. Seed the arena center so the
+    // host hider does not go dark after classic silence while desk-testing.
+    const circle = view.arena?.boundary_circle
+    const seedFix: GeoFix | null = circle
+      ? { lat: circle.center.lat, lon: circle.center.lon, accuracyM: 12 }
+      : null
+    const stop = startLivePresence({
+      seedFix,
+      watchLocation,
       onFix: (fix) => {
         setAccuracyM(fix.accuracyM)
         socket.sendLocation({
@@ -255,8 +268,8 @@ export function LiveMap({
       },
       onError: (message) => setLocalNote(message),
     })
-    return () => stopWatch()
-  }, [socket, watchLocation])
+    return () => stop()
+  }, [socket, watchLocation, view.arena?.boundary_circle?.center.lat, view.arena?.boundary_circle?.center.lon, view.arena?.boundary_circle?.radius_m])
 
   function recenter() {
     const map = mapRef.current
@@ -265,9 +278,7 @@ export function LiveMap({
     }
     const circle = view.arena?.boundary_circle
     if (circle) {
-      map.fitBounds(
-        L.latLng(circle.center.lat, circle.center.lon).toBounds(circle.radius_m * 2.2),
-      )
+      recenterOnArena(map, circle, L)
       return
     }
     if (pins.length === 0) {
@@ -320,21 +331,21 @@ export function LiveMap({
 
   return (
     <main className={`live-map${overlayOpen ? ' live-map--overlay' : ''}`}>
-      <header>
-        <div>
+      <header className="top-bar">
+        <div className="identity">
           <p className="eyebrow">
             {phaseLabel(view.phase)} · {view.join_code}
           </p>
-          <h1>{view.you.role}</h1>
+          <p className="role-pill">{view.you.role}</p>
         </div>
-        <div className="actions">
-          <button type="button" className="secondary" onClick={recenter}>
+        <div className="actions chip-row">
+          <button type="button" className="chip" onClick={recenter}>
             Recenter
           </button>
-          <button type="button" className="secondary" onClick={() => setPanel('board')}>
+          <button type="button" className="chip" onClick={() => setPanel('board')}>
             Scores
           </button>
-          <button type="button" onClick={onLeave}>
+          <button type="button" className="chip chip--accent" onClick={onLeave}>
             Leave
           </button>
         </div>
@@ -346,7 +357,6 @@ export function LiveMap({
           {pingLeft != null ? (
             <span className="hud-sub">Ping {formatClock(pingLeft)}</span>
           ) : null}
-          {view.you.hint ? <span className="hud-hint">{view.you.hint}</span> : null}
           <span className="hud-sub">{view.you.points ?? 0} pts</span>
           {accuracyM != null ? (
             <span className={`hud-sub${accuracyM > 30 ? ' hud-sub--warn' : ''}`}>
@@ -355,6 +365,7 @@ export function LiveMap({
           ) : (
             <span className="hud-sub hud-sub--warn">GPS…</span>
           )}
+          {view.you.hint ? <span className="hud-hint">{view.you.hint}</span> : null}
         </div>
       ) : null}
 
@@ -377,27 +388,43 @@ export function LiveMap({
       />
 
       {!overlayOpen ? (
-        <>
+        <footer className="bottom-stack">
+          {alert ? (
+            <p className={`alert${oobNote || wentDark ? ' alert--warn' : ''}`} role="alert">
+              {alert}
+            </p>
+          ) : null}
+          {toast ? (
+            <p className="toast" role="status">
+              {toast}
+            </p>
+          ) : null}
           <div className="dock">
             {isHider ? (
-              <button type="button" disabled={!qrToken} onClick={() => setPanel('show')}>
+              <button type="button" className="chip chip--accent" disabled={!qrToken} onClick={() => setPanel('show')}>
                 Show tag
               </button>
             ) : null}
             {isSeeker && view.phase === 'active' ? (
-              <button type="button" onClick={() => setPanel('scan')}>
+              <button type="button" className="chip chip--accent" onClick={() => setPanel('scan')}>
                 Scan tag
               </button>
             ) : null}
             {isSeeker && view.phase === 'head_start' ? (
               <p className="dock-note">Seekers cannot tag until head start ends.</p>
             ) : null}
-            {isHost ? (
-              <>
+            {isHider && !qrToken ? (
+              <p className="dock-note">Waiting for a tag QR from the server…</p>
+            ) : null}
+          </div>
+          {isHost ? (
+            <div className="host-strip" aria-label="Host controls">
+              <p className="host-label">Host</p>
+              <div className="chip-row">
                 {view.phase === 'paused' ? (
                   <button
                     type="button"
-                    className="secondary"
+                    className="chip"
                     disabled={busyHost}
                     onClick={() =>
                       void runHost(() =>
@@ -410,7 +437,7 @@ export function LiveMap({
                 ) : (
                   <button
                     type="button"
-                    className="secondary"
+                    className="chip"
                     disabled={busyHost}
                     onClick={() =>
                       void runHost(() =>
@@ -423,7 +450,7 @@ export function LiveMap({
                 )}
                 <button
                   type="button"
-                  className="secondary"
+                  className="chip"
                   disabled={busyHost}
                   onClick={() =>
                     void runHost(() =>
@@ -435,7 +462,7 @@ export function LiveMap({
                 </button>
                 <button
                   type="button"
-                  className="danger"
+                  className="chip chip--danger"
                   disabled={busyHost}
                   onClick={() =>
                     void runHost(() =>
@@ -445,24 +472,11 @@ export function LiveMap({
                 >
                   End hunt
                 </button>
-              </>
-            ) : null}
-          </div>
-          {isHider && !qrToken ? (
-            <p className="dock-note">Waiting for a tag QR from the server…</p>
-          ) : null}
-          {alert ? (
-            <p className={`alert${oobNote || wentDark ? ' alert--warn' : ''}`} role="alert">
-              {alert}
-            </p>
-          ) : null}
-          {toast ? (
-            <p className="toast" role="status">
-              {toast}
-            </p>
+              </div>
+            </div>
           ) : null}
           <p className="hint">Keep this tab visible and the screen on. Stay inside the yellow circle.</p>
-        </>
+        </footer>
       ) : null}
 
       {panel === 'show' && qrToken ? (
@@ -487,9 +501,9 @@ export function LiveMap({
       ) : null}
       {panel === 'board' ? (
         <div className="qr-overlay board">
-          <header>
+          <header className="top-bar">
             <h1>Leaderboard</h1>
-            <button type="button" className="secondary" onClick={() => setPanel('map')}>
+            <button type="button" className="chip" onClick={() => setPanel('map')}>
               Close
             </button>
           </header>
@@ -503,17 +517,17 @@ export function LiveMap({
                   </span>
                 </div>
                 {player.player_id !== view.you.player_id ? (
-                  <div className="board-actions">
+                  <div className="chip-row">
                     <button
                       type="button"
-                      className="secondary"
+                      className="chip"
                       onClick={() => onBlock(player.player_id, player.display_name)}
                     >
                       Block
                     </button>
                     <button
                       type="button"
-                      className="secondary"
+                      className="chip"
                       onClick={() => onReport(player.player_id, player.display_name)}
                     >
                       Report

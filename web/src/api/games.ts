@@ -11,6 +11,9 @@ export const DEFAULT_ARENA_RADIUS_M = 400
  */
 export const WEB_OOB_COUNTDOWN_S = 60
 
+/** Desktop tabs often pause GPS; keep silence longer than classic 45 s. */
+export const WEB_SIGNAL_SILENCE_S = 180
+
 export type CreateGameInput = {
   token: string
   lat: number
@@ -42,6 +45,7 @@ export async function createGame(input: CreateGameInput): Promise<PlayerView> {
       preset_id: 'classic',
       overrides: {
         zone_policy: { oob_countdown: WEB_OOB_COUNTDOWN_S },
+        signal_loss: { silence: WEB_SIGNAL_SILENCE_S, penalty: 'none' },
       },
     },
   })
