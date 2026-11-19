@@ -1,9 +1,11 @@
 import type { PlayerView } from '../api/types'
+import { displayNameFor } from '../social/blockList'
 
 export type MapPin = {
   playerId: string
   displayName: string
   role: string
+  status: string
   lat: number
   lon: number
   isYou: boolean
@@ -19,8 +21,9 @@ export function pinsFromView(view: PlayerView): MapPin[] {
     return [
       {
         playerId: player.player_id,
-        displayName: player.display_name,
+        displayName: displayNameFor(player.player_id, player.display_name),
         role: player.role,
+        status: player.status,
         lat: loc.lat,
         lon: loc.lon,
         isYou: player.player_id === view.you.player_id,

@@ -1,9 +1,12 @@
 .live-map {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100dvh;
+  min-height: 100vh;
   font-family: 'Segoe UI', system-ui, sans-serif;
   position: relative;
+  background: #0f1115;
+  color: #f2f0ea;
 }
 
 .live-map .map-frame--hidden {
@@ -18,125 +21,196 @@
 .live-map .qr-overlay {
   flex: 1;
   overflow: auto;
-  background: #f7f5f1;
+  background: #12141a;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .live-map header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 0.85rem 1rem;
-  background: rgba(247, 245, 241, 0.95);
-  border-bottom: 1px solid #ddd;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+  background: rgba(15, 17, 21, 0.92);
+  border-bottom: 1px solid #2a2d36;
+}
+
+.live-map .eyebrow {
+  margin: 0;
+  color: #9aa0ad;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .live-map h1 {
-  margin: 0;
-  font-size: 1.15rem;
+  margin: 0.15rem 0 0;
+  font-size: 1.25rem;
+  text-transform: capitalize;
 }
 
-.live-map header p {
-  margin: 0.15rem 0 0;
-  color: #555;
-  font-size: 0.85rem;
-  text-transform: capitalize;
+.live-map .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+.live-map button,
+.live-map .link-btn {
+  min-height: 44px;
+  padding: 0.55rem 0.85rem;
+  border: none;
+  border-radius: 0.55rem;
+  background: #2f6fed;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.live-map button.secondary,
+.live-map .link-btn.secondary {
+  background: #2a2d36;
+  color: #f2f0ea;
+}
+
+.live-map button.danger {
+  background: #8b1e1e;
+}
+
+.live-map button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .live-map .hud {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 0.65rem 1.25rem;
+  gap: 0.45rem 0.9rem;
   padding: 0.55rem 1rem;
-  background: #1a1a1a;
-  color: #f7f5f1;
+  background: #171a21;
 }
 
 .live-map .hud-clock {
-  font-size: 1.35rem;
+  font-size: 1.25rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
 }
 
-.live-map .hud-sub {
+.live-map .hud-sub,
+.live-map .hud-hint {
   font-size: 0.85rem;
-  opacity: 0.85;
+  color: #c4c8d2;
   font-variant-numeric: tabular-nums;
 }
 
-.live-map .actions {
+.live-map .hud-sub--warn,
+.live-map .alert--warn {
+  color: #f0c75e;
+}
+
+.live-map .hud-hint {
+  flex: 1 1 100%;
+}
+
+.live-map .banners {
   display: flex;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.45rem 1rem;
+  background: #1c1510;
 }
 
-.live-map header button {
-  padding: 0.55rem 0.85rem;
-  border: none;
-  border-radius: 6px;
-  background: #1a1a1a;
-  color: #fff;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
+.live-map .banner {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.35;
 }
 
-.live-map header button.secondary {
-  background: #445;
+.live-map .banner--safety {
+  color: #f0c75e;
 }
 
 .live-map .map-frame {
   flex: 1;
-  min-height: 240px;
+  min-height: 220px;
 }
 
-.live-map .toolbar {
+.live-map .dock {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  padding: 0.65rem 1rem;
-  background: rgba(247, 245, 241, 0.95);
-  border-top: 1px solid #ddd;
+  padding: 0.75rem 1rem;
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  background: rgba(15, 17, 21, 0.96);
+  border-top: 1px solid #2a2d36;
 }
 
-.live-map .toolbar button {
-  padding: 0.55rem 0.85rem;
-  border: none;
-  border-radius: 6px;
-  background: #1a1a1a;
-  color: #fff;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.live-map .toolbar button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.live-map .toolbar button.danger {
-  background: #7a1f1f;
-}
-
+.live-map .dock-note,
 .live-map .hint,
-.live-map .qr-note,
-.live-map .error {
+.live-map .alert,
+.live-map .toast {
   margin: 0;
   padding: 0.55rem 1rem;
   font-size: 0.85rem;
+  line-height: 1.35;
 }
 
-.live-map .error {
-  color: #a40000;
+.live-map .hint {
+  color: #9aa0ad;
+  padding-bottom: max(0.85rem, env(safe-area-inset-bottom));
 }
 
-.live-map .error--oob {
-  background: #fde8e8;
-  font-weight: 600;
+.live-map .alert {
+  color: #ffb4b4;
+  background: #2a1515;
 }
 
-.live-map .qr-note {
-  background: #eef4ea;
+.live-map .toast {
+  color: #c8e6c9;
+  background: #14301a;
+}
+
+.live-map .board header {
+  border-bottom: 1px solid #2a2d36;
+}
+
+.live-map .board ul {
+  list-style: none;
+  margin: 0;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.live-map .board li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.live-map .board li div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.live-map .board li span {
+  color: #9aa0ad;
+  font-size: 0.85rem;
+  text-transform: capitalize;
+}
+
+.live-map .board-actions {
+  display: flex;
+  gap: 0.4rem;
 }

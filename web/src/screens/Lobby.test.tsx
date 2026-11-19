@@ -157,7 +157,7 @@ describe('Lobby screen', () => {
       ],
     })
     setManualRoles.mockResolvedValue(assigned)
-    startGame.mockResolvedValue(lobbyView({ phase: 'head_start', ...assigned }))
+    startGame.mockResolvedValue(lobbyView({ ...assigned, phase: 'head_start' }))
 
     const { rerender } = render(
       <Lobby

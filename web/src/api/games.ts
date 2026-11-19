@@ -162,3 +162,41 @@ export async function claimQrTag(input: {
     body: { token: input.qrToken },
   })
 }
+
+export async function fetchGameView(input: {
+  token: string
+  gameId: string
+}): Promise<PlayerView> {
+  return apiRequest<PlayerView>(`/v1/games/${input.gameId}`, {
+    method: 'GET',
+    token: input.token,
+  })
+}
+
+export async function pauseGame(input: { token: string; gameId: string }): Promise<PlayerView> {
+  return apiRequest<PlayerView>(`/v1/games/${input.gameId}/pause`, {
+    method: 'POST',
+    token: input.token,
+  })
+}
+
+export async function resumeGame(input: { token: string; gameId: string }): Promise<PlayerView> {
+  return apiRequest<PlayerView>(`/v1/games/${input.gameId}/resume`, {
+    method: 'POST',
+    token: input.token,
+  })
+}
+
+export async function undoLastTag(input: { token: string; gameId: string }): Promise<PlayerView> {
+  return apiRequest<PlayerView>(`/v1/games/${input.gameId}/tags/undo`, {
+    method: 'POST',
+    token: input.token,
+  })
+}
+
+export async function rematchGame(input: { token: string; gameId: string }): Promise<PlayerView> {
+  return apiRequest<PlayerView>(`/v1/games/${input.gameId}/rematch`, {
+    method: 'POST',
+    token: input.token,
+  })
+}

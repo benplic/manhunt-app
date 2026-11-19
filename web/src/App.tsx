@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiBaseUrl } from './api/config'
-import { leaveGame } from './api/games'
+import { fetchGameView, leaveGame } from './api/games'
 import { SessionExpiredError, withAuthRetry } from './api/session'
 import type { PlayerView } from './api/types'
 import { GameSocket, wsUrlForGame } from './api/ws'
-import { loadSession } from './auth/storage'
+import { clearSession, loadSession } from './auth/storage'
+import { clearActiveGame, loadActiveGameId, rememberActiveGame } from './game/resume'
 import { Home } from './screens/Home'
 import { LiveMap } from './screens/LiveMap'
 import { Lobby } from './screens/Lobby'
@@ -26,6 +27,7 @@ function App() {
   const [qrToken, setQrToken] = useState<string | null>(null)
   const [socketNote, setSocketNote] = useState<string | null>(null)
   const [socketReady, setSocketReady] = useState(false)
+  const [resuming, setResuming] = useState(false)
   const socketRef = useRef<GameSocket | null>(null)
 
   function tearDownSocket() {
@@ -36,6 +38,7 @@ function App() {
   }
 
   function applyView(next: PlayerView) {
+    rememberActiveGame(next.game_id)
     // Result only needs the last view; stop the socket as soon as the hunt ends.
     if (next.phase === 'ended') {
       tearDownSocket()
@@ -45,15 +48,54 @@ function App() {
 
   function clearGame() {
     tearDownSocket()
+    clearActiveGame()
     setGameView(null)
   }
 
   function signOut() {
     tearDownSocket()
+    clearActiveGame()
+    clearSession()
     setSocketNote(null)
     setGameView(null)
     setSignedIn(false)
   }
+
+  // Rejoin the open game after a refresh.
+  useEffect(() => {
+    if (!signedIn || gameView || resuming) {
+      return
+    }
+    const gameId = loadActiveGameId()
+    if (!gameId) {
+      return
+    }
+    let cancelled = false
+    setResuming(true)
+    void withAuthRetry((token) => fetchGameView({ token, gameId }))
+      .then((view) => {
+        if (!cancelled) {
+          applyView(view)
+        }
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return
+        }
+        clearActiveGame()
+        if (err instanceof SessionExpiredError) {
+          signOut()
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setResuming(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [signedIn, gameView, resuming])
 
   // One long-lived socket per game so Lobby → LiveMap keeps lastSeq.
   useEffect(() => {
@@ -73,9 +115,16 @@ function App() {
     socketRef.current = socket
     socket.onView = (next) => applyView(next)
     socket.onQr = (token) => setQrToken(token)
-    socket.onError = (err) => setSocketNote(err.message)
+    socket.onError = (err) => {
+      // Too-fast GPS jumps are expected on the web; do not spam the banner.
+      if (err.message.toLowerCase().includes('too fast')) {
+        return
+      }
+      setSocketNote(err.message)
+    }
     socket.onRemoved = () => {
       tearDownSocket()
+      clearActiveGame()
       setGameView(null)
       setSocketNote('You were removed from this hunt.')
     }
@@ -93,6 +142,7 @@ function App() {
     }
     const gameId = gameView.game_id
     tearDownSocket()
+    clearActiveGame()
     try {
       await withAuthRetry((token) => leaveGame({ token, gameId }))
     } catch (err) {
@@ -107,6 +157,14 @@ function App() {
 
   if (!signedIn) {
     return <SignIn onSignedIn={() => setSignedIn(true)} />
+  }
+
+  if (resuming && !gameView) {
+    return (
+      <main className="home">
+        <p>Rejoining the hunt…</p>
+      </main>
+    )
   }
 
   if (gameView && isLobby(gameView.phase)) {
@@ -128,6 +186,11 @@ function App() {
         onDone={() => {
           clearGame()
         }}
+        onRematch={(next) => {
+          tearDownSocket()
+          applyView(next)
+        }}
+        onSignedOut={signOut}
       />
     )
   }
@@ -156,7 +219,7 @@ function App() {
   return (
     <Home
       onSignedOut={signOut}
-      onEnteredGame={(view) => setGameView(view)}
+      onEnteredGame={(view) => applyView(view)}
     />
   )
 }

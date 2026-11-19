@@ -9,8 +9,10 @@ import {
   startGame,
 } from '../api/games'
 import { joinUrlForCode } from '../api/joinCode'
+import { SUPPORT_EMAIL } from '../api/legal'
 import { SessionExpiredError, withAuthRetry } from '../api/session'
 import type { PlayerView } from '../api/types'
+import { blockPlayer, displayNameFor, reportMailto } from '../social/blockList'
 import './Lobby.css'
 
 type Props = {
@@ -35,8 +37,9 @@ export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props)
   const [joinQr, setJoinQr] = useState<string | null>(null)
   const radiusNow = view.arena?.boundary_circle?.radius_m ?? DEFAULT_ARENA_RADIUS_M
   const [radiusDraft, setRadiusDraft] = useState(radiusNow)
+  const [note, setNote] = useState<string | null>(null)
   const isHost = view.you.is_host
-  const alert = error ?? socketNote ?? null
+  const alert = error ?? note ?? socketNote ?? null
   const canStart = rolesReady(view) && view.players.length >= 2
 
   const joinLink = useMemo(() => joinUrlForCode(view.join_code), [view.join_code])
@@ -184,32 +187,59 @@ export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props)
           {view.players.map((player) => (
             <li key={player.player_id}>
               <div>
-                <span>{player.display_name}</span>
+                <span>{displayNameFor(player.player_id, player.display_name)}</span>
                 <span className="meta">
                   {player.role}
                   {player.is_host ? ' · host' : ''}
                 </span>
               </div>
-              {isHost ? (
-                <div className="role-toggles">
-                  <button
-                    type="button"
-                    className={player.role === 'seeker' ? 'active' : undefined}
-                    disabled={busy}
-                    onClick={() => void onToggleRole(player.player_id, 'seeker')}
-                  >
-                    Seeker
-                  </button>
-                  <button
-                    type="button"
-                    className={player.role === 'hider' ? 'active' : undefined}
-                    disabled={busy}
-                    onClick={() => void onToggleRole(player.player_id, 'hider')}
-                  >
-                    Hider
-                  </button>
-                </div>
-              ) : null}
+              <div className="player-actions">
+                {isHost ? (
+                  <div className="role-toggles">
+                    <button
+                      type="button"
+                      className={player.role === 'seeker' ? 'active' : undefined}
+                      disabled={busy}
+                      onClick={() => void onToggleRole(player.player_id, 'seeker')}
+                    >
+                      Seeker
+                    </button>
+                    <button
+                      type="button"
+                      className={player.role === 'hider' ? 'active' : undefined}
+                      disabled={busy}
+                      onClick={() => void onToggleRole(player.player_id, 'hider')}
+                    >
+                      Hider
+                    </button>
+                  </div>
+                ) : null}
+                {player.player_id !== view.you.player_id ? (
+                  <div className="role-toggles">
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => {
+                        blockPlayer(player.player_id, player.display_name)
+                        setNote('Player blocked on this device.')
+                      }}
+                    >
+                      Block
+                    </button>
+                    <a
+                      className="secondary link-btn"
+                      href={reportMailto({
+                        gameId: view.game_id,
+                        playerId: player.player_id,
+                        displayName: player.display_name,
+                        supportEmail: SUPPORT_EMAIL,
+                      })}
+                    >
+                      Report
+                    </a>
+                  </div>
+                ) : null}
+              </div>
             </li>
           ))}
         </ul>

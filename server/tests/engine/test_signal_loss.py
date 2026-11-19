@@ -17,3 +17,22 @@ def test_silence_shows_the_last_precise_location_to_everyone() -> None:
     pin = next(p for p in seeker_view["players"] if p["player_id"] == str(hider))
     assert pin["location"] is not None
     assert pin["location"]["kind"] == "last_known"
+
+
+def test_going_dark_does_not_count_as_tagged() -> None:
+    """A silent hider is a safety event, not an elimination that ends the hunt."""
+    session, clock, hider, seeker = two_player_hunt(
+        overrides={
+            "signal_loss": {"silence": 3, "penalty": "none"},
+            "head_start": {"duration": 1, "enabled": True},
+            "win": {"condition": "either"},
+        }
+    )
+    session.record_location(hider, reading(meters(40, 40), clock, accuracy=6))
+    session.record_location(seeker, reading(meters(100, 100), clock, accuracy=6))
+    run_for(session, clock, 3)
+    assert session.state.players[hider].status == "signal_lost"
+    assert session.state.phase != "ended"
+    assert session.state.result is None
+    seeker_view = build_view(session, seeker)
+    assert any(b["tone"] == "safety" for b in seeker_view["banners"])

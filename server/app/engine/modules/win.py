@@ -29,8 +29,9 @@ class WinModule(BaseModule):
             return None
         condition = self.settings.get("condition", "either")
         hiders = [p for p in s.state.players.values() if p.role == "hider"]
-        active_hiders = [p for p in hiders if p.status == "active"]
-        all_caught = bool(hiders) and not active_hiders
+        # Going dark is a safety state, not a tag. Only eliminated hiders count as caught.
+        still_in = [p for p in hiders if p.status != "eliminated"]
+        all_caught = bool(hiders) and not still_in
         timed_out = (s.state.time_limit_remaining_s or 1) <= 0 and s.state.phase == "active"
         if all_caught and condition in {"all_caught", "either"}:
             return WinResult(winner="seekers", reason="All hiders were tagged.")

@@ -6,6 +6,7 @@ import { parseJoinPayload, sanitizeJoinCode } from '../api/joinCode'
 import { SessionExpiredError, withAuthRetry } from '../api/session'
 import type { PlayerView } from '../api/types'
 import { clearSession, loadSession } from '../auth/storage'
+import { Account } from './Account'
 import { JoinScan } from './JoinScan'
 import './Home.css'
 
@@ -48,6 +49,7 @@ export function Home({ onSignedOut, onEnteredGame }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [scanning, setScanning] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
 
   useEffect(() => {
     const fromUrl = joinFromLocation()
@@ -128,6 +130,10 @@ export function Home({ onSignedOut, onEnteredGame }: Props) {
     onSignedOut()
   }
 
+  if (accountOpen) {
+    return <Account onClose={() => setAccountOpen(false)} />
+  }
+
   if (scanning) {
     return (
       <JoinScan
@@ -146,6 +152,11 @@ export function Home({ onSignedOut, onEnteredGame }: Props) {
       <header>
         <h1>Manhunt</h1>
         <p>Signed in as {session?.displayName ?? 'player'}</p>
+        <div className="home-actions">
+          <button type="button" className="secondary" onClick={() => setAccountOpen(true)}>
+            Account
+          </button>
+        </div>
       </header>
 
       <section>

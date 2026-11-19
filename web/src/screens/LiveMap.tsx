@@ -2,13 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { ApiError } from '../api/client'
-import { endGame } from '../api/games'
+import { endGame, pauseGame, resumeGame, undoLastTag } from '../api/games'
+import { SUPPORT_EMAIL } from '../api/legal'
 import { SessionExpiredError, withAuthRetry } from '../api/session'
 import type { GameSocket } from '../api/ws'
+import { requestHuntWakeLock } from '../geo/wakeLock'
 import { watchVisibleLocation } from '../geo/watchVisible'
 import { formatClock } from '../map/clock'
 import { ensureLeafletDefaultIcons } from '../map/leafletIcons'
 import { pinsFromView } from '../map/pins'
+import { revealsFromView } from '../map/reveals'
+import { blockPlayer, reportMailto } from '../social/blockList'
 import type { PlayerView } from '../api/types'
 import { QrScan } from './QrScan'
 import { QrShow } from './QrShow'
@@ -25,7 +29,7 @@ type Props = {
   watchLocation?: typeof watchVisibleLocation
 }
 
-type Panel = 'map' | 'show' | 'scan'
+type Panel = 'map' | 'show' | 'scan' | 'board'
 
 function phaseLabel(phase: string): string {
   return phase.replaceAll('_', ' ')
@@ -48,6 +52,13 @@ function boundsMessage(view: PlayerView): string | null {
   return `Boundary: ${bounds.phase}`
 }
 
+function darkMessage(view: PlayerView): string | null {
+  if (view.you.status === 'signal_lost') {
+    return 'You went dark. Keep this tab visible and the screen on.'
+  }
+  return null
+}
+
 export function LiveMap({
   view,
   socket,
@@ -61,38 +72,57 @@ export function LiveMap({
   const mapEl = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<L.Map | null>(null)
   const markersRef = useRef<Map<string, L.Marker>>(new Map())
+  const revealRef = useRef<Map<string, L.Circle>>(new Map())
   const arenaCircleRef = useRef<L.Circle | null>(null)
   const fittedRef = useRef(false)
   const [localNote, setLocalNote] = useState<string | null>(null)
+  const [accuracyM, setAccuracyM] = useState<number | null>(null)
   const [panel, setPanel] = useState<Panel>('map')
-  const [ending, setEnding] = useState(false)
+  const [busyHost, setBusyHost] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
 
   const pins = useMemo(() => pinsFromView(view), [view])
+  const reveals = useMemo(() => revealsFromView(view), [view])
+  const banners = view.banners ?? []
   const isHider = view.you.role === 'hider'
   const isSeeker = view.you.role === 'seeker'
   const isHost = view.you.is_host
   const overlayOpen = panel !== 'map'
   const oobNote = boundsMessage(view)
+  const wentDark = darkMessage(view)
+  const pingLeft = view.timers?.next_reveal_in_s
 
-  // Never leave the tag scanner open during head start (a claim in flight can
-  // land the moment the phase flips to active and end the hunt instantly).
+  // Never leave the tag scanner open during head start.
   useEffect(() => {
     if (view.phase === 'head_start' && panel === 'scan') {
       setPanel('map')
     }
   }, [view.phase, panel])
 
+  useEffect(() => {
+    let release: (() => void) | undefined
+    void requestHuntWakeLock().then((stop) => {
+      release = stop
+    })
+    return () => release?.()
+  }, [])
+
   const clockPrimary =
-    view.phase === 'head_start'
-      ? `Head start ${formatClock(view.phase_remaining_s)}`
-      : `Hunt ${formatClock(view.time_limit_remaining_s)}`
+    view.phase === 'paused'
+      ? 'Paused'
+      : view.phase === 'head_start'
+        ? `Head start ${formatClock(view.phase_remaining_s)}`
+        : `Hunt ${formatClock(view.time_limit_remaining_s)}`
 
   useEffect(() => {
     if (!mapEl.current || mapRef.current) {
       return
     }
     ensureLeafletDefaultIcons()
-    const map = L.map(mapEl.current, { zoomControl: true }).setView([40.66, -73.96], 15)
+    const map = L.map(mapEl.current, { zoomControl: false, attributionControl: false }).setView(
+      [40.66, -73.96],
+      15,
+    )
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap',
       maxZoom: 19,
@@ -103,11 +133,11 @@ export function LiveMap({
       map.remove()
       mapRef.current = null
       markersRef.current.clear()
+      revealRef.current.clear()
       arenaCircleRef.current = null
     }
   }, [])
 
-  // Keep the Leaflet container mounted under QR overlays; refresh size when returning.
   useEffect(() => {
     if (panel !== 'map') {
       return
@@ -135,10 +165,10 @@ export function LiveMap({
     if (!arenaCircleRef.current) {
       arenaCircleRef.current = L.circle(latLng, {
         radius: circle.radius_m,
-        color: '#1a1a1a',
+        color: '#f0c75e',
         weight: 2,
-        fillColor: '#1a1a1a',
-        fillOpacity: 0.06,
+        fillColor: '#111',
+        fillOpacity: 0.18,
       }).addTo(map)
     } else {
       arenaCircleRef.current.setLatLng(latLng)
@@ -152,10 +182,45 @@ export function LiveMap({
       return
     }
     const seen = new Set<string>()
+    for (const pin of reveals) {
+      seen.add(pin.reveal_id)
+      let circle = revealRef.current.get(pin.reveal_id)
+      const latLng: L.LatLngExpression = [pin.lat, pin.lon]
+      if (!circle) {
+        circle = L.circle(latLng, {
+          radius: pin.radius_m,
+          color: '#6ea8fe',
+          weight: 1,
+          fillColor: '#6ea8fe',
+          fillOpacity: 0.22,
+        }).addTo(map)
+        circle.bindPopup(`${pin.display_name} · ping`)
+        revealRef.current.set(pin.reveal_id, circle)
+      } else {
+        circle.setLatLng(latLng)
+        circle.setRadius(pin.radius_m)
+      }
+    }
+    for (const [id, circle] of revealRef.current) {
+      if (!seen.has(id)) {
+        circle.remove()
+        revealRef.current.delete(id)
+      }
+    }
+  }, [reveals])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) {
+      return
+    }
+    const seen = new Set<string>()
     for (const pin of pins) {
       seen.add(pin.playerId)
       let marker = markersRef.current.get(pin.playerId)
-      const label = `${pin.displayName} (${pin.role})${pin.isYou ? ' · you' : ''}`
+      const label = `${pin.displayName} (${pin.role})${pin.isYou ? ' · you' : ''}${
+        pin.status === 'signal_lost' ? ' · dark' : ''
+      }`
       if (!marker) {
         marker = L.marker([pin.lat, pin.lon]).addTo(map)
         marker.bindPopup(label)
@@ -181,6 +246,7 @@ export function LiveMap({
   useEffect(() => {
     const stopWatch = watchLocation({
       onFix: (fix) => {
+        setAccuracyM(fix.accuracyM)
         socket.sendLocation({
           lat: fix.lat,
           lon: fix.lon,
@@ -211,12 +277,12 @@ export function LiveMap({
     map.fitBounds(bounds.pad(0.35))
   }
 
-  async function onEnd() {
-    setEnding(true)
+  async function runHost(action: () => Promise<PlayerView>) {
+    setBusyHost(true)
     setLocalNote(null)
     try {
-      const ended = await withAuthRetry((token) => endGame({ token, gameId: view.game_id }))
-      onView(ended)
+      const next = await action()
+      onView(next)
     } catch (err) {
       if (err instanceof SessionExpiredError) {
         onSignedOut()
@@ -224,24 +290,49 @@ export function LiveMap({
       }
       setLocalNote(err instanceof ApiError ? err.message : (err as Error).message)
     } finally {
-      setEnding(false)
+      setBusyHost(false)
     }
   }
 
-  const alert = oobNote ?? note ?? localNote
+  function onBlock(playerId: string, displayName: string) {
+    blockPlayer(playerId, displayName)
+    setToast(`${displayName} blocked on this device.`)
+    setPanel('map')
+  }
+
+  function onReport(playerId: string, displayName: string) {
+    window.location.href = reportMailto({
+      gameId: view.game_id,
+      playerId,
+      displayName,
+      supportEmail: SUPPORT_EMAIL,
+    })
+  }
+
+  // Filter socket "too fast" noise out of the main alert strip.
+  const socketNote =
+    note && note.toLowerCase().includes('too fast') ? null : note
+  const alert = wentDark ?? oobNote ?? socketNote ?? localNote
+
+  const ranked = [...view.players].sort(
+    (a, b) => (b.points_earned ?? b.points ?? 0) - (a.points_earned ?? a.points ?? 0),
+  )
 
   return (
     <main className={`live-map${overlayOpen ? ' live-map--overlay' : ''}`}>
       <header>
         <div>
-          <h1>Live map</h1>
-          <p>
-            {phaseLabel(view.phase)} · {view.join_code} · you are {view.you.role}
+          <p className="eyebrow">
+            {phaseLabel(view.phase)} · {view.join_code}
           </p>
+          <h1>{view.you.role}</h1>
         </div>
         <div className="actions">
           <button type="button" className="secondary" onClick={recenter}>
             Recenter
+          </button>
+          <button type="button" className="secondary" onClick={() => setPanel('board')}>
+            Scores
           </button>
           <button type="button" onClick={onLeave}>
             Leave
@@ -252,59 +343,125 @@ export function LiveMap({
       {!overlayOpen ? (
         <div className="hud" aria-live="polite">
           <span className="hud-clock">{clockPrimary}</span>
-          {view.phase === 'head_start' ? (
-            <span className="hud-sub">Hunt clock {formatClock(view.time_limit_remaining_s)}</span>
+          {pingLeft != null ? (
+            <span className="hud-sub">Ping {formatClock(pingLeft)}</span>
+          ) : null}
+          {view.you.hint ? <span className="hud-hint">{view.you.hint}</span> : null}
+          <span className="hud-sub">{view.you.points ?? 0} pts</span>
+          {accuracyM != null ? (
+            <span className={`hud-sub${accuracyM > 30 ? ' hud-sub--warn' : ''}`}>
+              GPS ±{Math.round(accuracyM)} m
+            </span>
           ) : (
-            <span className="hud-sub">Elapsed {formatClock(view.game_elapsed_s)}</span>
+            <span className="hud-sub hud-sub--warn">GPS…</span>
           )}
         </div>
       ) : null}
 
-      {/* Map stays mounted so Show/Scan overlays do not orphan the Leaflet instance. */}
+      {banners.length > 0 && !overlayOpen ? (
+        <div className="banners">
+          {banners.map((banner) => (
+            <p key={banner.banner_id} className={`banner banner--${banner.tone}`}>
+              <strong>{banner.title}</strong>
+              {banner.detail ? ` — ${banner.detail}` : ''}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
       <div
         className={`map-frame${overlayOpen ? ' map-frame--hidden' : ''}`}
         ref={mapEl}
         role="presentation"
         aria-hidden={overlayOpen}
       />
+
       {!overlayOpen ? (
         <>
-          <div className="toolbar">
+          <div className="dock">
             {isHider ? (
               <button type="button" disabled={!qrToken} onClick={() => setPanel('show')}>
-                Show QR
+                Show tag
               </button>
             ) : null}
             {isSeeker && view.phase === 'active' ? (
               <button type="button" onClick={() => setPanel('scan')}>
-                Scan QR
+                Scan tag
               </button>
             ) : null}
             {isSeeker && view.phase === 'head_start' ? (
-              <p className="qr-note">Seekers cannot tag until head start ends.</p>
+              <p className="dock-note">Seekers cannot tag until head start ends.</p>
             ) : null}
             {isHost ? (
-              <button
-                type="button"
-                className="danger"
-                disabled={ending}
-                onClick={() => void onEnd()}
-              >
-                {ending ? 'Ending…' : 'End hunt'}
-              </button>
+              <>
+                {view.phase === 'paused' ? (
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busyHost}
+                    onClick={() =>
+                      void runHost(() =>
+                        withAuthRetry((token) => resumeGame({ token, gameId: view.game_id })),
+                      )
+                    }
+                  >
+                    Resume
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={busyHost}
+                    onClick={() =>
+                      void runHost(() =>
+                        withAuthRetry((token) => pauseGame({ token, gameId: view.game_id })),
+                      )
+                    }
+                  >
+                    Pause
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busyHost}
+                  onClick={() =>
+                    void runHost(() =>
+                      withAuthRetry((token) => undoLastTag({ token, gameId: view.game_id })),
+                    )
+                  }
+                >
+                  Undo tag
+                </button>
+                <button
+                  type="button"
+                  className="danger"
+                  disabled={busyHost}
+                  onClick={() =>
+                    void runHost(() =>
+                      withAuthRetry((token) => endGame({ token, gameId: view.game_id })),
+                    )
+                  }
+                >
+                  End hunt
+                </button>
+              </>
             ) : null}
           </div>
           {isHider && !qrToken ? (
-            <p className="qr-note">Waiting for a tag QR from the server…</p>
+            <p className="dock-note">Waiting for a tag QR from the server…</p>
           ) : null}
           {alert ? (
-            <p className={`error${oobNote ? ' error--oob' : ''}`} role="alert">
+            <p className={`alert${oobNote || wentDark ? ' alert--warn' : ''}`} role="alert">
               {alert}
             </p>
           ) : null}
-          <p className="hint">
-            Stay inside the dark circle. Keep this tab visible and the screen on for GPS.
-          </p>
+          {toast ? (
+            <p className="toast" role="status">
+              {toast}
+            </p>
+          ) : null}
+          <p className="hint">Keep this tab visible and the screen on. Stay inside the yellow circle.</p>
         </>
       ) : null}
 
@@ -317,13 +474,55 @@ export function LiveMap({
         <div className="qr-overlay">
           <QrScan
             gameId={view.game_id}
+            accuracyM={accuracyM}
             onClose={() => setPanel('map')}
             onTagged={() => {
               setLocalNote('Tag accepted.')
+              setToast('Tag accepted.')
               setPanel('map')
             }}
             onSignedOut={onSignedOut}
           />
+        </div>
+      ) : null}
+      {panel === 'board' ? (
+        <div className="qr-overlay board">
+          <header>
+            <h1>Leaderboard</h1>
+            <button type="button" className="secondary" onClick={() => setPanel('map')}>
+              Close
+            </button>
+          </header>
+          <ul>
+            {ranked.map((player) => (
+              <li key={player.player_id}>
+                <div>
+                  <strong>{player.display_name}</strong>
+                  <span>
+                    {player.role} · {player.points_earned ?? player.points ?? 0} pts
+                  </span>
+                </div>
+                {player.player_id !== view.you.player_id ? (
+                  <div className="board-actions">
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => onBlock(player.player_id, player.display_name)}
+                    >
+                      Block
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => onReport(player.player_id, player.display_name)}
+                    >
+                      Report
+                    </button>
+                  </div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
         </div>
       ) : null}
     </main>

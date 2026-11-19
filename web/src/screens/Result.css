@@ -2,30 +2,44 @@
   max-width: 22rem;
   margin: 0 auto;
   padding: 2rem 1.25rem;
+  padding-bottom: max(2rem, env(safe-area-inset-bottom));
   font-family: 'Segoe UI', system-ui, sans-serif;
+  color: #f2f0ea;
 }
 
 .result h1 {
   margin: 0 0 0.75rem;
-}
-
-.result .winner {
-  font-size: 1.15rem;
+  letter-spacing: 0.04em;
 }
 
 .result .reason,
 .result .code {
-  color: #555;
+  color: #b7b3a8;
+}
+
+.result .error {
+  color: #ffb4b4;
+}
+
+.result .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-top: 1.25rem;
 }
 
 .result button {
-  margin-top: 1.25rem;
+  min-height: 44px;
   padding: 0.75rem 1.2rem;
   border: none;
   border-radius: 6px;
-  background: #1a1a1a;
+  background: #2f6fed;
   color: #fff;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
+}
+
+.result button.secondary {
+  background: #2a2a2a;
 }

@@ -35,16 +35,26 @@ class TagPolicyModule(BaseModule):
         pairing = PAIRING_M
         sloc = seeker.location
         hloc = hider.location
+        # Same error code for clients; distinct messages so web GPS noise is not "too far".
         if sloc is None or hloc is None:
-            return ErrorCode.NOT_IN_PAIRING_RANGE
+            raise GameRuleError(
+                ErrorCode.NOT_IN_PAIRING_RANGE,
+                "Need a fresh location from both phones before tagging.",
+            )
         if sloc.accuracy_m > ACCURACY_CUTOFF_M or hloc.accuracy_m > ACCURACY_CUTOFF_M:
-            return ErrorCode.NOT_IN_PAIRING_RANGE
+            raise GameRuleError(
+                ErrorCode.NOT_IN_PAIRING_RANGE,
+                "GPS is too fuzzy to tag. Wait for a clearer fix.",
+            )
         gps = distance_m(sloc.point, hloc.point)
         bonus = min(sloc.accuracy_m, ACCURACY_BONUS_CAP_M) + min(
             hloc.accuracy_m, ACCURACY_BONUS_CAP_M
         )
         if gps > pairing + bonus:
-            return ErrorCode.NOT_IN_PAIRING_RANGE
+            raise GameRuleError(
+                ErrorCode.NOT_IN_PAIRING_RANGE,
+                "Get closer. GPS says you are too far to tag.",
+            )
         if not claim.qr_token:
             return ErrorCode.TOKEN_INVALID
         hid = parse_qr_token(

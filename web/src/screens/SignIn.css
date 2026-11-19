@@ -2,7 +2,9 @@
   max-width: 22rem;
   margin: 0 auto;
   padding: 2rem 1.25rem 3rem;
+  padding-bottom: max(3rem, env(safe-area-inset-bottom));
   font-family: 'Segoe UI', system-ui, sans-serif;
+  color: #f2f0ea;
 }
 
 .sign-in h1 {
@@ -13,7 +15,7 @@
 
 .sign-in .lede {
   margin: 0 0 1.5rem;
-  color: #444;
+  color: #b7b3a8;
   line-height: 1.4;
 }
 
@@ -32,19 +34,22 @@
 }
 
 .sign-in input {
+  min-height: 44px;
   padding: 0.65rem 0.75rem;
-  border: 1px solid #bbb;
+  border: 1px solid #3a3a3a;
   border-radius: 6px;
+  background: #1a1a1a;
+  color: #f2f0ea;
   font: inherit;
   font-weight: 400;
 }
 
 .sign-in button {
-  margin-top: 0.35rem;
+  min-height: 44px;
   padding: 0.75rem 1rem;
   border: none;
   border-radius: 6px;
-  background: #1a1a1a;
+  background: #2f6fed;
   color: #fff;
   font: inherit;
   font-weight: 600;
@@ -53,20 +58,17 @@
 
 .sign-in button:disabled {
   opacity: 0.6;
-  cursor: wait;
 }
 
 .sign-in .error {
-  margin: 0;
-  color: #a40000;
-  font-size: 0.9rem;
+  color: #ffb4b4;
 }
 
 .sign-in .footer-links {
   margin-top: 1.5rem;
-  font-size: 0.85rem;
+  color: #b7b3a8;
 }
 
 .sign-in .footer-links a {
-  color: #1a4b8c;
+  color: #9ec5ff;
 }

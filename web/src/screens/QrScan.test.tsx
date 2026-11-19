@@ -38,16 +38,17 @@ describe('QrScan', () => {
         onClose={() => undefined}
         onTagged={onTagged}
         onSignedOut={() => undefined}
+        accuracyM={5}
         injectScan={null}
       />,
     )
-    // Drive a scan without waiting on the camera callback.
     rerender(
       <QrScan
         gameId="game-1"
         onClose={() => undefined}
         onTagged={onTagged}
         onSignedOut={() => undefined}
+        accuracyM={5}
         injectScan="scanned-token"
       />,
     )
@@ -63,18 +64,36 @@ describe('QrScan', () => {
   })
 
   it('shows the server error when the tag is rejected and offers retry', async () => {
-    claimQrTag.mockRejectedValue(new ApiError('TOO_FAR', 'Too far to tag.', 409))
+    claimQrTag.mockRejectedValue(
+      new ApiError('NOT_IN_PAIRING_RANGE', 'Get closer. GPS says you are too far to tag.', 409),
+    )
     render(
       <QrScan
         gameId="game-1"
         onClose={() => undefined}
         onTagged={() => undefined}
         onSignedOut={() => undefined}
+        accuracyM={5}
         injectScan="scanned-token"
       />,
     )
-    expect(await screen.findByText(/too far to tag/i)).toBeInTheDocument()
+    expect(await screen.findByText(/get closer/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument()
+  })
+
+  it('holds a scan when GPS is fuzzy instead of posting', async () => {
+    render(
+      <QrScan
+        gameId="game-1"
+        onClose={() => undefined}
+        onTagged={() => undefined}
+        onSignedOut={() => undefined}
+        accuracyM={45}
+        injectScan="scanned-token"
+      />,
+    )
+    expect(await screen.findByText(/too fuzzy/i)).toBeInTheDocument()
+    expect(claimQrTag).not.toHaveBeenCalled()
   })
 
   it('can close without scanning', async () => {
@@ -86,6 +105,7 @@ describe('QrScan', () => {
         onClose={onClose}
         onTagged={() => undefined}
         onSignedOut={() => undefined}
+        accuracyM={5}
         injectScan={null}
       />,
     )
