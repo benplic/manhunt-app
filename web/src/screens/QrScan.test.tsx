@@ -15,10 +15,12 @@ vi.mock('../api/session', () => ({
   SessionExpiredError: class SessionExpiredError extends Error {},
 }))
 
+const cameraStart = vi.fn().mockResolvedValue(undefined)
+
 vi.mock('html5-qrcode', () => ({
   Html5Qrcode: class {
     static getCameras = vi.fn().mockResolvedValue([{ id: 'cam1', label: 'front' }])
-    start = vi.fn().mockResolvedValue(undefined)
+    start = (...args: unknown[]) => cameraStart(...args)
     stop = vi.fn().mockResolvedValue(undefined)
     clear = vi.fn()
   },
@@ -27,6 +29,8 @@ vi.mock('html5-qrcode', () => ({
 describe('QrScan', () => {
   beforeEach(() => {
     claimQrTag.mockReset()
+    cameraStart.mockReset()
+    cameraStart.mockResolvedValue(undefined)
   })
 
   it('posts a scanned token and reports success', async () => {
@@ -94,6 +98,22 @@ describe('QrScan', () => {
     )
     expect(await screen.findByText(/too fuzzy/i)).toBeInTheDocument()
     expect(claimQrTag).not.toHaveBeenCalled()
+  })
+
+  it('expands manual entry when the camera is blocked', async () => {
+    cameraStart.mockRejectedValueOnce(new Error('denied'))
+    render(
+      <QrScan
+        gameId="game-1"
+        onClose={() => undefined}
+        onTagged={() => undefined}
+        onSignedOut={() => undefined}
+        accuracyM={5}
+        injectScan={null}
+      />,
+    )
+    expect(await screen.findByText(/camera blocked/i)).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/paste or type/i)).toBeInTheDocument()
   })
 
   it('can close without scanning', async () => {

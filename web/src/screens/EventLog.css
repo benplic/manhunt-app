@@ -1,0 +1,29 @@
+.event-log {
+  padding: 1rem;
+  max-width: 32rem;
+  margin: 0 auto;
+}
+
+.event-log ol {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0 0;
+}
+
+.event-log li {
+  display: grid;
+  grid-template-columns: 2.5rem 6rem 1fr;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 0.9rem;
+}
+
+.event-log .seq {
+  opacity: 0.6;
+}
+
+.event-log .type {
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+}

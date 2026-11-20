@@ -37,6 +37,7 @@ export function QrScan({
   const [busy, setBusy] = useState(false)
   const [paused, setPaused] = useState(false)
   const [manual, setManual] = useState('')
+  const [manualOpen, setManualOpen] = useState(false)
   const [heldNote, setHeldNote] = useState<string | null>(null)
   const claimedRef = useRef(false)
   const scannerRef = useRef<Html5Qrcode | null>(null)
@@ -163,7 +164,8 @@ export function QrScan({
       )
       .catch(() => {
         if (!stopped) {
-          setError('Camera permission is required to scan a tag code. Enter the code below.')
+          setManualOpen(true)
+          setError('Camera blocked—paste the hider’s code.')
         }
       })
 
@@ -197,21 +199,29 @@ export function QrScan({
           {error}
         </p>
       ) : null}
-      <form className="manual" onSubmit={onManualSubmit}>
-        <label>
-          Tag code
-          <input
-            value={manual}
-            onChange={(e) => setManual(e.target.value)}
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            placeholder="Paste or type the rotating code"
-          />
-        </label>
-        <button type="submit" disabled={busy}>
-          Submit code
-        </button>
+      <form className={`manual${manualOpen ? ' manual--open' : ''}`} onSubmit={onManualSubmit}>
+        {!manualOpen ? (
+          <button type="button" className="secondary" onClick={() => setManualOpen(true)}>
+            Enter code manually
+          </button>
+        ) : (
+          <>
+            <label>
+              Tag code
+              <input
+                value={manual}
+                onChange={(e) => setManual(e.target.value)}
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                placeholder="Paste or type the rotating code"
+              />
+            </label>
+            <button type="submit" disabled={busy}>
+              Submit code
+            </button>
+          </>
+        )}
       </form>
       <div className="actions">
         {paused && error ? (

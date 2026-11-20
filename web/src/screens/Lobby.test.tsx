@@ -8,6 +8,7 @@ const randomizeRoles = vi.fn()
 const startGame = vi.fn()
 const setManualRoles = vi.fn()
 const setLobbyCircle = vi.fn()
+const removeLobbyPlayer = vi.fn()
 
 vi.mock('qrcode', () => ({
   default: {
@@ -21,6 +22,7 @@ vi.mock('../api/games', () => ({
   startGame: (...args: unknown[]) => startGame(...args),
   setManualRoles: (...args: unknown[]) => setManualRoles(...args),
   setLobbyCircle: (...args: unknown[]) => setLobbyCircle(...args),
+  removeLobbyPlayer: (...args: unknown[]) => removeLobbyPlayer(...args),
 }))
 
 vi.mock('../api/session', () => ({
@@ -61,6 +63,7 @@ describe('Lobby screen', () => {
     startGame.mockReset()
     setManualRoles.mockReset()
     setLobbyCircle.mockReset()
+    removeLobbyPlayer.mockReset()
   })
 
   it('shows the join code, join QR, and players', async () => {
@@ -182,6 +185,49 @@ describe('Lobby screen', () => {
       expect(randomizeRoles).not.toHaveBeenCalled()
       expect(startGame).toHaveBeenCalled()
     })
+  })
+
+  it('shows rules summary from timers', () => {
+    render(
+      <Lobby
+        view={lobbyView({
+          timers: {
+            time_limit_s: 1800,
+            head_start_s: 60,
+            reveal_interval_s: 90,
+          },
+        })}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+      />,
+    )
+    expect(screen.getByText(/30 min · 1:00 head start · 1:30 pings/i)).toBeInTheDocument()
+  })
+
+  it('host can remove another player', async () => {
+    const user = userEvent.setup()
+    const onView = vi.fn()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    removeLobbyPlayer.mockResolvedValue(lobbyView({ players: [lobbyView().players[0]] }))
+    render(
+      <Lobby
+        view={lobbyView()}
+        onView={onView}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+      />,
+    )
+    await user.click(screen.getByRole('button', { name: /^remove$/i }))
+    await waitFor(() => {
+      expect(removeLobbyPlayer).toHaveBeenCalledWith({
+        token: 'tok',
+        gameId: 'game-1',
+        playerId: 'u2',
+      })
+      expect(onView).toHaveBeenCalled()
+    })
+    confirmSpy.mockRestore()
   })
 
   it('hides Start for non-hosts', () => {
