@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PlayerView } from '../api/types'
 import { LiveMap } from './LiveMap'
 
@@ -23,6 +23,7 @@ vi.mock('leaflet', () => {
   const marker = {
     addTo: vi.fn().mockReturnThis(),
     setLatLng: vi.fn().mockReturnThis(),
+    getLatLng: vi.fn(() => ({ lat: 40.1, lng: -73.1 })),
     bindPopup: vi.fn().mockReturnThis(),
     setPopupContent: vi.fn().mockReturnThis(),
     openPopup: vi.fn().mockReturnThis(),
@@ -77,6 +78,18 @@ vi.mock('./QrShow', () => ({
   ),
 }))
 
+const tauntGame = vi.fn()
+
+vi.mock('../api/games', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../api/games')>()
+  return { ...actual, tauntGame: (...args: unknown[]) => tauntGame(...args) }
+})
+
+vi.mock('../api/session', () => ({
+  withAuthRetry: async (fn: (token: string) => Promise<unknown>) => fn('tok'),
+  SessionExpiredError: class SessionExpiredError extends Error {},
+}))
+
 vi.mock('./QrScan', () => ({
   QrScan: ({ onClose }: { onClose: () => void }) => (
     <button type="button" onClick={onClose}>
@@ -126,6 +139,10 @@ const view: PlayerView = {
 }
 
 describe('LiveMap', () => {
+  beforeEach(() => {
+    tauntGame.mockReset()
+  })
+
   it('watches visible GPS and offers Scan tag / End for a host seeker', async () => {
     const sendLocation = vi.fn()
     const watchLocation = vi.fn().mockReturnValue(() => undefined)
@@ -355,6 +372,57 @@ describe('LiveMap', () => {
     expect(frame?.classList.contains('map-frame--hidden')).toBe(false)
     expect(screen.getByText(/hunt 29:59/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /scan tag/i })).toBeInTheDocument()
+  })
+
+  it('lets an active hider taunt and refreshes the view', async () => {
+    const user = userEvent.setup()
+    const onView = vi.fn()
+    tauntGame.mockResolvedValue({
+      ...view,
+      you: { ...view.you, role: 'hider', is_host: false, taunt_cooldown_s: 15 },
+    })
+    const hider: PlayerView = {
+      ...view,
+      you: {
+        ...view.you,
+        role: 'hider',
+        is_host: false,
+        taunt_cooldown_s: 0,
+        taunt_enabled: true,
+      },
+    }
+    render(
+      <LiveMap
+        view={hider}
+        socket={{ sendLocation: vi.fn() } as never}
+        qrToken="tok"
+        note={null}
+        onView={onView}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: /^taunt$/i })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^taunt$/i }))
+    await waitFor(() => expect(tauntGame).toHaveBeenCalled())
+    expect(onView).toHaveBeenCalled()
+  })
+
+  it('does not show taunt for seekers', () => {
+    render(
+      <LiveMap
+        view={view}
+        socket={{ sendLocation: vi.fn() } as never}
+        qrToken={null}
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: /taunt/i })).not.toBeInTheDocument()
   })
 
   it('shows going-dark copy when this player is signal_lost', () => {

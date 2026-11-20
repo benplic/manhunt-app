@@ -2,7 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { ApiError } from '../api/client'
-import { endGame, pauseGame, resumeGame, undoLastTag } from '../api/games'
+import {
+  endGame,
+  pauseGame,
+  purchasePowerUp,
+  resumeGame,
+  tauntGame,
+  undoLastTag,
+} from '../api/games'
 import { SUPPORT_EMAIL } from '../api/legal'
 import { SessionExpiredError, withAuthRetry } from '../api/session'
 import type { GameSocket } from '../api/ws'
@@ -15,6 +22,20 @@ import {
   centroid,
   resolvePlayBoundary,
 } from '../map/arenaBoundary'
+import { pointInPlayArea } from '../map/pointInPlayArea'
+import { glidePoint, PIN_GLIDE_MS } from '../map/pinGlide'
+import { newRevealIds } from '../map/pingFlash'
+import {
+  chipIsTappable,
+  chipShowsDenialOnTap,
+  decide,
+  denialMessage,
+  requiresMapPoint,
+  requiresPlayerTarget,
+  requiresTarget,
+  requiresZoneTarget,
+  type PurchaseRequest,
+} from '../game/powerUpRules'
 import { fitArenaOnce, recenterOnArena } from '../map/arenaCamera'
 import { formatClock } from '../map/clock'
 import { ensureLeafletDefaultIcons } from '../map/leafletIcons'
@@ -27,6 +48,7 @@ import {
 } from '../map/zones'
 import { blockPlayer, reportMailto } from '../social/blockList'
 import type { ArenaZone, PlayerView } from '../api/types'
+import { EventLog } from './EventLog'
 import { QrScan } from './QrScan'
 import { QrShow } from './QrShow'
 import './LiveMap.css'
@@ -42,7 +64,38 @@ type Props = {
   watchLocation?: typeof watchVisibleLocation
 }
 
-type Panel = 'map' | 'show' | 'scan' | 'board'
+type Panel = 'map' | 'show' | 'scan' | 'board' | 'log'
+
+type PowerPick =
+  | null
+  | { step: 'map'; powerId: string }
+  | { step: 'rescue'; powerId: string }
+  | { step: 'zone'; powerId: string }
+  | { step: 'zone_point'; powerId: string; zoneId: string }
+
+function powerUpRequest(view: PlayerView, row: { id: string; cost: number; role: string; available: boolean }): PurchaseRequest {
+  const cooldowns = view.you.cooldowns ?? {}
+  return {
+    balance: view.you.points ?? 0,
+    cost: row.cost,
+    cooldownRemaining: cooldowns[row.id] ?? 0,
+    phase: view.phase as PurchaseRequest['phase'],
+    role: view.you.role,
+    requiredRole: row.role,
+    status: view.you.status as PurchaseRequest['status'],
+    requiresTarget: requiresTarget(row.id),
+    hasTarget: false,
+    available: row.available,
+  }
+}
+
+function rescueCandidates(view: PlayerView) {
+  return view.players.filter(
+    (p) =>
+      p.player_id !== view.you.player_id &&
+      (p.status === 'eliminated' || (p.role === 'seeker' && p.status === 'active')),
+  )
+}
 
 function phaseLabel(phase: string): string {
   return phase.replaceAll('_', ' ')
@@ -125,7 +178,13 @@ export function LiveMap({
   const markersRef = useRef<Map<string, L.Marker>>(new Map())
   const revealRef = useRef<Map<string, L.Circle>>(new Map())
   const arenaCircleRef = useRef<L.Circle | null>(null)
+  const shrinkPreviewRef = useRef<L.Circle | null>(null)
   const arenaPolygonRef = useRef<L.Polygon | null>(null)
+  const pinAnimRef = useRef<Map<string, { from: { lat: number; lon: number }; started: number }>>(
+    new Map(),
+  )
+  const pinRafRef = useRef<number | null>(null)
+  const prevRevealsRef = useRef(view.reveals)
   const zoneLayersRef = useRef<Map<string, L.Circle | L.Polygon>>(new Map())
   /** Last arenaKey we framed — re-fit only when the play area identity changes. */
   const fittedArenaKeyRef = useRef<string>('')
@@ -134,6 +193,9 @@ export function LiveMap({
   const [panel, setPanel] = useState<Panel>('map')
   const [busyHost, setBusyHost] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [busyDock, setBusyDock] = useState(false)
+  const [powerPick, setPowerPick] = useState<PowerPick>(null)
+  const [pingFlash, setPingFlash] = useState<string | null>(null)
 
   const pins = useMemo(() => pinsFromView(view), [view])
   const reveals = useMemo(() => revealsFromView(view), [view])
@@ -159,6 +221,15 @@ export function LiveMap({
   const oobNote = boundsMessage(view)
   const wentDark = darkMessage(view)
   const pingLeft = view.timers?.next_reveal_in_s
+  const zoneTimer = view.timers?.zone
+  const powerUps = useMemo(
+    () => (view.power_ups ?? []).filter((row) => row.role === view.you.role),
+    [view.power_ups, view.you.role],
+  )
+  const tauntCooldown = view.you.taunt_cooldown_s ?? 0
+  const tauntEnabled = view.you.taunt_enabled !== false
+  const canTaunt =
+    isHider && view.phase === 'active' && tauntEnabled && view.you.status === 'active'
 
   // Never leave the tag scanner open during head start.
   useEffect(() => {
@@ -304,6 +375,81 @@ export function LiveMap({
 
   useEffect(() => {
     const map = mapRef.current
+    if (!map || playBoundary?.kind !== 'circle' || !zoneTimer?.next_radius_m) {
+      shrinkPreviewRef.current?.remove()
+      shrinkPreviewRef.current = null
+      return
+    }
+    const center = playBoundary.circle.center
+    const latLng: L.LatLngExpression = [center.lat, center.lon]
+    const style = {
+      color: '#f0c75e',
+      weight: 1,
+      dashArray: '6 8',
+      fill: false,
+      opacity: 0.75,
+    }
+    if (!shrinkPreviewRef.current) {
+      shrinkPreviewRef.current = L.circle(latLng, {
+        radius: zoneTimer.next_radius_m,
+        ...style,
+      }).addTo(map)
+    } else {
+      shrinkPreviewRef.current.setLatLng(latLng)
+      shrinkPreviewRef.current.setRadius(zoneTimer.next_radius_m)
+      shrinkPreviewRef.current.setStyle(style)
+    }
+  }, [playBoundary, zoneTimer?.next_radius_m, zoneTimer?.radius_m])
+
+  useEffect(() => {
+    const added = newRevealIds(prevRevealsRef.current, view.reveals)
+    prevRevealsRef.current = view.reveals
+    if (added.length === 0) {
+      return
+    }
+    const selfPing = (view.reveals ?? []).some(
+      (r) => added.includes(r.reveal_id) && r.player_id === view.you.player_id,
+    )
+    setPingFlash(selfPing ? 'PING' : 'PINGED')
+    const timer = window.setTimeout(() => setPingFlash(null), 1200)
+    return () => window.clearTimeout(timer)
+  }, [view.reveals, view.you.player_id])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !powerPick || (powerPick.step !== 'map' && powerPick.step !== 'zone_point')) {
+      return
+    }
+    function onMapClick(event: L.LeafletMouseEvent) {
+      const point = { lat: event.latlng.lat, lon: event.latlng.lng }
+      if (!pointInPlayArea(point, playBoundary)) {
+        setLocalNote('That point is outside the play area.')
+        return
+      }
+      const pick = powerPick
+      if (!pick) {
+        return
+      }
+      if (pick.step === 'map') {
+        void submitPower(pick.powerId, { lat: point.lat, lon: point.lon })
+      } else if (pick.step === 'zone_point') {
+        void submitPower(pick.powerId, {
+          zone_id: pick.zoneId,
+          lat: point.lat,
+          lon: point.lon,
+        })
+      }
+      setPowerPick(null)
+    }
+    map.on('click', onMapClick)
+    return () => {
+      map.off('click', onMapClick)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [powerPick, playBoundary])
+
+  useEffect(() => {
+    const map = mapRef.current
     if (!map) {
       return
     }
@@ -372,6 +518,7 @@ export function LiveMap({
       return
     }
     const seen = new Set<string>()
+    const now = performance.now()
     for (const pin of pins) {
       seen.add(pin.playerId)
       let marker = markersRef.current.get(pin.playerId)
@@ -382,8 +529,29 @@ export function LiveMap({
         marker = L.marker([pin.lat, pin.lon]).addTo(map)
         marker.bindPopup(label)
         markersRef.current.set(pin.playerId, marker)
+        pinAnimRef.current.set(pin.playerId, {
+          from: { lat: pin.lat, lon: pin.lon },
+          started: now,
+        })
       } else {
-        marker.setLatLng([pin.lat, pin.lon])
+        const anim = pinAnimRef.current.get(pin.playerId)
+        const current = marker.getLatLng()
+        pinAnimRef.current.set(pin.playerId, {
+          from: { lat: current.lat, lon: current.lng },
+          started: now,
+        })
+        if (
+          !anim ||
+          Math.abs(anim.from.lat - pin.lat) > 1e-7 ||
+          Math.abs(anim.from.lon - pin.lon) > 1e-7
+        ) {
+          const glide = glidePoint(
+            pinAnimRef.current.get(pin.playerId)!.from,
+            { lat: pin.lat, lon: pin.lon },
+            0,
+          )
+          marker.setLatLng([glide.lat, glide.lon])
+        }
         marker.setPopupContent(label)
       }
     }
@@ -391,6 +559,38 @@ export function LiveMap({
       if (!seen.has(id)) {
         marker.remove()
         markersRef.current.delete(id)
+        pinAnimRef.current.delete(id)
+      }
+    }
+    const tick = () => {
+      const tNow = performance.now()
+      let animating = false
+      for (const pin of pins) {
+        const anim = pinAnimRef.current.get(pin.playerId)
+        const marker = markersRef.current.get(pin.playerId)
+        if (!anim || !marker) {
+          continue
+        }
+        const elapsed = tNow - anim.started
+        const point = glidePoint(anim.from, { lat: pin.lat, lon: pin.lon }, elapsed)
+        marker.setLatLng([point.lat, point.lon])
+        if (elapsed < PIN_GLIDE_MS) {
+          animating = true
+        }
+      }
+      if (animating) {
+        pinRafRef.current = window.requestAnimationFrame(tick)
+      } else {
+        pinRafRef.current = null
+      }
+    }
+    if (pinRafRef.current == null) {
+      pinRafRef.current = window.requestAnimationFrame(tick)
+    }
+    return () => {
+      if (pinRafRef.current != null) {
+        window.cancelAnimationFrame(pinRafRef.current)
+        pinRafRef.current = null
       }
     }
   }, [pins])
@@ -460,6 +660,78 @@ export function LiveMap({
     }
   }
 
+  async function runDock(action: () => Promise<PlayerView>) {
+    setBusyDock(true)
+    setLocalNote(null)
+    try {
+      const next = await action()
+      onView(next)
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        onSignedOut()
+        return
+      }
+      setLocalNote(err instanceof ApiError ? err.message : (err as Error).message)
+    } finally {
+      setBusyDock(false)
+    }
+  }
+
+  async function submitPower(
+    powerId: string,
+    extra: {
+      lat?: number
+      lon?: number
+      target_player_id?: string
+      zone_id?: string
+    },
+  ) {
+    await runDock(() =>
+      withAuthRetry((token) =>
+        purchasePowerUp({ token, gameId: view.game_id, id: powerId, ...extra }),
+      ),
+    )
+  }
+
+  function onPowerChip(row: (typeof powerUps)[number]) {
+    const request = powerUpRequest(view, row)
+    const decision = decide(request)
+    if (decision.kind === 'denied' && !chipIsTappable(request) && !chipShowsDenialOnTap(request)) {
+      setLocalNote(denialMessage(decision.reason))
+      return
+    }
+    if (requiresZoneTarget(row.id)) {
+      setPowerPick({ step: 'zone', powerId: row.id })
+      return
+    }
+    if (requiresMapPoint(row.id)) {
+      setPowerPick({ step: 'map', powerId: row.id })
+      setLocalNote('Tap the map to place that power.')
+      return
+    }
+    if (requiresPlayerTarget(row.id)) {
+      setPowerPick({ step: 'rescue', powerId: row.id })
+      return
+    }
+    void submitPower(row.id, {})
+  }
+
+  function onPickZone(zoneId: string) {
+    if (!powerPick || powerPick.step !== 'zone') {
+      return
+    }
+    setPowerPick({ step: 'zone_point', powerId: powerPick.powerId, zoneId })
+    setLocalNote('Tap where to move that safe zone.')
+  }
+
+  function onRescueTarget(targetId: string) {
+    if (!powerPick || powerPick.step !== 'rescue') {
+      return
+    }
+    setPowerPick(null)
+    void submitPower(powerPick.powerId, { target_player_id: targetId })
+  }
+
   function onBlock(playerId: string, displayName: string) {
     blockPlayer(playerId, displayName)
     setToast(`${displayName} blocked on this device.`)
@@ -500,6 +772,9 @@ export function LiveMap({
           <button type="button" className="chip" onClick={() => setPanel('board')}>
             Scores
           </button>
+          <button type="button" className="chip" onClick={() => setPanel('log')}>
+            Log
+          </button>
           <button type="button" className="chip chip--accent" onClick={onLeave}>
             Leave
           </button>
@@ -512,6 +787,10 @@ export function LiveMap({
           {pingLeft != null ? (
             <span className="hud-sub">Ping {formatClock(pingLeft)}</span>
           ) : null}
+          {zoneTimer?.shrinks_in_s != null && playBoundary?.kind === 'circle' ? (
+            <span className="hud-sub">Shrink {formatClock(zoneTimer.shrinks_in_s)}</span>
+          ) : null}
+          {pingFlash ? <span className="hud-flash">{pingFlash}</span> : null}
           <span className="hud-sub">{view.you.points ?? 0} pts</span>
           {accuracyM != null ? (
             <span className={`hud-sub${accuracyM > 30 ? ' hud-sub--warn' : ''}`}>
@@ -571,7 +850,92 @@ export function LiveMap({
             {isHider && !qrToken ? (
               <p className="dock-note">Waiting for a tag QR from the server…</p>
             ) : null}
+            {canTaunt ? (
+              <button
+                type="button"
+                className="chip"
+                disabled={busyDock || tauntCooldown > 0}
+                onClick={() =>
+                  void runDock(() =>
+                    withAuthRetry((token) => tauntGame({ token, gameId: view.game_id })),
+                  )
+                }
+              >
+                {tauntCooldown > 0 ? `Taunt ${formatClock(tauntCooldown)}` : 'Taunt'}
+              </button>
+            ) : null}
+            {powerUps.length > 0 ? (
+              <div className="chip-row power-dock" aria-label="Power-ups">
+                {powerUps.map((row) => {
+                  const request = powerUpRequest(view, row)
+                  const tappable = chipIsTappable(request)
+                  const denialTap = chipShowsDenialOnTap(request)
+                  const disabled = busyDock || (!tappable && !denialTap)
+                  return (
+                    <button
+                      key={row.id}
+                      type="button"
+                      className={`chip${tappable ? '' : ' chip--muted'}`}
+                      disabled={disabled}
+                      onClick={() => onPowerChip(row)}
+                    >
+                      {row.title} · {row.cost}
+                    </button>
+                  )
+                })}
+              </div>
+            ) : null}
           </div>
+          {powerPick?.step === 'zone' ? (
+            <div className="pick-banner">
+              <p>Pick a safe zone to move</p>
+              <div className="chip-row">
+                {(view.arena?.zones ?? [])
+                  .filter((z) => z.kind === 'safe')
+                  .map((zone) => (
+                    <button
+                      key={zone.id}
+                      type="button"
+                      className="chip"
+                      onClick={() => onPickZone(zone.id)}
+                    >
+                      {zone.name}
+                    </button>
+                  ))}
+                <button type="button" className="chip" onClick={() => setPowerPick(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {powerPick?.step === 'rescue' ? (
+            <div className="pick-banner">
+              <p>Pick a player to rescue</p>
+              <div className="chip-row">
+                {rescueCandidates(view).map((player) => (
+                  <button
+                    key={player.player_id}
+                    type="button"
+                    className="chip"
+                    onClick={() => onRescueTarget(player.player_id)}
+                  >
+                    {player.display_name}
+                  </button>
+                ))}
+                <button type="button" className="chip" onClick={() => setPowerPick(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {powerPick?.step === 'map' || powerPick?.step === 'zone_point' ? (
+            <div className="pick-banner">
+              <p>Tap the map to place your power</p>
+              <button type="button" className="chip" onClick={() => setPowerPick(null)}>
+                Cancel
+              </button>
+            </div>
+          ) : null}
           {isHost ? (
             <div className="host-strip" aria-label="Host controls">
               <p className="host-label">Host</p>
@@ -650,6 +1014,15 @@ export function LiveMap({
               setToast('Tag accepted.')
               setPanel('map')
             }}
+            onSignedOut={onSignedOut}
+          />
+        </div>
+      ) : null}
+      {panel === 'log' ? (
+        <div className="qr-overlay">
+          <EventLog
+            gameId={view.game_id}
+            onClose={() => setPanel('map')}
             onSignedOut={onSignedOut}
           />
         </div>

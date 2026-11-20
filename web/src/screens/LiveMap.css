@@ -76,6 +76,46 @@
   letter-spacing: 0.04em;
 }
 
+.live-map .hud-flash {
+  margin-left: 0.5rem;
+  font-weight: 700;
+  color: #6ea8fe;
+  animation: ping-flash 1.2s ease-out;
+}
+
+@keyframes ping-flash {
+  from {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+.live-map .pick-banner {
+  margin: 0.35rem 1rem 0;
+  padding: 0.5rem 0.65rem;
+  background: rgba(18, 21, 28, 0.92);
+  border: 1px solid #2a2d36;
+  border-radius: 8px;
+}
+
+.live-map .pick-banner p {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+}
+
+.live-map .chip--muted {
+  opacity: 0.55;
+}
+
+.live-map .power-dock {
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+
 .live-map .role-pill {
   margin: 0.2rem 0 0;
   display: inline-block;

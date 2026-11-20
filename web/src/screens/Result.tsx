@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ApiError } from '../api/client'
-import { rematchGame } from '../api/games'
+import { fetchGameEvents, rematchGame } from '../api/games'
 import { SessionExpiredError, withAuthRetry } from '../api/session'
-import type { PlayerView } from '../api/types'
+import type { PlayerView, TimelineEvent } from '../api/types'
 import './Result.css'
 
 type Props = {
@@ -22,10 +22,40 @@ function winnerCopy(winner: string): string {
   return 'HUNT OVER'
 }
 
+function eventText(event: TimelineEvent): string {
+  const text = event.payload?.text
+  if (typeof text === 'string' && text.length > 0) {
+    return text
+  }
+  return event.type
+}
+
 export function Result({ view, onDone, onRematch, onSignedOut }: Props) {
   const result = view.result
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [events, setEvents] = useState<TimelineEvent[] | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    void withAuthRetry((token) => fetchGameEvents({ token, gameId: view.game_id }))
+      .then((payload) => {
+        if (!cancelled) {
+          setEvents(payload.events)
+        }
+      })
+      .catch((err) => {
+        if (cancelled) {
+          return
+        }
+        if (err instanceof SessionExpiredError) {
+          onSignedOut()
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [view.game_id, onSignedOut])
 
   async function onRematchClick() {
     setBusy(true)
@@ -81,6 +111,20 @@ export function Result({ view, onDone, onRematch, onSignedOut }: Props) {
               </li>
             ))}
           </ul>
+        </section>
+      ) : null}
+      {events && events.length > 0 ? (
+        <section className="event-log-section">
+          <h2>Event log</h2>
+          <ol>
+            {events.map((event) => (
+              <li key={event.seq}>
+                <span className="seq">{event.seq}</span>
+                <span className="type">{event.type}</span>
+                <span>{eventText(event)}</span>
+              </li>
+            ))}
+          </ol>
         </section>
       ) : null}
     </main>

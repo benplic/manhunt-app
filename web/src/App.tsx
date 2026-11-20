@@ -7,6 +7,11 @@ import { GameSocket, wsUrlForGame } from './api/ws'
 import { clearSession, loadSession } from './auth/storage'
 import { closedGameMessage, isClosedGameError } from './game/rejoin'
 import { clearActiveGame, loadActiveGameId, rememberActiveGame } from './game/resume'
+import {
+  ackSafetyDisclaimer,
+  needsSafetyDisclaimer,
+  SAFETY_DISCLAIMER_COPY,
+} from './game/safetyDisclaimer'
 import { Home } from './screens/Home'
 import { LiveMap } from './screens/LiveMap'
 import { Lobby } from './screens/Lobby'
@@ -33,6 +38,7 @@ function App() {
   const socketRef = useRef<GameSocket | null>(null)
   /** Bumps when the player cancels rejoin so an in-flight fetch cannot land. */
   const rejoinEpochRef = useRef(0)
+  const [safetyGateOpen, setSafetyGateOpen] = useState(false)
 
   function tearDownSocket() {
     socketRef.current?.disconnect()
@@ -40,6 +46,12 @@ function App() {
     setSocketReady(false)
     setQrToken(null)
   }
+
+  useEffect(() => {
+    if (gameView && isLive(gameView.phase) && needsSafetyDisclaimer()) {
+      setSafetyGateOpen(true)
+    }
+  }, [gameView?.game_id, gameView?.phase])
 
   function applyView(next: PlayerView) {
     rememberActiveGame(next.game_id)
@@ -225,6 +237,23 @@ function App() {
       return (
         <main className="home">
           <p>Connecting to the hunt…</p>
+        </main>
+      )
+    }
+    if (safetyGateOpen) {
+      return (
+        <main className="safety-gate">
+          <h1>Play safely</h1>
+          <p>{SAFETY_DISCLAIMER_COPY}</p>
+          <button
+            type="button"
+            onClick={() => {
+              ackSafetyDisclaimer()
+              setSafetyGateOpen(false)
+            }}
+          >
+            Continue
+          </button>
         </main>
       )
     }

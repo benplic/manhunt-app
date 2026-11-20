@@ -1,22 +1,17 @@
 # Web later features (revisit)
 
-Deferred from the 2026-11-19 mobile-first web overhaul. Shipped in that pass: privacy policy links (Sign-in + Account), device-local block/unblock + report mailto (lobby + live scores), going-dark win fix, scan accuracy gate, rematch/host pause-undo, refresh rejoin, and mobile live HUD. Pairing stays 30 m. Background GPS stays native-only.
+Deferred from the 2026-11-19 mobile-first web overhaul. Shipped in that pass: privacy policy links (Sign-in + Account), device-local block/unblock + report mailto (lobby + live scores), going-dark win fix, scan accuracy gate, rematch/host pause-undo, refresh rejoin, and mobile live HUD. **2026-11-20 friend-parity pass** (`cursor/web-friend-parity-7c05`): taunt, host kick, account delete, first-hunt safety disclaimer, lobby rules summary + move circle center, event log (live + results), full power-up dock (map/player/zone picks), scan camera-fail polish, zone-shrink preview ring, pin glide, ping flash. Pairing stays 30 m. Background GPS stays native-only.
 
 ## Deferred product
 
 | Feature | Essential | Feasible | Notes |
 |---------|-----------|----------|-------|
-| Power-ups with no map target (Ghost, Radar, Jammer, Shield, Scan, Lockdown, Shrink now, Tracker) | 3 | 4 | `POST /power-ups` exists; chip dock is the work |
-| Power-ups that drop a point or pick a player (Decoy, Create safe, Move safe, Rescue) | 2 | 3 | Needs map-pick UX on a phone |
-| Taunt | 2 | 5 | Route exists |
-| Move lobby circle center | 3 | 4 | Radius already editable |
-| Kick / remove lobby player | 3 | 4 | Route exists |
-| Report player (mailto) | 3 | 4 | Same payload as iOS `PlayerReportMail` |
-| Full event log sheet | 3 | 4 | Wire `onEvent` already parsed in `GameSocket` |
-| Account delete | 3 | 5 | Auth delete route exists |
-| Join-QR camera polish | 4 | 3 | Works; in-app browsers still break permission |
-| Pin glide animation | 2 | 4 | |
-| Ping flash overlay | 2 | 4 | |
+| ~~Power-ups~~ | — | — | Shipped on web friend-parity branch |
+| ~~Taunt / kick / account delete / event log / lobby summary+center~~ | — | — | Shipped |
+| ~~Pin glide / ping flash / zone-shrink preview / scan polish~~ | — | — | Shipped |
+| Lobby rules summary (read-only) | — | — | Shipped with timers line |
+| Report player (mailto) | 3 | 4 | Shipped earlier (lobby + live scores) |
+| Join-QR camera polish | 4 | 3 | In-app browsers still break permission |
 | Arena polygon editor | 2 | 2 | Keep on iOS |
 | Full preset / module editor | 2 | 2 | Keep on iOS |
 | Flashlight | 1 | 2 | Phone already has one |

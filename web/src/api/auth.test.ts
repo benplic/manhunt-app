@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { signInDev, TooYoungError } from './auth'
+import { deleteAccount, signInDev, TooYoungError } from './auth'
 
 describe('signInDev', () => {
   beforeEach(() => {
@@ -83,5 +83,27 @@ describe('signInDev', () => {
     expect(localStorage.getItem('manhunt.homeKey')).toBe('party-secret')
     expect(localStorage.getItem('manhunt.displayName')).toBe('Casey')
     expect(localStorage.getItem('manhunt.userId')).toBe('u1')
+  })
+})
+
+describe('deleteAccount', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('DELETEs /v1/me with bearer token', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await deleteAccount('tok')
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(String(url)).toMatch(/\/v1\/me$/)
+    expect(init.method).toBe('DELETE')
+    expect(init.headers.Authorization).toBe('Bearer tok')
   })
 })

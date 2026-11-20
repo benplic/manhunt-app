@@ -4,10 +4,12 @@ import { ApiError } from '../api/client'
 import {
   DEFAULT_ARENA_RADIUS_M,
   randomizeRoles,
+  removeLobbyPlayer,
   setLobbyCircle,
   setManualRoles,
   startGame,
 } from '../api/games'
+import { rulesSummaryLine } from '../game/rulesSummary'
 import { joinUrlForCode } from '../api/joinCode'
 import { SUPPORT_EMAIL } from '../api/legal'
 import { SessionExpiredError, withAuthRetry } from '../api/session'
@@ -121,6 +123,61 @@ export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props)
     }
   }
 
+  async function onRemovePlayer(playerId: string, displayName: string) {
+    if (!window.confirm(`Remove ${displayName} from the lobby?`)) {
+      return
+    }
+    setError(null)
+    setBusy(true)
+    try {
+      const next = await withAuthRetry((token) =>
+        removeLobbyPlayer({ token, gameId: view.game_id, playerId }),
+      )
+      onView(next)
+    } catch (err) {
+      if (handleAuth(err)) {
+        return
+      }
+      setError(err instanceof ApiError ? err.message : (err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function onUseGpsCenter() {
+    setError(null)
+    if (!navigator.geolocation) {
+      setError('Geolocation is not available in this browser.')
+      return
+    }
+    setBusy(true)
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 0,
+        })
+      })
+      const center = {
+        lat: position.coords.latitude,
+        lon: position.coords.longitude,
+      }
+      const next = await withAuthRetry((token) =>
+        setLobbyCircle({ token, gameId: view.game_id, radiusM: radiusDraft, center }),
+      )
+      onView(next)
+      setNote('Play circle center moved to your GPS.')
+    } catch (err) {
+      if (handleAuth(err)) {
+        return
+      }
+      setError(err instanceof ApiError ? err.message : (err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function onApplyRadius() {
     setError(null)
     setBusy(true)
@@ -169,6 +226,9 @@ export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props)
         <p className="code">
           Join code <strong>{view.join_code}</strong>
         </p>
+        {rulesSummaryLine(view.timers) ? (
+          <p className="hint rules-summary">{rulesSummaryLine(view.timers)}</p>
+        ) : null}
       </header>
 
       <section className="join-qr">
@@ -213,6 +273,16 @@ export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props)
                       Hider
                     </button>
                   </div>
+                ) : null}
+                {isHost && player.player_id !== view.you.player_id && !player.is_host ? (
+                  <button
+                    type="button"
+                    className="chip chip--danger"
+                    disabled={busy}
+                    onClick={() => void onRemovePlayer(player.player_id, player.display_name)}
+                  >
+                    Remove
+                  </button>
                 ) : null}
                 {player.player_id !== view.you.player_id ? (
                   <div className="chip-row safety-row">
@@ -275,6 +345,9 @@ export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props)
             onClick={() => void onApplyRadius()}
           >
             Apply radius
+          </button>
+          <button type="button" className="secondary" disabled={busy} onClick={() => void onUseGpsCenter()}>
+            Use my GPS as center
           </button>
         </section>
       ) : (

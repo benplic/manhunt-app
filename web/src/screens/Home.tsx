@@ -135,7 +135,9 @@ export function Home({ onSignedOut, onEnteredGame, bannerNote = null, onClearBan
   }
 
   if (accountOpen) {
-    return <Account onClose={() => setAccountOpen(false)} />
+    return (
+      <Account onClose={() => setAccountOpen(false)} onSignedOut={onSignedOut} />
+    )
   }
 
   if (scanning) {
