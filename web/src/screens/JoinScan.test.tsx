@@ -73,4 +73,18 @@ describe('JoinScan', () => {
     })
     expect(cameraStart).not.toHaveBeenCalled()
   })
+
+  it('accepts an iOS path invite', async () => {
+    const onCode = vi.fn()
+    render(
+      <JoinScan
+        onClose={() => undefined}
+        onCode={onCode}
+        injectScan="https://app.manhunt.ios/join/C2TX8B"
+      />,
+    )
+    await waitFor(() => {
+      expect(onCode).toHaveBeenCalledWith('C2TX8B')
+    })
+  })
 })

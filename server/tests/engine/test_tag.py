@@ -1,77 +1,39 @@
 from datetime import timedelta
 
-import pytest
-
 from app.engine.modules.base import TagClaim
 from app.engine.qr import make_qr_token
-from app.errors import ErrorCode, GameRuleError
 from tests.engine.helpers import meters, reading, two_player_hunt
 
 
-def test_inflated_accuracy_does_not_stretch_pairing() -> None:
-    session, clock, hider, seeker = two_player_hunt()
-    # Nearby phones with accuracy worse than the 30 m cutoff cannot tag.
-    session.record_location(seeker, reading(meters(100, 100), clock, accuracy=35))
-    session.record_location(hider, reading(meters(105, 100), clock, accuracy=35))
-    token = make_qr_token(
+def _token(session, clock, hider):
+    return make_qr_token(
         game_id=session.state.game_id,
         hider_id=hider,
         expires_at=clock.now() + timedelta(seconds=30),
         key=session.qr_signing_key,
     )
-    with pytest.raises(GameRuleError) as exc:
-        session.claim_tag(TagClaim(seeker, hider, qr_token=token))
-    assert exc.value.code == ErrorCode.NOT_IN_PAIRING_RANGE
-    assert "fuzzy" in exc.value.message.lower()
 
 
-def test_accuracy_bonus_cap_keeps_pairing_tight() -> None:
-    session, clock, hider, seeker = two_player_hunt()
-    # 50 m apart. Pairing is 30. Only 5 m of accuracy bonus per phone.
-    session.record_location(seeker, reading(meters(100, 100), clock, accuracy=25))
-    session.record_location(hider, reading(meters(150, 100), clock, accuracy=25))
-    token = make_qr_token(
-        game_id=session.state.game_id,
-        hider_id=hider,
-        expires_at=clock.now() + timedelta(seconds=30),
-        key=session.qr_signing_key,
-    )
-    with pytest.raises(GameRuleError) as exc:
-        session.claim_tag(TagClaim(seeker, hider, qr_token=token))
-    assert exc.value.code == ErrorCode.NOT_IN_PAIRING_RANGE
-    assert "closer" in exc.value.message.lower()
-
-
-def test_tag_rejects_missing_fix_with_a_clear_message() -> None:
-    session, clock, hider, seeker = two_player_hunt()
-    session.record_location(seeker, reading(meters(100, 100), clock))
-    # Hider never sent a fix.
-    token = make_qr_token(
-        game_id=session.state.game_id,
-        hider_id=hider,
-        expires_at=clock.now() + timedelta(seconds=30),
-        key=session.qr_signing_key,
-    )
-    with pytest.raises(GameRuleError) as exc:
-        session.claim_tag(TagClaim(seeker, hider, qr_token=token))
-    assert exc.value.code == ErrorCode.NOT_IN_PAIRING_RANGE
-    assert "location" in exc.value.message.lower() or "fix" in exc.value.message.lower()
-
-
-def test_tag_rejects_distance_with_get_closer_copy() -> None:
+def test_qr_tag_succeeds_when_players_are_far_apart() -> None:
     session, clock, hider, seeker = two_player_hunt()
     session.record_location(seeker, reading(meters(100, 100), clock, accuracy=5))
-    session.record_location(hider, reading(meters(160, 100), clock, accuracy=5))
-    token = make_qr_token(
-        game_id=session.state.game_id,
-        hider_id=hider,
-        expires_at=clock.now() + timedelta(seconds=30),
-        key=session.qr_signing_key,
-    )
-    with pytest.raises(GameRuleError) as exc:
-        session.claim_tag(TagClaim(seeker, hider, qr_token=token))
-    assert exc.value.code == ErrorCode.NOT_IN_PAIRING_RANGE
-    assert "closer" in exc.value.message.lower()
+    session.record_location(hider, reading(meters(400, 100), clock, accuracy=5))
+    session.claim_tag(TagClaim(seeker, hider, qr_token=_token(session, clock, hider)))
+    assert session.state.players[hider].status == "eliminated"
+
+
+def test_qr_tag_succeeds_with_fuzzy_gps() -> None:
+    session, clock, hider, seeker = two_player_hunt()
+    session.record_location(seeker, reading(meters(100, 100), clock, accuracy=80))
+    session.record_location(hider, reading(meters(105, 100), clock, accuracy=80))
+    session.claim_tag(TagClaim(seeker, hider, qr_token=_token(session, clock, hider)))
+    assert session.state.players[hider].status == "eliminated"
+
+
+def test_qr_tag_succeeds_without_a_fix() -> None:
+    session, clock, hider, seeker = two_player_hunt()
+    session.claim_tag(TagClaim(seeker, hider, qr_token=_token(session, clock, hider)))
+    assert session.state.players[hider].status == "eliminated"
 
 
 def test_a_sprint_is_kept_and_a_teleport_is_rejected() -> None:

@@ -33,6 +33,7 @@ def make_qr_token(*, game_id: UUID, hider_id: UUID, expires_at: datetime, key: s
 
 
 def parse_qr_token(token: str, *, game_id: UUID, key: str, now: datetime) -> UUID:
+    token = token.strip()
     try:
         body, sig = token.split(".", 1)
         raw = _unb64(body)

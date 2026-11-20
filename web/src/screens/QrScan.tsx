@@ -5,7 +5,7 @@ import { ApiError } from '../api/client'
 import { claimQrTag } from '../api/games'
 import { SessionExpiredError, withAuthRetry } from '../api/session'
 import type { PlayerView } from '../api/types'
-import { isAccuracyTooFuzzy, localAccuracyBlockMessage } from '../api/tagErrors'
+import { isAccuracyTooFuzzy } from '../api/tagErrors'
 import { releaseScanner } from './scannerRelease'
 import './QrScan.css'
 
@@ -21,12 +21,9 @@ type Props = {
   injectScan?: string | null
 }
 
-const HOLD_MS = 8000
-
 /**
  * Camera QR scan. iOS Safari has no BarcodeDetector; html5-qrcode works there.
- * Pairing distance stays server-side (about 30 m). Coarse GPS is blocked locally
- * so we do not spam /tags/qr; one decoded token may wait briefly for a clearer fix.
+ * A scanned code is the tag. GPS accuracy is shown and does not block the claim.
  */
 export function QrScan({
   gameId,
@@ -41,29 +38,10 @@ export function QrScan({
   const [paused, setPaused] = useState(false)
   const [manual, setManual] = useState('')
   const [manualOpen, setManualOpen] = useState(false)
-  const [heldNote, setHeldNote] = useState<string | null>(null)
   const claimedRef = useRef(false)
   const scannerRef = useRef<Html5Qrcode | null>(null)
-  const heldTokenRef = useRef<string | null>(null)
-  const heldUntilRef = useRef(0)
-  const accuracyRef = useRef(accuracyM)
   /** start() must settle before stop(), or the camera stream is left running. */
   const startPromiseRef = useRef<Promise<unknown>>(Promise.resolve())
-
-  useEffect(() => {
-    accuracyRef.current = accuracyM
-    // If we were holding a token for clearer GPS, try once accuracy improves.
-    if (
-      heldTokenRef.current &&
-      Date.now() <= heldUntilRef.current &&
-      !isAccuracyTooFuzzy(accuracyM)
-    ) {
-      const token = heldTokenRef.current
-      heldTokenRef.current = null
-      setHeldNote(null)
-      void claim(token)
-    }
-  }, [accuracyM])
 
   async function stopScanner(target?: Html5Qrcode | null) {
     const active = target ?? scannerRef.current
@@ -82,39 +60,21 @@ export function QrScan({
   }
 
   async function claim(token: string) {
-    if (claimedRef.current || busy) {
-      return
-    }
-    const accuracy = accuracyRef.current
-    if (isAccuracyTooFuzzy(accuracy)) {
-      // Hold one decoded token briefly; do not POST while GPS is unusable.
-      heldTokenRef.current = token
-      heldUntilRef.current = Date.now() + HOLD_MS
-      setHeldNote(
-        accuracy == null
-          ? 'Waiting for GPS… keep the code in view.'
-          : localAccuracyBlockMessage(accuracy),
-      )
-      window.setTimeout(() => {
-        if (heldTokenRef.current === token && Date.now() >= heldUntilRef.current) {
-          heldTokenRef.current = null
-          setHeldNote('GPS stayed fuzzy. Get a clearer fix, then scan again.')
-        }
-      }, HOLD_MS + 50)
+    const trimmed = token.trim()
+    if (!trimmed || claimedRef.current || busy) {
       return
     }
 
     claimedRef.current = true
     setBusy(true)
     setError(null)
-    setHeldNote(null)
     // Stop only after start() has reached the scanning state. An early stop()
     // throws and leaves getUserMedia running, so the next open looks camera-blocked.
     await releaseScanner(startPromiseRef.current, () => stopScanner())
     setPaused(true)
     try {
       const view = await withAuthRetry((access) =>
-        claimQrTag({ token: access, gameId, qrToken: token }),
+        claimQrTag({ token: access, gameId, qrToken: trimmed }),
       )
       onTagged(view)
     } catch (err) {
@@ -130,9 +90,7 @@ export function QrScan({
 
   function retryScan() {
     claimedRef.current = false
-    heldTokenRef.current = null
     setError(null)
-    setHeldNote(null)
     setPaused(false)
   }
 
@@ -188,7 +146,7 @@ export function QrScan({
   return (
     <main className="qr-scan qr-scan--dark">
       <h1>Scan tag</h1>
-      <p>Point at a hider’s code. Both phones need clear GPS within about 30 m.</p>
+      <p>Point at a hider’s code. The same code works from the iOS app or this site.</p>
       {accuracyM != null ? (
         <p className={`accuracy${isAccuracyTooFuzzy(accuracyM) ? ' accuracy--warn' : ''}`}>
           Your GPS ±{Math.round(accuracyM)} m
@@ -198,11 +156,6 @@ export function QrScan({
       )}
       <div id="manhunt-qr-reader" className="reader" />
       {busy ? <p>Claiming…</p> : null}
-      {heldNote ? (
-        <p className="held" role="status">
-          {heldNote}
-        </p>
-      ) : null}
       {error ? (
         <p className="error" role="alert">
           {error}

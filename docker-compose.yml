@@ -33,7 +33,7 @@ services:
       MANHUNT_TRAIL_KEY: ${MANHUNT_TRAIL_KEY:-}
       MANHUNT_DEV_AUTH_SECRET: ${MANHUNT_DEV_AUTH_SECRET:-}
       # Browser origins for web/ (Vite locally + Cloudflare Pages). Comma-separated.
-      MANHUNT_CORS_ORIGINS: ${MANHUNT_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      MANHUNT_CORS_ORIGINS: ${MANHUNT_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,https://manhunt-app.pages.dev}
       MANHUNT_TICK_LOOP: "true"
     ports:
       - "8000:8000"

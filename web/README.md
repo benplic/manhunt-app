@@ -27,10 +27,10 @@ Why Cloudflare Pages for this app:
 ## Notes
 
 - Live map uses Leaflet + OSM tiles. Location is watched only while the tab is visible. Safari may suspend GPS when the screen locks — keep the screen on during a hunt.
-- Desk / Mac testing: the client heartbeats a steady fix (arena center) and ignores GPS worse than ±30 m or teleport jumps. The **API host must include the going-dark win fix** (`signal_lost` is not a tag). Production on `main` without that fix still ends the hunt as “All hiders were tagged.” Deploy the server branch before mixed iOS + web playtests.
+- Desk / Mac testing: if the browser never delivers GPS, the client waits about 8 seconds, then heartbeats the play-circle center. A real fix, even a coarse one, replaces that seed once (`flag: "reset"`). The **API host must include the going-dark win fix** (`signal_lost` is not a tag). Production on `main` without that fix still ends the hunt as “All hiders were tagged.” Deploy the server branch before mixed iOS + web playtests.
 - Verified live phases from the server: `lobby` → `head_start` / `active` (classic), plus `paused` / `ended`.
 - Create always posts a fresh 400 m `boundary_circle` arena, then a classic game. No arena editor in v0.
-- QR: hiders show `qr_token` via `qrcode`; seekers scan with `html5-qrcode` (no `BarcodeDetector` on iOS Safari). Tag distance stays server-side (~30 m).
+- QR: hiders show `qr_token` via `qrcode`; seekers scan with `html5-qrcode` (no `BarcodeDetector` on iOS Safari). The scanned token is the tag. Join QRs use `/join/{code}` on this site, and the scanner also accepts an older `app.manhunt.ios` path or `?join=` link.
 - Access token, refresh token, and home key live in `localStorage` (MVP). Treat the site origin as trusted; XSS can read the party secret.
 
 ## Deploy (Cloudflare Pages)

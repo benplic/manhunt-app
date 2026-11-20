@@ -1,17 +1,22 @@
 import type { GeoFix } from './watchVisible'
 import { watchVisibleLocation } from './watchVisible'
 
-/** Match server ACCURACY_CUTOFF_M — fuzzier than this is useless for tags/OOB. */
-export const PRESENCE_ACCURACY_MAX_M = 30
+/** How long to wait for a real fix before publishing a desk seed. */
+export const SEED_WAIT_MS = 8_000
 const MAX_SPEED_MPS = 8
 const JUMP_SLACK_M = 40
 const METERS_PER_DEGREE = 111_320
 
+/** A fix plus whether the server should skip the speed check once. */
+export type PresenceFix = GeoFix & { reset: boolean }
+
 export type PresenceOptions = {
-  onFix: (fix: GeoFix) => void
+  onFix: (fix: PresenceFix) => void
   onError?: (message: string) => void
   /** Used when the browser never delivers GPS (common on desktop). */
   seedFix?: GeoFix | null
+  /** Delay before the desk seed is published. A real fix cancels it. */
+  seedWaitMs?: number
   /** How often to re-send the last good fix while the tab is visible. */
   heartbeatMs?: number
   watchLocation?: typeof watchVisibleLocation
@@ -26,13 +31,18 @@ function distanceM(a: GeoFix, b: GeoFix): number {
   return Math.hypot(east, north)
 }
 
-/** True when the server would accept this hop (not a teleport, not too fuzzy). */
+/** True when this hop is finite and not a teleport. Coarse accuracy is kept. */
 export function isUsablePresenceFix(
   prev: GeoFix | null,
   next: GeoFix,
   elapsedMs: number,
 ): boolean {
-  if (next.accuracyM > PRESENCE_ACCURACY_MAX_M) {
+  if (
+    !Number.isFinite(next.lat) ||
+    !Number.isFinite(next.lon) ||
+    !Number.isFinite(next.accuracyM) ||
+    next.accuracyM < 0
+  ) {
     return false
   }
   if (!prev) {
@@ -45,12 +55,13 @@ export function isUsablePresenceFix(
 /**
  * Keep the server silence clock fresh while this tab is visible.
  *
- * Mac CoreLocation-via-browser often reports ±40 m and jumps. Production rejects
- * those teleports; without a heartbeat the host goes dark and (on the old win
- * rule) the hunt ends as “All hiders were tagged.”
+ * Do not publish a desk seed until GPS fails or the wait expires. A phone
+ * whose first sample is coarse must still move the pin off the play-circle
+ * center, or the other client draws the wrong place.
  */
 export function startLivePresence(options: PresenceOptions): () => void {
   const heartbeatMs = options.heartbeatMs ?? 5_000
+  const seedWaitMs = options.seedWaitMs ?? SEED_WAIT_MS
   const getVisibility = options.getVisibility ?? (() => document.visibilityState)
   const now = options.now ?? (() => Date.now())
   const watch = options.watchLocation ?? watchVisibleLocation
@@ -58,19 +69,48 @@ export function startLivePresence(options: PresenceOptions): () => void {
   let lastGood: GeoFix | null = null
   let lastGoodAt = 0
   let heartbeatId: ReturnType<typeof setInterval> | null = null
-  let warnedFuzzy = false
+  let seedTimer: ReturnType<typeof setTimeout> | null = null
+  /** True while the published pin is the synthetic desk seed. */
+  let seeded = false
+  let resetSent = false
 
-  function adopt(fix: GeoFix) {
+  function adopt(fix: GeoFix, reset: boolean) {
     lastGood = fix
     lastGoodAt = now()
-    options.onFix(fix)
+    options.onFix({ ...fix, reset })
+  }
+
+  function clearSeedTimer() {
+    if (seedTimer !== null) {
+      clearTimeout(seedTimer)
+      seedTimer = null
+    }
+  }
+
+  function publishSeed(message: string) {
+    if (!options.seedFix || lastGood) {
+      return
+    }
+    seeded = true
+    adopt(options.seedFix, false)
+    options.onError?.(message)
+  }
+
+  function armSeed() {
+    if (!options.seedFix || seedTimer !== null || lastGood) {
+      return
+    }
+    seedTimer = setTimeout(() => {
+      seedTimer = null
+      publishSeed('No live GPS — holding the play-circle center so you do not go dark. Fine for desk tests.')
+    }, seedWaitMs)
   }
 
   function tickHeartbeat() {
     if (getVisibility() !== 'visible' || !lastGood) {
       return
     }
-    options.onFix(lastGood)
+    options.onFix({ ...lastGood, reset: false })
   }
 
   function startHeartbeat() {
@@ -87,36 +127,40 @@ export function startLivePresence(options: PresenceOptions): () => void {
     }
   }
 
-  if (options.seedFix && options.seedFix.accuracyM <= PRESENCE_ACCURACY_MAX_M) {
-    adopt(options.seedFix)
-  }
+  armSeed()
   startHeartbeat()
 
   const stopWatch = watch({
     onFix: (fix) => {
+      // Drop a non-finite sample without cancelling the desk-seed wait.
+      if (!isUsablePresenceFix(null, fix, 0)) {
+        return
+      }
+      clearSeedTimer()
+      if (seeded && lastGood) {
+        seeded = false
+        const reset = !resetSent
+        resetSent = true
+        adopt(fix, reset)
+        return
+      }
       if (!isUsablePresenceFix(lastGood, fix, now() - lastGoodAt)) {
-        if (!warnedFuzzy && fix.accuracyM > PRESENCE_ACCURACY_MAX_M) {
-          warnedFuzzy = true
-          options.onError?.(
-            `GPS ±${Math.round(fix.accuracyM)} m is too fuzzy — holding a steady desk fix so you do not go dark.`,
-          )
-        }
         // Keep heartbeating lastGood; do not send the rejected hop.
         return
       }
-      adopt(fix)
+      adopt(fix, false)
     },
     onError: (message) => {
       if (lastGood) {
         options.onError?.(
           'No live GPS — holding the last steady fix so you do not go dark. Fine for desk tests.',
         )
-        options.onFix(lastGood)
+        options.onFix({ ...lastGood, reset: false })
         return
       }
       if (options.seedFix) {
-        adopt(options.seedFix)
-        options.onError?.(
+        clearSeedTimer()
+        publishSeed(
           'No live GPS — holding the play-circle center so you do not go dark. Fine for desk tests.',
         )
         return
@@ -130,7 +174,7 @@ export function startLivePresence(options: PresenceOptions): () => void {
     if (getVisibility() === 'visible') {
       startHeartbeat()
       if (lastGood) {
-        options.onFix(lastGood)
+        options.onFix({ ...lastGood, reset: false })
       }
     } else {
       stopHeartbeat()
@@ -140,6 +184,7 @@ export function startLivePresence(options: PresenceOptions): () => void {
 
   return () => {
     document.removeEventListener('visibilitychange', onVisibility)
+    clearSeedTimer()
     stopHeartbeat()
     stopWatch()
   }

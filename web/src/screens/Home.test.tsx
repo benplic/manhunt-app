@@ -36,6 +36,13 @@ describe('Home screen', () => {
     refreshAccessToken.mockReset()
     clearSession.mockReset()
     vi.unstubAllGlobals()
+    window.history.replaceState({}, '', '/')
+  })
+
+  it('prefills a join code from an invite path', () => {
+    window.history.pushState({}, '', '/join/C2TX8B')
+    render(<Home onSignedOut={() => undefined} onEnteredGame={() => undefined} />)
+    expect(screen.getByLabelText(/join code/i)).toHaveValue('C2TX8B')
   })
 
   it('creates a game with a fresh GPS fix', async () => {

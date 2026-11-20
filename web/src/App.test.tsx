@@ -160,7 +160,7 @@ describe('App rejoin', () => {
     render(<App />)
 
     expect(await screen.findByText(/join code/i)).toBeInTheDocument()
-    expect(screen.getByText(/ABCDEF/)).toBeInTheDocument()
+    expect(screen.getByText('ABCDEF')).toBeInTheDocument()
   })
 
   it('keeps the live map mounted under the safety gate and reveals it after Continue', async () => {

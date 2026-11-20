@@ -32,7 +32,7 @@ export function QrShow({ token, onClose }: Props) {
   return (
     <main className="qr-show">
       <h1>Your tag code</h1>
-      <p>Show this to a seeker within about 30 m. The server enforces the distance.</p>
+      <p>Show this to a seeker. It rotates about every 30 seconds and scans from either app.</p>
       {dataUrl ? <img src={dataUrl} alt="Tag QR code" width={280} height={280} /> : null}
       {error ? (
         <p className="error" role="alert">

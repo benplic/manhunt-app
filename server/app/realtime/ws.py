@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import math
-import time
 from uuid import UUID
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.auth.tokens import parse_token
-from app.engine.session import movement_too_fast, note_presence
+from app.engine.session import consume_location_reset, movement_too_fast, note_presence
 from app.engine.state import LocationReading
 from app.errors import ApiError, GameRuleError
 from app.realtime.manager import SessionManager, envelope
@@ -81,7 +80,6 @@ def bind_ws(manager: SessionManager, get_settings, persist_location=None):
                         },
                     )
                 )
-        last_loc = 0.0
         try:
             while True:
                 message = await ws.receive_json()
@@ -92,10 +90,6 @@ def bind_ws(manager: SessionManager, get_settings, persist_location=None):
                 elif kind == "location":
                     if session.demo is not None:
                         continue
-                    now = time.monotonic()
-                    if now - last_loc < 0.5:
-                        continue
-                    last_loc = now
                     try:
                         lat = float(payload["lat"])
                         lon = float(payload["lon"])
@@ -106,16 +100,30 @@ def bind_ws(manager: SessionManager, get_settings, persist_location=None):
                         math.isfinite(lat) and math.isfinite(lon) and math.isfinite(accuracy_m)
                     ):
                         continue
+                    recorded_at = session.clock.now()
+                    player = session.state.players.get(user_id)
+                    # Pace on the game clock so a frozen test clock can space fixes
+                    # without a wall-clock sleep (that sleep cancels the socket task).
+                    if (
+                        player is not None
+                        and player.last_location_at is not None
+                        and (recorded_at - player.last_location_at).total_seconds() < 0.5
+                    ):
+                        continue
                     reading = LocationReading(
                         lat=lat,
                         lon=lon,
                         accuracy_m=accuracy_m,
-                        recorded_at=session.clock.now(),
+                        recorded_at=recorded_at,
                         battery=payload.get("battery"),
                         flag=str(payload.get("flag", "normal")),
                     )
-                    player = session.state.players.get(user_id)
-                    if player is not None and movement_too_fast(player, reading):
+                    allow_jump = (
+                        player is not None
+                        and reading.flag == "reset"
+                        and consume_location_reset(player, recorded_at)
+                    )
+                    if player is not None and not allow_jump and movement_too_fast(player, reading):
                         # Keep silence clock fresh; do not move the pin.
                         note_presence(player, reading.recorded_at)
                         await ws.send_json(

@@ -396,6 +396,20 @@ class GameSession:
                 return
 
 
+# One reposition after a synthetic desk pin. Further resets inside this window
+# go through the speed check so the flag is not a teleport button.
+LOCATION_RESET_COOLDOWN_S = 60.0
+
+
+def consume_location_reset(player: PlayerState, at: datetime) -> bool:
+    """True when this reading may replace the pin despite the speed check."""
+    previous = player.last_location_reset_at
+    if previous is not None and (at - previous).total_seconds() < LOCATION_RESET_COOLDOWN_S:
+        return False
+    player.last_location_reset_at = at
+    return True
+
+
 def movement_too_fast(player: PlayerState, reading: LocationReading) -> bool:
     """True when a phone could not have walked from its previous fix to this one.
 

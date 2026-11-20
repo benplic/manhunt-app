@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.games.service import GameService
 
 
@@ -210,9 +211,10 @@ def bind_game_routes(get_session, current_user, service: GameService):
     ) -> dict:
         row, _ = await service.require_member(session, game_id, user)
         await service.notify_invite(session, user, game_id)
+        origin = get_settings().manhunt_web_origin.rstrip("/")
         return {
             "join_code": row.join_code,
-            "url": f"https://app.manhunt.ios/join/{row.join_code}",
+            "url": f"{origin}/join/{row.join_code}",
         }
 
     @router.get("/games/{game_id}/trail")

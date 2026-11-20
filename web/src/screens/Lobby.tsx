@@ -238,6 +238,7 @@ export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props)
         ) : (
           <p className="hint">Drawing join code…</p>
         )}
+        <p className="hint join-link">{joinLink}</p>
         <p className="hint">Friends can Scan on the home screen instead of typing the code.</p>
       </section>
 

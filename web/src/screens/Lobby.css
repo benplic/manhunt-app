@@ -156,6 +156,11 @@
   font-size: 0.9rem;
 }
 
+.lobby .join-link {
+  word-break: break-all;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 .lobby .error {
   color: #ffb4b4;
 }

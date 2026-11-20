@@ -197,9 +197,10 @@ SCHEMAS: dict[str, dict[str, Any]] = {
     "tag_policy": {
         "version": 1,
         "title": "Tag",
-        "blurb": "Seekers scan a rotating QR code while GPS pairing is satisfied.",
+        "blurb": "Seekers scan a rotating QR code. The code is the tag; GPS distance is not.",
         "locked": True,
-        # Host editor hides this card; engine still loads classic defaults (pairing_m=30).
+        # Host editor hides this card. pairing_m stays in the snapshot for old clients
+        # and is no longer consulted by check_tag.
         "hidden": True,
         "field_order": ["method", "radius_m", "result", "pairing_m"],
         "fields": {

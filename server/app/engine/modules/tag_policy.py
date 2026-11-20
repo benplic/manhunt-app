@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar
 
-from app.engine.geo import ACCURACY_CUTOFF_M, distance_m
 from app.engine.modules.base import BaseModule, TagClaim
 from app.engine.modules.points import grant_points
 from app.engine.qr import parse_qr_token
@@ -10,13 +9,6 @@ from app.errors import ErrorCode, GameRuleError
 
 if TYPE_CHECKING:
     from app.engine.session import GameSession
-
-# The phone reports its own accuracy. Adding the whole number lets a seeker
-# claim 30 m of error and tag from the far side of a reveal circle.
-ACCURACY_BONUS_CAP_M = 5.0
-# Host UI no longer exposes pairing; keep GPS pairing fixed.
-PAIRING_M = 30.0
-
 
 class TagPolicyModule(BaseModule):
     module_id: ClassVar[str] = "tag_policy"
@@ -32,29 +24,8 @@ class TagPolicyModule(BaseModule):
             return ErrorCode.TARGET_NOT_ACTIVE
         if s.state.phase not in {"active"}:
             return ErrorCode.WRONG_PHASE
-        pairing = PAIRING_M
-        sloc = seeker.location
-        hloc = hider.location
-        # Same error code for clients; distinct messages so web GPS noise is not "too far".
-        if sloc is None or hloc is None:
-            raise GameRuleError(
-                ErrorCode.NOT_IN_PAIRING_RANGE,
-                "Need a fresh location from both phones before tagging.",
-            )
-        if sloc.accuracy_m > ACCURACY_CUTOFF_M or hloc.accuracy_m > ACCURACY_CUTOFF_M:
-            raise GameRuleError(
-                ErrorCode.NOT_IN_PAIRING_RANGE,
-                "GPS is too fuzzy to tag. Wait for a clearer fix.",
-            )
-        gps = distance_m(sloc.point, hloc.point)
-        bonus = min(sloc.accuracy_m, ACCURACY_BONUS_CAP_M) + min(
-            hloc.accuracy_m, ACCURACY_BONUS_CAP_M
-        )
-        if gps > pairing + bonus:
-            raise GameRuleError(
-                ErrorCode.NOT_IN_PAIRING_RANGE,
-                "Get closer. GPS says you are too far to tag.",
-            )
+        # The scanned code is the proximity check. GPS distance used to reject
+        # a real tag when the web pin was stuck on a desk seed.
         if not claim.qr_token:
             return ErrorCode.TOKEN_INVALID
         hid = parse_qr_token(
