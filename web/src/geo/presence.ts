@@ -6,6 +6,10 @@ export const SEED_WAIT_MS = 8_000
 const MAX_SPEED_MPS = 8
 const JUMP_SLACK_M = 40
 const METERS_PER_DEGREE = 111_320
+const SEED_HOLD_MESSAGE =
+  'No live GPS — holding the play-circle center so you do not go dark. Fine for desk tests.'
+const LAST_FIX_HOLD_MESSAGE =
+  'No live GPS — holding the last steady fix so you do not go dark. Fine for desk tests.'
 
 /** A fix plus whether the server should skip the speed check once. */
 export type PresenceFix = GeoFix & { reset: boolean }
@@ -102,7 +106,7 @@ export function startLivePresence(options: PresenceOptions): () => void {
     }
     seedTimer = setTimeout(() => {
       seedTimer = null
-      publishSeed('No live GPS — holding the play-circle center so you do not go dark. Fine for desk tests.')
+      publishSeed(SEED_HOLD_MESSAGE)
     }, seedWaitMs)
   }
 
@@ -152,17 +156,13 @@ export function startLivePresence(options: PresenceOptions): () => void {
     },
     onError: (message) => {
       if (lastGood) {
-        options.onError?.(
-          'No live GPS — holding the last steady fix so you do not go dark. Fine for desk tests.',
-        )
+        options.onError?.(LAST_FIX_HOLD_MESSAGE)
         options.onFix({ ...lastGood, reset: false })
         return
       }
       if (options.seedFix) {
         clearSeedTimer()
-        publishSeed(
-          'No live GPS — holding the play-circle center so you do not go dark. Fine for desk tests.',
-        )
+        publishSeed(SEED_HOLD_MESSAGE)
         return
       }
       options.onError?.(message)
