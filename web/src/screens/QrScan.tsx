@@ -60,10 +60,13 @@ export function QrScan({
     }
   }, [accuracyM])
 
-  async function stopScanner() {
-    const active = scannerRef.current
+  async function stopScanner(target?: Html5Qrcode | null) {
+    const active = target ?? scannerRef.current
     if (!active) {
       return
+    }
+    if (scannerRef.current === active) {
+      scannerRef.current = null
     }
     try {
       await active.stop()
@@ -71,7 +74,6 @@ export function QrScan({
     } catch {
       // TODO: surface scanner cleanup failures if they become common on iOS.
     }
-    scannerRef.current = null
   }
 
   async function claim(token: string) {
@@ -171,13 +173,14 @@ export function QrScan({
 
     return () => {
       stopped = true
-      void stopScanner()
+      // Stop this instance, not whatever scannerRef points at after a remount.
+      void stopScanner(scanner)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, injectScan, paused])
 
   return (
-    <main className="qr-scan">
+    <main className="qr-scan qr-scan--dark">
       <h1>Scan tag</h1>
       <p>Point at a hider’s code. Both phones need clear GPS within about 30 m.</p>
       {accuracyM != null ? (

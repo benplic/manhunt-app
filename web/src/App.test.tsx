@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from './api/client'
 import App from './App'
 import { rememberActiveGame } from './game/resume'
+import { resetSafetyDisclaimerForTests } from './game/safetyDisclaimer'
 
 const fetchGameView = vi.fn()
 const leaveGame = vi.fn()
@@ -48,15 +49,55 @@ vi.mock('./auth/storage', () => ({
   clearSession: vi.fn(),
 }))
 
+vi.mock('./screens/LiveMap', () => ({
+  LiveMap: ({ view }: { view: { join_code: string; you: { role: string } } }) => (
+    <main className="live-map">
+      <p className="eyebrow">
+        live · {view.join_code}
+      </p>
+      <p className="role-pill">{view.you.role}</p>
+      <button type="button">Recenter</button>
+    </main>
+  ),
+}))
+
+const liveView = {
+  game_id: 'game-live',
+  join_code: 'ABCDEF',
+  phase: 'head_start',
+  phase_remaining_s: 40,
+  you: {
+    player_id: 'u1',
+    role: 'hider',
+    status: 'active',
+    is_host: true,
+  },
+  players: [
+    {
+      player_id: 'u1',
+      display_name: 'Casey',
+      role: 'hider',
+      status: 'active',
+      is_host: true,
+    },
+  ],
+  banners: [],
+  reveals: [],
+}
+
 describe('App rejoin', () => {
   beforeEach(() => {
     sessionStorage.clear()
+    localStorage.clear()
+    resetSafetyDisclaimerForTests()
     fetchGameView.mockReset()
     leaveGame.mockReset()
   })
 
   afterEach(() => {
     sessionStorage.clear()
+    localStorage.clear()
+    resetSafetyDisclaimerForTests()
   })
 
   it('lets the player cancel a hung rejoin and return home', async () => {
@@ -114,5 +155,36 @@ describe('App rejoin', () => {
 
     expect(await screen.findByText(/join code/i)).toBeInTheDocument()
     expect(screen.getByText(/ABCDEF/)).toBeInTheDocument()
+  })
+
+  it('keeps the live map mounted under the safety gate and reveals it after Continue', async () => {
+    const user = userEvent.setup()
+    rememberActiveGame('game-live')
+    fetchGameView.mockResolvedValue(liveView)
+
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: /play safely/i })).toBeInTheDocument()
+    // Map stays mounted under the gate so Leaflet is not torn down on Continue.
+    expect(screen.getByText(/live · ABCDEF/i)).toBeInTheDocument()
+    expect(screen.getByText(/^hider$/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /continue/i }))
+
+    expect(screen.queryByRole('heading', { name: /play safely/i })).not.toBeInTheDocument()
+    expect(screen.getByText(/live · ABCDEF/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /recenter/i })).toBeInTheDocument()
+  })
+
+  it('rejoins a live hunt straight to the map when safety was already acknowledged', async () => {
+    localStorage.setItem('manhunt.safetyDisclaimerAcked', '1')
+    rememberActiveGame('game-live')
+    fetchGameView.mockResolvedValue({ ...liveView, phase: 'active', phase_remaining_s: null })
+
+    render(<App />)
+
+    expect(await screen.findByText(/live · ABCDEF/i)).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /play safely/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/connecting to the hunt/i)).not.toBeInTheDocument()
   })
 })

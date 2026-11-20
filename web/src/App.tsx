@@ -240,33 +240,39 @@ function App() {
         </main>
       )
     }
-    if (safetyGateOpen) {
-      return (
-        <main className="safety-gate">
-          <h1>Play safely</h1>
-          <p>{SAFETY_DISCLAIMER_COPY}</p>
-          <button
-            type="button"
-            onClick={() => {
-              ackSafetyDisclaimer()
-              setSafetyGateOpen(false)
-            }}
-          >
-            Continue
-          </button>
-        </main>
-      )
-    }
+    // Keep LiveMap mounted under the safety gate. Replacing it with a full-page
+    // gate then remounting Leaflet after Continue left a black map on phones.
     return (
-      <LiveMap
-        view={gameView}
-        socket={socketRef.current}
-        qrToken={qrToken}
-        note={socketNote}
-        onView={applyView}
-        onLeave={() => void leaveCurrentGame()}
-        onSignedOut={signOut}
-      />
+      <>
+        <LiveMap
+          view={gameView}
+          socket={socketRef.current}
+          qrToken={qrToken}
+          note={socketNote}
+          onView={applyView}
+          onLeave={() => void leaveCurrentGame()}
+          onSignedOut={signOut}
+        />
+        {safetyGateOpen ? (
+          <div className="safety-gate" role="dialog" aria-modal="true" aria-labelledby="safety-gate-title">
+            <div className="safety-gate__card">
+              <h1 id="safety-gate-title">Play safely</h1>
+              <p>{SAFETY_DISCLAIMER_COPY}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  ackSafetyDisclaimer()
+                  setSafetyGateOpen(false)
+                  // Leaflet may have initialized under a covered frame; refresh size.
+                  window.setTimeout(() => window.dispatchEvent(new Event('resize')), 0)
+                }}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </>
     )
   }
 

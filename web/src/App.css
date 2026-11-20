@@ -39,3 +39,49 @@ body {
   font-weight: 600;
   cursor: pointer;
 }
+
+/* Full-screen gate over a warm LiveMap — do not unmount the map underneath. */
+.safety-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem 1.25rem;
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  background: rgba(8, 10, 14, 0.92);
+  color: #f2f0ea;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+.safety-gate__card {
+  width: min(24rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.safety-gate h1 {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.safety-gate p {
+  margin: 0;
+  color: #c4c8d2;
+  line-height: 1.45;
+}
+
+.safety-gate button {
+  min-height: 44px;
+  margin-top: 0.35rem;
+  padding: 0.75rem 1rem;
+  border: none;
+  border-radius: 6px;
+  background: #2f6fed;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}

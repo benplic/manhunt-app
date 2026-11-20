@@ -1,16 +1,19 @@
+/* Dark chrome — this screen sits on the live overlay and the dark Home shell. */
 .qr-scan {
   max-width: 24rem;
   margin: 0 auto;
   padding: 1.5rem 1.25rem 2.5rem;
   font-family: 'Segoe UI', system-ui, sans-serif;
+  color: #f2f0ea;
 }
 
 .qr-scan h1 {
   margin: 0 0 0.35rem;
+  color: #f2f0ea;
 }
 
 .qr-scan p {
-  color: #555;
+  color: #c4c8d2;
   line-height: 1.35;
 }
 
@@ -30,30 +33,36 @@
 }
 
 .qr-scan button {
+  min-height: 44px;
   padding: 0.7rem 1.2rem;
   border: none;
   border-radius: 6px;
-  background: #1a1a1a;
+  background: #2f6fed;
   color: #fff;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
 }
 
+.qr-scan button.secondary {
+  background: #2a2d36;
+  color: #f2f0ea;
+}
+
 .qr-scan .error {
-  color: #a40000;
+  color: #ffb4b4;
 }
 
 .qr-scan .accuracy {
   margin: 0.35rem 0 0;
   font-size: 0.9rem;
   font-weight: 600;
-  color: #1a1a1a;
+  color: #c4c8d2;
 }
 
 .qr-scan .accuracy--warn,
 .qr-scan .held {
-  color: #8a4b00;
+  color: #f0c75e;
 }
 
 .qr-scan .manual {
@@ -68,12 +77,15 @@
   flex-direction: column;
   gap: 0.35rem;
   font-size: 0.9rem;
+  color: #f2f0ea;
 }
 
 .qr-scan .manual input {
   min-height: 44px;
   padding: 0.55rem 0.7rem;
-  border: 1px solid #ccc;
+  border: 1px solid #3a3a3a;
   border-radius: 6px;
+  background: #1a1a1a;
+  color: #f2f0ea;
   font: inherit;
 }
