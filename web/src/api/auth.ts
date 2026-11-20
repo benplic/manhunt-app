@@ -52,6 +52,14 @@ export async function signInDev(input: SignInInput): Promise<AuthOut> {
   return auth
 }
 
+/** Permanently deletes the signed-in user on this server. */
+export async function deleteAccount(token: string): Promise<void> {
+  await apiRequest<{ ok: boolean }>('/v1/me', {
+    method: 'DELETE',
+    token,
+  })
+}
+
 export async function refreshAccessToken(refreshToken: string): Promise<AuthOut> {
   const auth = await apiRequest<AuthOut>('/v1/auth/refresh', {
     method: 'POST',

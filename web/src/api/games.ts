@@ -1,5 +1,5 @@
 import { apiRequest } from './client'
-import type { ArenaOut, GameCreated, PlayerView } from './types'
+import type { ArenaOut, GameCreated, GameEventsOut, PlayerView } from './types'
 
 /** Always mint a new play circle at the host GPS. Do not reuse prior arenas. */
 export const DEFAULT_ARENA_RADIUS_M = 400
@@ -200,6 +200,63 @@ export async function undoLastTag(input: { token: string; gameId: string }): Pro
 
 export async function rematchGame(input: { token: string; gameId: string }): Promise<PlayerView> {
   return apiRequest<PlayerView>(`/v1/games/${input.gameId}/rematch`, {
+    method: 'POST',
+    token: input.token,
+  })
+}
+
+export async function tauntGame(input: { token: string; gameId: string }): Promise<PlayerView> {
+  return apiRequest<PlayerView>(`/v1/games/${input.gameId}/taunt`, {
+    method: 'POST',
+    token: input.token,
+  })
+}
+
+export async function removeLobbyPlayer(input: {
+  token: string
+  gameId: string
+  playerId: string
+}): Promise<PlayerView> {
+  return apiRequest<PlayerView>(
+    `/v1/games/${input.gameId}/players/${input.playerId}/remove`,
+    {
+      method: 'POST',
+      token: input.token,
+    },
+  )
+}
+
+export type PurchasePowerUpInput = {
+  token: string
+  gameId: string
+  id: string
+  lat?: number
+  lon?: number
+  target_player_id?: string
+  zone_id?: string
+}
+
+export async function purchasePowerUp(input: PurchasePowerUpInput): Promise<PlayerView> {
+  const { token, gameId, id, ...extra } = input
+  return apiRequest<PlayerView>(`/v1/games/${gameId}/power-ups`, {
+    method: 'POST',
+    token,
+    body: { id, ...extra },
+  })
+}
+
+export async function fetchGameEvents(input: {
+  token: string
+  gameId: string
+}): Promise<GameEventsOut> {
+  return apiRequest<GameEventsOut>(`/v1/games/${input.gameId}/events`, {
+    method: 'GET',
+    token: input.token,
+  })
+}
+
+export async function ackSafety(input: { token: string; gameId: string }): Promise<PlayerView> {
+  return apiRequest<PlayerView>(`/v1/games/${input.gameId}/safety/ack`, {
     method: 'POST',
     token: input.token,
   })

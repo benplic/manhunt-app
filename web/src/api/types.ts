@@ -81,6 +81,26 @@ export type Banner = {
   player_id: string | null
 }
 
+export type PowerUpRow = {
+  id: string
+  title: string
+  cost: number
+  role: string
+  available: boolean
+  cooldown_s?: number
+  needs_target?: boolean
+}
+
+export type TimelineEvent = {
+  seq: number
+  type: string
+  payload: Record<string, unknown>
+}
+
+export type GameEventsOut = {
+  events: TimelineEvent[]
+}
+
 export type ViewTimers = {
   head_start_s?: number
   time_limit_s?: number
@@ -111,6 +131,7 @@ export type PlayerView = {
     holding?: boolean
     zones?: ArenaZone[]
   } | null
+  power_ups?: PowerUpRow[]
   you: {
     player_id: string
     role: string
@@ -120,6 +141,9 @@ export type PlayerView = {
     points_earned?: number
     hint?: string | null
     effects?: string[]
+    taunt_cooldown_s?: number
+    taunt_enabled?: boolean
+    cooldowns?: Record<string, number>
     bounds?: {
       phase: string
       remaining_s: number | null
