@@ -22,6 +22,7 @@ import {
   centroid,
   resolvePlayBoundary,
 } from '../map/arenaBoundary'
+import { hintLine } from '../game/hintLine'
 import { pointInPlayArea } from '../map/pointInPlayArea'
 import { glidePoint, PIN_GLIDE_MS } from '../map/pinGlide'
 import { newRevealIds } from '../map/pingFlash'
@@ -90,7 +91,7 @@ function powerUpRequest(view: PlayerView, row: { id: string; cost: number; role:
 }
 
 function rescueCandidates(view: PlayerView) {
-  return view.players.filter(
+  return (view.players ?? []).filter(
     (p) =>
       p.player_id !== view.you.player_id &&
       (p.status === 'eliminated' || (p.role === 'seeker' && p.status === 'active')),
@@ -230,6 +231,8 @@ export function LiveMap({
   const tauntEnabled = view.you.taunt_enabled !== false
   const canTaunt =
     isHider && view.phase === 'active' && tauntEnabled && view.you.status === 'active'
+  // Server hint is a dict. Never render it as a React child — that unmounts the app.
+  const hintText = hintLine(view.you.role, view.you.hint)
 
   // Never leave the tag scanner open during head start.
   useEffect(() => {
@@ -752,12 +755,12 @@ export function LiveMap({
     note && note.toLowerCase().includes('too fast') ? null : note
   const alert = wentDark ?? oobNote ?? socketNote ?? localNote
 
-  const ranked = [...view.players].sort(
+  const ranked = [...(view.players ?? [])].sort(
     (a, b) => (b.points_earned ?? b.points ?? 0) - (a.points_earned ?? a.points ?? 0),
   )
 
   return (
-    <main className={`live-map${overlayOpen ? ' live-map--overlay' : ''}`}>
+    <main className={`live-map live-map--stacked${overlayOpen ? ' live-map--overlay' : ''}`}>
       <header className="top-bar">
         <div className="identity">
           <p className="eyebrow">
@@ -799,7 +802,7 @@ export function LiveMap({
           ) : (
             <span className="hud-sub hud-sub--warn">GPS…</span>
           )}
-          {view.you.hint ? <span className="hud-hint">{view.you.hint}</span> : null}
+          {hintText ? <span className="hud-hint">{hintText}</span> : null}
         </div>
       ) : null}
 

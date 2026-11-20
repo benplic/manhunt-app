@@ -101,6 +101,13 @@ export type GameEventsOut = {
   events: TimelineEvent[]
 }
 
+export type HintObject = {
+  band?: string | null
+  meters?: number | null
+  name?: string | null
+  bearing_deg?: number | null
+}
+
 export type ViewTimers = {
   head_start_s?: number
   time_limit_s?: number
@@ -139,7 +146,8 @@ export type PlayerView = {
     is_host: boolean
     points?: number
     points_earned?: number
-    hint?: string | null
+    /** String on older payloads; live server sends `{ band, meters, name, bearing_deg }`. */
+    hint?: string | HintObject | null
     effects?: string[]
     taunt_cooldown_s?: number
     taunt_enabled?: boolean

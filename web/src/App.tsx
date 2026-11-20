@@ -5,6 +5,7 @@ import { SessionExpiredError, withAuthRetry } from './api/session'
 import type { PlayerView } from './api/types'
 import { GameSocket, wsUrlForGame } from './api/ws'
 import { clearSession, loadSession } from './auth/storage'
+import { HuntErrorBoundary } from './game/HuntErrorBoundary'
 import { closedGameMessage, isClosedGameError } from './game/rejoin'
 import { clearActiveGame, loadActiveGameId, rememberActiveGame } from './game/resume'
 import {
@@ -243,7 +244,7 @@ function App() {
     // Keep LiveMap mounted under the safety gate. Replacing it with a full-page
     // gate then remounting Leaflet after Continue left a black map on phones.
     return (
-      <>
+      <HuntErrorBoundary key={gameView.game_id} onLeave={() => void leaveCurrentGame()}>
         <LiveMap
           view={gameView}
           socket={socketRef.current}
@@ -272,7 +273,7 @@ function App() {
             </div>
           </div>
         ) : null}
-      </>
+      </HuntErrorBoundary>
     )
   }
 

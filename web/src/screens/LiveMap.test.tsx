@@ -425,6 +425,32 @@ describe('LiveMap', () => {
     expect(screen.queryByRole('button', { name: /taunt/i })).not.toBeInTheDocument()
   })
 
+  it('renders a server hint object instead of crashing the live screen', () => {
+    const hinted: PlayerView = {
+      ...view,
+      you: {
+        ...view.you,
+        role: 'seeker',
+        hint: { band: 'hot', meters: 30, name: 'Riley', bearing_deg: 0 },
+      },
+    }
+    render(
+      <LiveMap
+        view={hinted}
+        socket={{ sendLocation: vi.fn() } as never}
+        qrToken={null}
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    expect(screen.getByText(/riley is hot, 30 m, n/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /leave/i })).toBeInTheDocument()
+    expect(document.querySelector('.live-map--stacked')).toBeTruthy()
+  })
+
   it('shows going-dark copy when this player is signal_lost', () => {
     const dark: PlayerView = {
       ...view,
