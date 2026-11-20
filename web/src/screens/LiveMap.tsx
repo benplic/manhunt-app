@@ -895,7 +895,7 @@ export function LiveMap({
             {isSeeker && view.phase === 'head_start' ? (
               <p className="dock-note">Seekers cannot tag until head start ends.</p>
             ) : null}
-            {isHider && !qrToken ? (
+            {isHider && youActive && !qrToken ? (
               <p className="dock-note">Waiting for a tag QR from the server…</p>
             ) : null}
             {canTaunt ? (

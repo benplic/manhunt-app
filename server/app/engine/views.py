@@ -128,8 +128,10 @@ def build_view(
     }
 
 
-# Effects every viewer may see with a countdown. Radar/tracker stay owner-only.
-_PUBLIC_EFFECT_TYPES = frozenset({"shield", "lockdown", "jammer", "taunt"})
+# Effects every viewer may see with a countdown. Keep this tight: attributed
+# jammer/taunt would leak tactics seekers did not already have. Radar/tracker
+# stay owner-only via you.effects.
+_PUBLIC_EFFECT_TYPES = frozenset({"shield", "lockdown"})
 
 
 def _effects_for(state, viewer: PlayerState) -> list[str]:

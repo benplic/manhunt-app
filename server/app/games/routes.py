@@ -151,7 +151,7 @@ def bind_game_routes(get_session, current_user, service: GameService):
         session: AsyncSession = Depends(get_session),
         user=Depends(current_user),
     ) -> dict:
-        # Return the seeker view so the scanner can drop the tagged pin without a tick wait.
+        # Returns PlayerView (not {result:"accepted"}). Deploy with matching clients.
         game = await service.qr_tag(session, user, game_id, body.token)
         return _view(service, game, user.id)
 

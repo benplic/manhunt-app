@@ -75,6 +75,21 @@ def test_active_effects_show_shield_remaining_to_both_roles() -> None:
     assert "shield" not in expired["you"]["effects"]
 
 
+def test_seeker_does_not_see_attributed_jammer_on_active_effects() -> None:
+    """Jammer stays private to the owner; only shield/lockdown are public HUD rows."""
+    session, clock, hider, seeker = two_player_hunt()
+    session.record_location(hider, reading(meters(40, 40), clock))
+    run_for(session, clock, 1)
+    session.state.players[hider].points = 200
+    session.purchase(hider, "jammer")
+    hider_view = build_view(session, hider)
+    seeker_view = build_view(session, seeker)
+    assert "jammer" in hider_view["you"]["effects"]
+    assert any(row["type"] == "jammer" for row in hider_view["active_effects"])
+    assert all(row["type"] != "jammer" for row in seeker_view["active_effects"])
+    assert "jammer" not in seeker_view["you"]["effects"]
+
+
 def test_both_viewers_get_the_same_play_boundary() -> None:
     session, _, hider, seeker = two_player_hunt()
     hider_view = build_view(session, hider)

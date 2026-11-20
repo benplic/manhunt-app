@@ -546,7 +546,7 @@ describe('LiveMap', () => {
       <LiveMap
         view={out}
         socket={{ sendLocation: vi.fn() } as never}
-        qrToken="tok"
+        qrToken={null}
         note={null}
         onView={() => undefined}
         onLeave={() => undefined}
@@ -556,5 +556,6 @@ describe('LiveMap', () => {
     )
     expect(screen.getByText(/you.?re out/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /show tag/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/waiting for a tag qr/i)).not.toBeInTheDocument()
   })
 })

@@ -167,6 +167,39 @@ def test_qr_tag_broadcasts_eliminated_view_to_hider(client: TestClient) -> None:
         assert pushed["data"]["you"]["player_id"] == hider_id
 
 
+def test_shield_purchase_broadcasts_active_effect_to_seeker(client: TestClient) -> None:
+    """Seekers must see a new shield countdown without waiting on the tick."""
+    from tests.sim.test_live_lobby import _next
+
+    gid, host, hider, seeker, hider_id, seeker_id = _open_game(
+        client,
+        overrides={"head_start": {"enabled": False}},
+    )
+    manager = client.app.state.manager
+    session = manager.get(UUID(gid))
+    assert session is not None
+    session.state.players[UUID(hider_id)].points = 200
+    with client.websocket_connect(f"/v1/games/{gid}/ws") as seeker_ws:
+        seeker_ws.send_json({"type": "hello", "data": {"token": seeker["access_token"]}})
+        assert _next(seeker_ws)["type"] == "welcome"
+        assert _next(seeker_ws)["type"] == "view"
+
+        bought = client.post(
+            f"/v1/games/{gid}/power-ups",
+            json={"id": "shield"},
+            headers=_hdr(hider["access_token"]),
+        )
+        assert bought.status_code == 200, bought.text
+        assert any(row["type"] == "shield" for row in bought.json()["active_effects"])
+
+        pushed = _next(seeker_ws)
+        assert pushed["type"] == "view"
+        shields = [row for row in pushed["data"]["active_effects"] if row["type"] == "shield"]
+        assert len(shields) == 1
+        assert shields[0]["owner_id"] == hider_id
+        assert shields[0]["remaining_s"] > 0
+
+
 def test_scenario_b_hider_oob_eliminated(client: TestClient) -> None:
     gid, host, hider, seeker, hider_id, seeker_id = _open_game(
         client,

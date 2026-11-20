@@ -123,7 +123,7 @@ Phases: `lobby -> head_start -> active -> ended`, plus `paused` reachable from `
 - `POST /games {arena_id, preset_id, overrides: {module_id: {field: number|bool|string}}}` returns `GameOut`
 - `POST /games/join {join_code}`, `GET /games/{id}`, `POST /games/{id}/leave`
 - Host only: `POST /games/{id}/roles {mode:"random",hider_count} | {mode:"manual",assignments:{player_id:role}}`, `POST /games/{id}/start|pause|resume|end`
-- `POST /games/{id}/tags/qr {token}` returns `{result:"accepted"}` or 409 with an error code
+- `POST /games/{id}/tags/qr {token}` returns the seeker’s `PlayerView` (same shape as GET) or 409 with an error code. Ship with matching clients — older builds that decoded `{result:"accepted"}` will fail tag parse.
 - `GET /healthz`, `GET /readyz`
 
 ### Arena JSON (shared by REST, Swift Codable, and the DB)
