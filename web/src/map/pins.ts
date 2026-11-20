@@ -13,7 +13,7 @@ export type MapPin = {
 
 /** Pins from whatever locations the server already chose to reveal. */
 export function pinsFromView(view: PlayerView): MapPin[] {
-  return view.players.flatMap((player) => {
+  return (view.players ?? []).flatMap((player) => {
     const loc = player.location
     if (!loc) {
       return []

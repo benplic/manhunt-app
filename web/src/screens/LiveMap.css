@@ -1,8 +1,12 @@
-/* Full-bleed map under chrome. Flex-shrinking the map to 0 left a black void
-   after head start when banners/dock grew. */
+/* Column layout. An absolute full-bleed map painted over the HUD on iPhone,
+   and a flex child with min-height 0 collapsed to a black void once the dock grew.
+   The map sits between chrome and must not shrink below 28vh. */
 .live-map {
   position: relative;
+  display: flex;
+  flex-direction: column;
   height: 100dvh;
+  max-height: 100dvh;
   min-height: 100vh;
   overflow: hidden;
   overscroll-behavior: none;
@@ -13,11 +17,14 @@
 }
 
 .live-map .map-frame {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 28vh;
   width: 100%;
-  height: 100%;
+  z-index: 0;
+  isolation: isolate;
+  overflow: hidden;
+  background: #1a1d24;
   /* Keep pinch/drag on the map, not the document. */
   touch-action: none;
 }
@@ -29,7 +36,10 @@
 
 .live-map .leaflet-container {
   width: 100%;
-  height: 100%;
+  /* Same node as .map-frame. height:100% would be the full screen and shove the dock off. */
+  height: auto;
+  min-height: 28vh;
+  flex: 1 1 auto;
   background: #1a1d24;
   touch-action: none;
 }
@@ -44,17 +54,20 @@
   -webkit-overflow-scrolling: touch;
 }
 
-/* Chrome floats above the full-bleed map; empty middle stays for pan/zoom. */
+/* In-flow chrome. translateZ keeps it above Leaflet's transformed panes on iOS. */
 .live-map .top-bar,
 .live-map .hud,
 .live-map .banners {
   position: relative;
-  z-index: 10;
+  z-index: 2;
+  flex: 0 0 auto;
+  transform: translateZ(0);
   pointer-events: auto;
 }
 
 .live-map .top-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
@@ -62,6 +75,25 @@
   padding-top: max(0.7rem, env(safe-area-inset-top));
   background: rgba(18, 21, 28, 0.94);
   border-bottom: 1px solid #2a2d36;
+}
+
+/* Four header chips in one nowrap row get clipped off the right on a phone,
+   which hides Leave. Equal columns stay inside the screen. */
+.live-map .top-bar .chip-row {
+  display: grid;
+  grid-auto-flow: row;
+  grid-template-columns: 1fr 1fr;
+  grid-auto-columns: auto;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.live-map .top-bar .chip {
+  min-width: 0;
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+  font-size: 0.78rem;
 }
 
 .live-map .identity {
@@ -224,11 +256,10 @@
 }
 
 .live-map .bottom-stack {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 10;
+  position: relative;
+  z-index: 2;
+  flex: 0 1 auto;
+  transform: translateZ(0);
   display: flex;
   flex-direction: column;
   gap: 0;
