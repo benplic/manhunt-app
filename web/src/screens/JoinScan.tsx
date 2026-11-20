@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import type { FormEvent } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
-import { parseJoinPayload } from '../api/joinCode'
+import { parseJoinPayload, sanitizeJoinCode } from '../api/joinCode'
 import './QrScan.css'
 
 type Props = {
@@ -13,13 +14,18 @@ type Props = {
 /** Camera scan for lobby join links / bare join codes. */
 export function JoinScan({ onCode, onClose, injectScan = null }: Props) {
   const [error, setError] = useState<string | null>(null)
+  const [manual, setManual] = useState('')
+  const [manualOpen, setManualOpen] = useState(false)
   const doneRef = useRef(false)
   const scannerRef = useRef<Html5Qrcode | null>(null)
 
-  async function stopScanner() {
-    const active = scannerRef.current
+  async function stopScanner(target?: Html5Qrcode | null) {
+    const active = target ?? scannerRef.current
     if (!active) {
       return
+    }
+    if (scannerRef.current === active) {
+      scannerRef.current = null
     }
     try {
       await active.stop()
@@ -27,7 +33,6 @@ export function JoinScan({ onCode, onClose, injectScan = null }: Props) {
     } catch {
       // TODO: surface scanner cleanup failures if they become common on iOS.
     }
-    scannerRef.current = null
   }
 
   function accept(raw: string) {
@@ -41,6 +46,16 @@ export function JoinScan({ onCode, onClose, injectScan = null }: Props) {
     }
     doneRef.current = true
     void stopScanner().then(() => onCode(code))
+  }
+
+  function onManualSubmit(event: FormEvent) {
+    event.preventDefault()
+    const code = sanitizeJoinCode(manual)
+    if (code.length !== 6) {
+      setError('Join codes are 6 characters.')
+      return
+    }
+    accept(code)
   }
 
   useEffect(() => {
@@ -64,19 +79,20 @@ export function JoinScan({ onCode, onClose, injectScan = null }: Props) {
       )
       .catch(() => {
         if (!stopped) {
-          setError('Camera permission is required to scan a join code.')
+          setManualOpen(true)
+          setError('Camera blocked—enter the join code.')
         }
       })
 
     return () => {
       stopped = true
-      void stopScanner()
+      void stopScanner(scanner)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [injectScan])
 
   return (
-    <main className="qr-scan">
+    <main className="qr-scan qr-scan--dark">
       <h1>Scan join code</h1>
       <p>Point at the host’s lobby QR.</p>
       <div id="manhunt-join-reader" className="reader" />
@@ -85,7 +101,28 @@ export function JoinScan({ onCode, onClose, injectScan = null }: Props) {
           {error}
         </p>
       ) : null}
-      <button type="button" onClick={onClose}>
+      <form className={`manual${manualOpen ? ' manual--open' : ''}`} onSubmit={onManualSubmit}>
+        {!manualOpen ? (
+          <button type="button" className="secondary" onClick={() => setManualOpen(true)}>
+            Enter code manually
+          </button>
+        ) : (
+          <>
+            <label>
+              Join code
+              <input
+                value={manual}
+                onChange={(e) => setManual(sanitizeJoinCode(e.target.value))}
+                autoCapitalize="characters"
+                maxLength={6}
+                placeholder="6-character join code"
+              />
+            </label>
+            <button type="submit">Join with code</button>
+          </>
+        )}
+      </form>
+      <button type="button" className="secondary" onClick={onClose}>
         Close
       </button>
     </main>

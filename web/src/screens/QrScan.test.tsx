@@ -116,6 +116,22 @@ describe('QrScan', () => {
     expect(screen.getByPlaceholderText(/paste or type/i)).toBeInTheDocument()
   })
 
+  it('uses dark-theme scan chrome so controls stay visible on the live overlay', () => {
+    const { container } = render(
+      <QrScan
+        gameId="game-1"
+        onClose={() => undefined}
+        onTagged={() => undefined}
+        onSignedOut={() => undefined}
+        accuracyM={5}
+        injectScan={null}
+      />,
+    )
+    expect(container.querySelector('main.qr-scan')).toBeTruthy()
+    // Light-theme leftovers (#555 / #1a1a1a-on-dark) made the scanner look blank.
+    expect(container.querySelector('main.qr-scan--dark')).toBeTruthy()
+  })
+
   it('can close without scanning', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()
