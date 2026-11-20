@@ -50,8 +50,14 @@ vi.mock('./auth/storage', () => ({
 }))
 
 vi.mock('./screens/LiveMap', () => ({
-  LiveMap: ({ view }: { view: { join_code: string; you: { role: string } } }) => (
-    <main className="live-map">
+  LiveMap: ({
+    view,
+    holdPresence,
+  }: {
+    view: { join_code: string; you: { role: string } }
+    holdPresence?: boolean
+  }) => (
+    <main className="live-map" data-hold={holdPresence ? 'yes' : 'no'}>
       <p className="eyebrow">
         live · {view.join_code}
       </p>
@@ -167,12 +173,14 @@ describe('App rejoin', () => {
     expect(await screen.findByRole('heading', { name: /play safely/i })).toBeInTheDocument()
     // Map stays mounted under the gate so Leaflet is not torn down on Continue.
     expect(screen.getByText(/live · ABCDEF/i)).toBeInTheDocument()
+    expect(document.querySelector('.live-map')).toHaveAttribute('data-hold', 'yes')
     expect(screen.getByText(/^hider$/i)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /continue/i }))
 
     expect(screen.queryByRole('heading', { name: /play safely/i })).not.toBeInTheDocument()
     expect(screen.getByText(/live · ABCDEF/i)).toBeInTheDocument()
+    expect(document.querySelector('.live-map')).toHaveAttribute('data-hold', 'no')
     expect(screen.getByRole('button', { name: /recenter/i })).toBeInTheDocument()
   })
 

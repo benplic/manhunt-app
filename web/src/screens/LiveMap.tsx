@@ -63,6 +63,8 @@ type Props = {
   onLeave: () => void
   onSignedOut: () => void
   watchLocation?: typeof watchVisibleLocation
+  /** Safety gate is up. Do not seed or send a position until the player continues. */
+  holdPresence?: boolean
 }
 
 type Panel = 'map' | 'show' | 'scan' | 'board' | 'log'
@@ -173,6 +175,7 @@ export function LiveMap({
   onLeave,
   onSignedOut,
   watchLocation = watchVisibleLocation,
+  holdPresence = false,
 }: Props) {
   const mapEl = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<L.Map | null>(null)
@@ -599,6 +602,11 @@ export function LiveMap({
   }, [pins])
 
   useEffect(() => {
+    // The safety overlay mounts this map so Leaflet survives Continue.
+    // Do not publish the arena-center seed until the player has acknowledged it.
+    if (holdPresence) {
+      return
+    }
     // Mac/desktop often never gets watchPosition. Seed the play-area center so
     // the host hider does not go dark after classic silence while desk-testing.
     let seedFix: GeoFix | null = null
@@ -628,7 +636,7 @@ export function LiveMap({
       onError: (message) => setLocalNote(message),
     })
     return () => stop()
-  }, [socket, watchLocation, arenaKey])
+  }, [socket, watchLocation, arenaKey, holdPresence])
 
   function recenter() {
     const map = mapRef.current

@@ -1,13 +1,12 @@
-/* Column layout. An absolute full-bleed map painted over the HUD on iPhone,
-   and a flex child with min-height 0 collapsed to a black void once the dock grew.
-   The map sits between chrome and must not shrink below 28vh. */
+/* Column layout pinned to the visible viewport. min-height: 100vh is the large
+   viewport on iOS, which ignores max-height: 100dvh and parks the dock under the toolbar. */
 .live-map {
   position: relative;
   display: flex;
   flex-direction: column;
   height: 100dvh;
   max-height: 100dvh;
-  min-height: 100vh;
+  min-height: 100dvh;
   overflow: hidden;
   overscroll-behavior: none;
   touch-action: manipulation;
@@ -19,7 +18,8 @@
 .live-map .map-frame {
   position: relative;
   flex: 1 1 auto;
-  min-height: 28vh;
+  /* Shrink before the dock. A 28vh floor plus a non-shrinking footer overflows 100dvh. */
+  min-height: 0;
   width: 100%;
   z-index: 0;
   isolation: isolate;
@@ -38,7 +38,7 @@
   width: 100%;
   /* Same node as .map-frame. height:100% would be the full screen and shove the dock off. */
   height: auto;
-  min-height: 28vh;
+  min-height: 0;
   flex: 1 1 auto;
   background: #1a1d24;
   touch-action: none;
@@ -237,8 +237,10 @@
 .live-map .banners {
   display: flex;
   flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
   gap: 0.35rem;
-  max-height: 28vh;
+  max-height: 22dvh;
   overflow: auto;
   padding: 0.45rem 1rem;
   background: rgba(28, 21, 16, 0.94);
@@ -258,7 +260,8 @@
 .live-map .bottom-stack {
   position: relative;
   z-index: 2;
-  flex: 0 1 auto;
+  /* Do not shrink the dock to 0. Cap it and scroll so Scan stays on screen. */
+  flex: 0 0 auto;
   transform: translateZ(0);
   display: flex;
   flex-direction: column;
@@ -266,7 +269,7 @@
   background: rgba(18, 21, 28, 0.94);
   border-top: 1px solid #2a2d36;
   padding-bottom: max(0.55rem, env(safe-area-inset-bottom));
-  max-height: 42vh;
+  max-height: 40dvh;
   overflow: auto;
   -webkit-overflow-scrolling: touch;
 }

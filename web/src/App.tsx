@@ -253,6 +253,7 @@ function App() {
           onView={applyView}
           onLeave={() => void leaveCurrentGame()}
           onSignedOut={signOut}
+          holdPresence={safetyGateOpen}
         />
         {safetyGateOpen ? (
           <div className="safety-gate" role="dialog" aria-modal="true" aria-labelledby="safety-gate-title">

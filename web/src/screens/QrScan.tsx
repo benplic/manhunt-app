@@ -5,6 +5,7 @@ import { ApiError } from '../api/client'
 import { claimQrTag } from '../api/games'
 import { SessionExpiredError, withAuthRetry } from '../api/session'
 import { isAccuracyTooFuzzy, localAccuracyBlockMessage } from '../api/tagErrors'
+import { releaseScanner } from './scannerRelease'
 import './QrScan.css'
 
 type Props = {
@@ -44,6 +45,8 @@ export function QrScan({
   const heldTokenRef = useRef<string | null>(null)
   const heldUntilRef = useRef(0)
   const accuracyRef = useRef(accuracyM)
+  /** start() must settle before stop(), or the camera stream is left running. */
+  const startPromiseRef = useRef<Promise<unknown>>(Promise.resolve())
 
   useEffect(() => {
     accuracyRef.current = accuracyM
@@ -103,8 +106,9 @@ export function QrScan({
     setBusy(true)
     setError(null)
     setHeldNote(null)
-    // Stop the camera immediately so failed claims do not spam /tags/qr at 8 fps.
-    await stopScanner()
+    // Stop only after start() has reached the scanning state. An early stop()
+    // throws and leaves getUserMedia running, so the next open looks camera-blocked.
+    await releaseScanner(startPromiseRef.current, () => stopScanner())
     setPaused(true)
     try {
       await withAuthRetry((access) =>
@@ -153,28 +157,28 @@ export function QrScan({
     scannerRef.current = scanner
     let stopped = false
 
-    scanner
-      .start(
-        { facingMode: 'environment' },
-        { fps: 8, qrbox: { width: 240, height: 240 } },
-        (decoded) => {
-          void claim(decoded)
-        },
-        () => {
-          // Ignore per-frame "not found" noise.
-        },
-      )
-      .catch(() => {
-        if (!stopped) {
-          setManualOpen(true)
-          setError('Camera blocked—paste the hider’s code.')
-        }
-      })
+    const pending = scanner.start(
+      { facingMode: 'environment' },
+      { fps: 8, qrbox: { width: 240, height: 240 } },
+      (decoded) => {
+        void claim(decoded)
+      },
+      () => {
+        // Ignore per-frame "not found" noise.
+      },
+    )
+    startPromiseRef.current = pending
+    pending.catch(() => {
+      if (!stopped) {
+        setManualOpen(true)
+        setError('Camera blocked—paste the hider’s code.')
+      }
+    })
 
     return () => {
       stopped = true
-      // Stop this instance, not whatever scannerRef points at after a remount.
-      void stopScanner(scanner)
+      // Stop this instance after start settles, not whatever scannerRef points at later.
+      void releaseScanner(pending, () => stopScanner(scanner))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, injectScan, paused])

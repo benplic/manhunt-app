@@ -425,6 +425,26 @@ describe('LiveMap', () => {
     expect(screen.queryByRole('button', { name: /taunt/i })).not.toBeInTheDocument()
   })
 
+  it('does not publish a location while the safety gate is up', () => {
+    const sendLocation = vi.fn()
+    const watchLocation = vi.fn().mockReturnValue(() => undefined)
+    render(
+      <LiveMap
+        view={view}
+        socket={{ sendLocation } as never}
+        qrToken={null}
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={watchLocation}
+        holdPresence
+      />,
+    )
+    expect(watchLocation).not.toHaveBeenCalled()
+    expect(sendLocation).not.toHaveBeenCalled()
+  })
+
   it('renders a server hint object instead of crashing the live screen', () => {
     const hinted: PlayerView = {
       ...view,

@@ -16,6 +16,7 @@ vi.mock('../api/session', () => ({
 }))
 
 const cameraStart = vi.fn().mockResolvedValue(undefined)
+const scanners = vi.hoisted(() => [] as { stop: ReturnType<typeof vi.fn> }[])
 
 vi.mock('html5-qrcode', () => ({
   Html5Qrcode: class {
@@ -23,6 +24,9 @@ vi.mock('html5-qrcode', () => ({
     start = (...args: unknown[]) => cameraStart(...args)
     stop = vi.fn().mockResolvedValue(undefined)
     clear = vi.fn()
+    constructor() {
+      scanners.push(this)
+    }
   },
 }))
 
@@ -31,6 +35,7 @@ describe('QrScan', () => {
     claimQrTag.mockReset()
     cameraStart.mockReset()
     cameraStart.mockResolvedValue(undefined)
+    scanners.length = 0
   })
 
   it('posts a scanned token and reports success', async () => {
@@ -130,6 +135,32 @@ describe('QrScan', () => {
     expect(container.querySelector('main.qr-scan')).toBeTruthy()
     // Light-theme leftovers (#555 / #1a1a1a-on-dark) made the scanner look blank.
     expect(container.querySelector('main.qr-scan--dark')).toBeTruthy()
+  })
+
+  it('stops the camera after start resolves when the screen closes mid-start', async () => {
+    let resolveStart: () => void = () => undefined
+    cameraStart.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveStart = resolve
+        }),
+    )
+    const { unmount } = render(
+      <QrScan
+        gameId="game-1"
+        onClose={() => undefined}
+        onTagged={() => undefined}
+        onSignedOut={() => undefined}
+        accuracyM={5}
+        injectScan={null}
+      />,
+    )
+    unmount()
+    expect(scanners[0]?.stop).not.toHaveBeenCalled()
+    resolveStart()
+    await waitFor(() => {
+      expect(scanners[0]?.stop).toHaveBeenCalled()
+    })
   })
 
   it('can close without scanning', async () => {

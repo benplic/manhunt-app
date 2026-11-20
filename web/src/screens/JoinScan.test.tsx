@@ -4,12 +4,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { JoinScan } from './JoinScan'
 
 const cameraStart = vi.fn().mockResolvedValue(undefined)
+const scanners = vi.hoisted(() => [] as { stop: ReturnType<typeof vi.fn> }[])
 
 vi.mock('html5-qrcode', () => ({
   Html5Qrcode: class {
     start = (...args: unknown[]) => cameraStart(...args)
     stop = vi.fn().mockResolvedValue(undefined)
     clear = vi.fn()
+    constructor() {
+      scanners.push(this)
+    }
   },
 }))
 
@@ -17,6 +21,7 @@ describe('JoinScan', () => {
   beforeEach(() => {
     cameraStart.mockReset()
     cameraStart.mockResolvedValue(undefined)
+    scanners.length = 0
   })
 
   it('offers manual join entry when the camera is blocked', async () => {
@@ -34,6 +39,23 @@ describe('JoinScan', () => {
 
     await waitFor(() => {
       expect(onCode).toHaveBeenCalledWith('ABCDEF')
+    })
+  })
+
+  it('stops the camera after start resolves when the screen closes mid-start', async () => {
+    let resolveStart: () => void = () => undefined
+    cameraStart.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveStart = resolve
+        }),
+    )
+    const { unmount } = render(<JoinScan onClose={() => undefined} onCode={() => undefined} />)
+    unmount()
+    expect(scanners[0]?.stop).not.toHaveBeenCalled()
+    resolveStart()
+    await waitFor(() => {
+      expect(scanners[0]?.stop).toHaveBeenCalled()
     })
   })
 

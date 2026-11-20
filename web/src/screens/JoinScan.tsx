@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
 import { parseJoinPayload, sanitizeJoinCode } from '../api/joinCode'
+import { releaseScanner } from './scannerRelease'
 import './QrScan.css'
 
 type Props = {
@@ -18,6 +19,7 @@ export function JoinScan({ onCode, onClose, injectScan = null }: Props) {
   const [manualOpen, setManualOpen] = useState(false)
   const doneRef = useRef(false)
   const scannerRef = useRef<Html5Qrcode | null>(null)
+  const startPromiseRef = useRef<Promise<unknown>>(Promise.resolve())
 
   async function stopScanner(target?: Html5Qrcode | null) {
     const active = target ?? scannerRef.current
@@ -45,7 +47,7 @@ export function JoinScan({ onCode, onClose, injectScan = null }: Props) {
       return
     }
     doneRef.current = true
-    void stopScanner().then(() => onCode(code))
+    void releaseScanner(startPromiseRef.current, () => stopScanner()).then(() => onCode(code))
   }
 
   function onManualSubmit(event: FormEvent) {
@@ -68,25 +70,25 @@ export function JoinScan({ onCode, onClose, injectScan = null }: Props) {
     scannerRef.current = scanner
     let stopped = false
 
-    scanner
-      .start(
-        { facingMode: 'environment' },
-        { fps: 8, qrbox: { width: 240, height: 240 } },
-        (decoded) => {
-          accept(decoded)
-        },
-        () => undefined,
-      )
-      .catch(() => {
-        if (!stopped) {
-          setManualOpen(true)
-          setError('Camera blocked—enter the join code.')
-        }
-      })
+    const pending = scanner.start(
+      { facingMode: 'environment' },
+      { fps: 8, qrbox: { width: 240, height: 240 } },
+      (decoded) => {
+        accept(decoded)
+      },
+      () => undefined,
+    )
+    startPromiseRef.current = pending
+    pending.catch(() => {
+      if (!stopped) {
+        setManualOpen(true)
+        setError('Camera blocked—enter the join code.')
+      }
+    })
 
     return () => {
       stopped = true
-      void stopScanner(scanner)
+      void releaseScanner(pending, () => stopScanner(scanner))
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [injectScan])
