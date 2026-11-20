@@ -168,24 +168,32 @@ def apply_purchase(s: GameSession, player_id, power_id: str, **kwargs: Any) -> N
     if power_id == "ghost":
         player.ghost_next_reveal = True
     elif power_id == "radar":
-        player.radar_until_s = s.state.game_elapsed_s + int(duration)
-        add_effect(s, owner_id=player_id, type="radar", duration_s=int(duration))
+        _arm_timed(s, player_id, "radar", int(duration), on=player)
     elif power_id == "jammer":
-        s.state.jammer_until_s = s.state.game_elapsed_s + int(duration)
-        add_effect(s, owner_id=player_id, type="jammer", duration_s=int(duration))
+        _arm_timed(s, player_id, "jammer", int(duration), on=s.state)
     elif power_id == "shield":
-        player.shield_until_s = s.state.game_elapsed_s + int(duration)
-        add_effect(s, owner_id=player_id, type="shield", duration_s=int(duration))
+        _arm_timed(s, player_id, "shield", int(duration), on=player)
     elif power_id == "tracker":
-        player.tracker_until_s = s.state.game_elapsed_s + int(duration)
-        add_effect(s, owner_id=player_id, type="tracker", duration_s=int(duration))
+        _arm_timed(s, player_id, "tracker", int(duration), on=player)
     elif power_id == "lockdown":
-        s.state.lockdown_until_s = s.state.game_elapsed_s + int(duration)
-        add_effect(s, owner_id=player_id, type="lockdown", duration_s=int(duration))
+        _arm_timed(s, player_id, "lockdown", int(duration), on=s.state)
     elif power_id == "scan":
         _scan(s, player_id)
     s.emit("purchase", {"power": power_id, "text": f"{player.display_name} armed {power_id}."})
     s._note_input("purchase", {"player_id": str(player_id), "power_id": power_id, **kwargs})
+
+
+def _arm_timed(
+    s: GameSession,
+    owner_id,
+    effect: str,
+    duration_s: int,
+    *,
+    on: Any,
+) -> None:
+    """Set `{effect}_until_s` on player or state, then register the timed effect."""
+    setattr(on, f"{effect}_until_s", s.state.game_elapsed_s + duration_s)
+    add_effect(s, owner_id=owner_id, type=effect, duration_s=duration_s)
 
 
 def _require_target(spec: dict[str, Any], kwargs: dict[str, Any]) -> None:

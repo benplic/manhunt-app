@@ -47,6 +47,30 @@
       "lines_before": 156,
       "lines_after": 160,
       "summary": "Nested handle_location to flatten the game_ws receive loop."
+    },
+    "server/app/engine/session.py": {
+      "status": "kept",
+      "lines_before": 436,
+      "lines_after": 433,
+      "summary": "Extracted _apply_location shared by record_location and set_synthetic_location."
+    },
+    "server/app/main.py": {
+      "status": "kept",
+      "lines_before": 263,
+      "lines_after": 263,
+      "summary": "Shared _error_json for ApiError and GameRuleError handlers."
+    },
+    "server/app/engine/modules/power_ups.py": {
+      "status": "kept",
+      "lines_before": 322,
+      "lines_after": 330,
+      "summary": "Extracted _arm_timed for radar/jammer/shield/tracker/lockdown until+effect."
+    },
+    "server/app/engine/modules/head_start.py": {
+      "status": "kept",
+      "lines_before": 134,
+      "lines_after": 138,
+      "summary": "Extracted _spawn_zones reused by on_location, on_tick, and spawn_clock_held."
     }
   }
 }
