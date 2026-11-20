@@ -1,5 +1,7 @@
 # Manhunt
 
+**Play online:** [https://manhunt-app.pages.dev](https://manhunt-app.pages.dev)
+
 iOS game for playing real-world Manhunt with friends. The host draws a park, hiders run, seekers hunt, and a home-hosted FastAPI server is the rules engine.
 
 Design: [docs/superpowers/specs/2026-11-08-manhunt-app-design.md](docs/superpowers/specs/2026-11-08-manhunt-app-design.md)
