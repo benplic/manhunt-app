@@ -153,16 +153,34 @@ export function LiveMap({
     }
   }, [])
 
+  // Keep Leaflet sized when chrome grows (head start → active banners/dock)
+  // or when the mobile URL bar shows/hides. A zero-size frame paints black.
   useEffect(() => {
-    if (panel !== 'map') {
-      return
-    }
     const map = mapRef.current
-    if (!map) {
+    const frame = mapEl.current
+    if (!map || !frame) {
       return
     }
-    const id = window.setTimeout(() => map.invalidateSize(), 0)
-    return () => window.clearTimeout(id)
+    const refresh = () => {
+      if (panel !== 'map') {
+        return
+      }
+      map.invalidateSize({ animate: false })
+    }
+    const id = window.setTimeout(refresh, 0)
+    const delayed = window.setTimeout(refresh, 120)
+    const observer =
+      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => refresh()) : null
+    observer?.observe(frame)
+    window.addEventListener('resize', refresh)
+    window.addEventListener('orientationchange', refresh)
+    return () => {
+      window.clearTimeout(id)
+      window.clearTimeout(delayed)
+      observer?.disconnect()
+      window.removeEventListener('resize', refresh)
+      window.removeEventListener('orientationchange', refresh)
+    }
   }, [panel, view.phase])
 
   const arenaCircle = view.arena?.boundary_circle

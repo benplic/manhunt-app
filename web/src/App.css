@@ -24,3 +24,18 @@ body {
     radial-gradient(900px 500px at 100% 0%, #243528 0%, transparent 50%),
     #0f1115;
 }
+
+/* Rejoin / connecting shells reuse .home layout without importing Home.css twice. */
+.home > button.secondary {
+  display: block;
+  margin-top: 1rem;
+  min-height: 44px;
+  padding: 0.7rem 1rem;
+  border: none;
+  border-radius: 6px;
+  background: #2a2a2a;
+  color: #f2f0ea;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}

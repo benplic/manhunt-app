@@ -853,6 +853,13 @@ class GameService:
 
     async def view(self, session: AsyncSession, user: User, game_id: UUID) -> dict:
         row, _ = await self.require_member(session, game_id, user)
+        # Abandoned rows must not rebuild as a fresh lobby on refresh/rejoin.
+        if row.status == "abandoned":
+            raise ApiError(
+                ErrorCode.GAME_NOT_FOUND,
+                "That hunt is closed.",
+                status_code=404,
+            )
         game = self._live(row)
         # Rebuild players if the process just started.
         if not game.state.players:

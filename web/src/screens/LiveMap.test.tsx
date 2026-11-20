@@ -211,6 +211,47 @@ describe('LiveMap', () => {
     expect(screen.getByRole('button', { name: /close scan/i })).toBeInTheDocument()
   })
 
+  it('keeps the map frame after head start ends', () => {
+    const headStart: PlayerView = {
+      ...view,
+      phase: 'head_start',
+      phase_remaining_s: 1,
+      you: { ...view.you, role: 'seeker', is_host: true },
+    }
+    const { rerender } = render(
+      <LiveMap
+        view={headStart}
+        socket={{ sendLocation: vi.fn() } as never}
+        qrToken={null}
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    const frame = document.querySelector('.map-frame')
+    expect(frame).toBeTruthy()
+    expect(frame?.classList.contains('map-frame--hidden')).toBe(false)
+
+    rerender(
+      <LiveMap
+        view={{ ...headStart, phase: 'active', phase_remaining_s: null, time_limit_remaining_s: 1799 }}
+        socket={{ sendLocation: vi.fn() } as never}
+        qrToken={null}
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    expect(document.querySelector('.map-frame')).toBe(frame)
+    expect(frame?.classList.contains('map-frame--hidden')).toBe(false)
+    expect(screen.getByText(/hunt 29:59/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /scan tag/i })).toBeInTheDocument()
+  })
+
   it('shows going-dark copy when this player is signal_lost', () => {
     const dark: PlayerView = {
       ...view,

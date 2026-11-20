@@ -13,6 +13,9 @@ import './Home.css'
 type Props = {
   onSignedOut: () => void
   onEnteredGame: (view: PlayerView) => void
+  /** Shown after a failed or cancelled rejoin (closed hunt, etc.). */
+  bannerNote?: string | null
+  onClearBanner?: () => void
 }
 
 function readGps(): Promise<{ lat: number; lon: number }> {
@@ -42,7 +45,7 @@ function joinFromLocation(): string {
   }
 }
 
-export function Home({ onSignedOut, onEnteredGame }: Props) {
+export function Home({ onSignedOut, onEnteredGame, bannerNote = null, onClearBanner }: Props) {
   const session = loadSession()
   const [joinCode, setJoinCode] = useState(() => joinFromLocation())
   const [radiusM, setRadiusM] = useState(DEFAULT_ARENA_RADIUS_M)
@@ -50,6 +53,7 @@ export function Home({ onSignedOut, onEnteredGame }: Props) {
   const [busy, setBusy] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
+  const alert = error ?? bannerNote
 
   useEffect(() => {
     const fromUrl = joinFromLocation()
@@ -203,9 +207,17 @@ export function Home({ onSignedOut, onEnteredGame }: Props) {
         </button>
       </section>
 
-      {error ? (
+      {alert ? (
         <p className="error" role="alert">
-          {error}
+          {alert}
+          {bannerNote && !error && onClearBanner ? (
+            <>
+              {' '}
+              <button type="button" className="linkish" onClick={onClearBanner}>
+                Dismiss
+              </button>
+            </>
+          ) : null}
         </p>
       ) : null}
 
