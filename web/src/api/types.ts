@@ -1,5 +1,23 @@
 /** Snake_case shapes matching the FastAPI JSON wire format. */
 
+export type LatLon = {
+  lat: number
+  lon: number
+}
+
+export type ArenaZoneKind = 'safe' | 'out_of_bounds' | 'seeker_spawn'
+
+export type ArenaZoneShape =
+  | { type: 'circle'; center: LatLon; radius_m: number }
+  | { type: 'polygon'; vertices: LatLon[] }
+
+export type ArenaZone = {
+  id: string
+  name: string
+  kind: ArenaZoneKind
+  shape: ArenaZoneShape
+}
+
 export type UserDTO = {
   id: string
   display_name: string
@@ -24,12 +42,12 @@ export type ApiErrorBody = {
 export type ArenaOut = {
   id: string
   name: string
-  boundary: Array<{ lat: number; lon: number }>
+  boundary: LatLon[]
   boundary_circle?: {
-    center: { lat: number; lon: number }
+    center: LatLon
     radius_m: number
   } | null
-  zones: unknown[]
+  zones: ArenaZone[]
   version?: number
 }
 
@@ -87,6 +105,12 @@ export type PlayerView = {
   time_limit_remaining_s?: number | null
   game_elapsed_s?: number
   timers?: ViewTimers
+  seeker_lock?: string | null
+  spawn_lock?: {
+    outside?: boolean
+    holding?: boolean
+    zones?: ArenaZone[]
+  } | null
   you: {
     player_id: string
     role: string
@@ -95,6 +119,7 @@ export type PlayerView = {
     points?: number
     points_earned?: number
     hint?: string | null
+    effects?: string[]
     bounds?: {
       phase: string
       remaining_s: number | null
@@ -119,11 +144,13 @@ export type PlayerView = {
   reveals?: RevealPin[]
   banners?: Banner[]
   arena?: {
-    boundary?: Array<{ lat: number; lon: number }>
+    name?: string
+    boundary?: LatLon[]
     boundary_circle?: {
-      center: { lat: number; lon: number }
+      center: LatLon
       radius_m: number
     } | null
+    zones?: ArenaZone[]
   } | null
   result?: GameResult | null
 }
