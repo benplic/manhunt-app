@@ -23,6 +23,30 @@
       "lines_before": 191,
       "lines_after": 191,
       "summary": "Extracted duplicated desk-GPS hold message strings into constants."
+    },
+    "server/app/engine/views.py": {
+      "status": "kept",
+      "lines_before": 378,
+      "lines_after": 383,
+      "summary": "Extracted _player_row / _reveal_row so build_view uses flat list comps."
+    },
+    "server/app/engine/modules/zone_policy.py": {
+      "status": "kept",
+      "lines_before": 194,
+      "lines_after": 191,
+      "summary": "Reused _covered_by_out_zone in on_tick instead of a duplicate OOB loop."
+    },
+    "server/app/demo/bots.py": {
+      "status": "kept",
+      "lines_before": 493,
+      "lines_after": 489,
+      "summary": "Deduped vertex averaging (_mean_point) and OOB checks (_in_oob_zone)."
+    },
+    "server/app/realtime/ws.py": {
+      "status": "kept",
+      "lines_before": 156,
+      "lines_after": 160,
+      "summary": "Nested handle_location to flatten the game_ws receive loop."
     }
   }
 }

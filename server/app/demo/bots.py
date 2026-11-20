@@ -34,22 +34,22 @@ _HEAD_START_TAG_GRACE_S = 4
 _BOT_TAG_COOLDOWN_S = 6
 
 
+def _mean_point(points: list[GeoPoint]) -> GeoPoint:
+    lat = sum(p.lat for p in points) / max(1, len(points))
+    lon = sum(p.lon for p in points) / max(1, len(points))
+    return GeoPoint(lat=lat, lon=lon)
+
+
 def _arena_center(arena: Arena) -> GeoPoint:
     if arena.boundary_circle is not None:
         return arena.boundary_circle.center
-    boundary = arena.boundary
-    lat = sum(p.lat for p in boundary) / max(1, len(boundary))
-    lon = sum(p.lon for p in boundary) / max(1, len(boundary))
-    return GeoPoint(lat=lat, lon=lon)
+    return _mean_point(arena.boundary)
 
 
 def _zone_center(zone: ArenaZone) -> GeoPoint:
     if isinstance(zone.shape, CircleShape):
         return zone.shape.center
-    verts = zone.shape.vertices
-    lat = sum(p.lat for p in verts) / max(1, len(verts))
-    lon = sum(p.lon for p in verts) / max(1, len(verts))
-    return GeoPoint(lat=lat, lon=lon)
+    return _mean_point(zone.shape.vertices)
 
 
 def _in_zone(point: GeoPoint, zone: ArenaZone) -> bool:
@@ -58,13 +58,15 @@ def _in_zone(point: GeoPoint, zone: ArenaZone) -> bool:
     return contains(point, zone.shape.vertices)
 
 
+def _in_oob_zone(point: GeoPoint, arena: Arena) -> bool:
+    return any(
+        zone.kind == ZoneKind.OUT_OF_BOUNDS and _in_zone(point, zone)
+        for zone in arena.zones
+    )
+
+
 def _in_play(point: GeoPoint, arena: Arena) -> bool:
-    if not contains(point, arena.boundary):
-        return False
-    for zone in arena.zones:
-        if zone.kind == ZoneKind.OUT_OF_BOUNDS and _in_zone(point, zone):
-            return False
-    return True
+    return contains(point, arena.boundary) and not _in_oob_zone(point, arena)
 
 
 def _east_north(origin: GeoPoint, target: GeoPoint) -> tuple[float, float]:
@@ -226,13 +228,7 @@ class BotDriver:
                 and player.role == "seeker"
                 and player.status == "active"
                 and (spawn := _spawn_zone(arena)) is not None
-                and (
-                    not _in_zone(current, spawn)
-                    or any(
-                        zone.kind == ZoneKind.OUT_OF_BOUNDS and _in_zone(current, zone)
-                        for zone in arena.zones
-                    )
-                )
+                and (not _in_zone(current, spawn) or _in_oob_zone(current, arena))
             ):
                 # The countdown will not run until this seeker is in spawn.
                 # Walk an idle demo human there; a manual target above still wins.

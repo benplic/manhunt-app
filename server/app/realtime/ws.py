@@ -80,6 +80,68 @@ def bind_ws(manager: SessionManager, get_settings, persist_location=None):
                         },
                     )
                 )
+
+        async def handle_location(payload: dict) -> None:
+            if session.demo is not None:
+                return
+            try:
+                lat = float(payload["lat"])
+                lon = float(payload["lon"])
+                accuracy_m = float(payload["accuracy_m"])
+            except (KeyError, TypeError, ValueError):
+                return
+            if not (
+                math.isfinite(lat) and math.isfinite(lon) and math.isfinite(accuracy_m)
+            ):
+                return
+            recorded_at = session.clock.now()
+            player = session.state.players.get(user_id)
+            # Pace on the game clock so a frozen test clock can space fixes
+            # without a wall-clock sleep (that sleep cancels the socket task).
+            if (
+                player is not None
+                and player.last_location_at is not None
+                and (recorded_at - player.last_location_at).total_seconds() < 0.5
+            ):
+                return
+            reading = LocationReading(
+                lat=lat,
+                lon=lon,
+                accuracy_m=accuracy_m,
+                recorded_at=recorded_at,
+                battery=payload.get("battery"),
+                flag=str(payload.get("flag", "normal")),
+            )
+            allow_jump = (
+                player is not None
+                and reading.flag == "reset"
+                and consume_location_reset(player, recorded_at)
+            )
+            if player is not None and not allow_jump and movement_too_fast(player, reading):
+                # Keep silence clock fresh; do not move the pin.
+                note_presence(player, reading.recorded_at)
+                await ws.send_json(
+                    envelope(
+                        "error",
+                        {
+                            "code": "VALIDATION_FAILED",
+                            "message": "That move is too fast.",
+                        },
+                    )
+                )
+                return
+            try:
+                session.record_location(user_id, reading)
+            except GameRuleError as exc:
+                await ws.send_json(
+                    envelope("error", {"code": exc.code.value, "message": exc.message})
+                )
+                return
+            if persist_location is not None:
+                await persist_location(session)
+            # Views ride the 1 Hz tick_loop. Broadcasting here multiplies
+            # with every phone (~2 Hz × N) and freezes the live MapKit UI.
+
         try:
             while True:
                 message = await ws.receive_json()
@@ -88,65 +150,7 @@ def bind_ws(manager: SessionManager, get_settings, persist_location=None):
                 if kind == "ping":
                     await ws.send_json(envelope("pong", {}))
                 elif kind == "location":
-                    if session.demo is not None:
-                        continue
-                    try:
-                        lat = float(payload["lat"])
-                        lon = float(payload["lon"])
-                        accuracy_m = float(payload["accuracy_m"])
-                    except (KeyError, TypeError, ValueError):
-                        continue
-                    if not (
-                        math.isfinite(lat) and math.isfinite(lon) and math.isfinite(accuracy_m)
-                    ):
-                        continue
-                    recorded_at = session.clock.now()
-                    player = session.state.players.get(user_id)
-                    # Pace on the game clock so a frozen test clock can space fixes
-                    # without a wall-clock sleep (that sleep cancels the socket task).
-                    if (
-                        player is not None
-                        and player.last_location_at is not None
-                        and (recorded_at - player.last_location_at).total_seconds() < 0.5
-                    ):
-                        continue
-                    reading = LocationReading(
-                        lat=lat,
-                        lon=lon,
-                        accuracy_m=accuracy_m,
-                        recorded_at=recorded_at,
-                        battery=payload.get("battery"),
-                        flag=str(payload.get("flag", "normal")),
-                    )
-                    allow_jump = (
-                        player is not None
-                        and reading.flag == "reset"
-                        and consume_location_reset(player, recorded_at)
-                    )
-                    if player is not None and not allow_jump and movement_too_fast(player, reading):
-                        # Keep silence clock fresh; do not move the pin.
-                        note_presence(player, reading.recorded_at)
-                        await ws.send_json(
-                            envelope(
-                                "error",
-                                {
-                                    "code": "VALIDATION_FAILED",
-                                    "message": "That move is too fast.",
-                                },
-                            )
-                        )
-                        continue
-                    try:
-                        session.record_location(user_id, reading)
-                    except GameRuleError as exc:
-                        await ws.send_json(
-                            envelope("error", {"code": exc.code.value, "message": exc.message})
-                        )
-                        continue
-                    if persist_location is not None:
-                        await persist_location(session)
-                    # Views ride the 1 Hz tick_loop. Broadcasting here multiplies
-                    # with every phone (~2 Hz × N) and freezes the live MapKit UI.
+                    await handle_location(payload)
         except WebSocketDisconnect:
             manager.detach(game_id, user_id)
         except Exception:
