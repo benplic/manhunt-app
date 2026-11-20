@@ -71,6 +71,34 @@
       "lines_before": 134,
       "lines_after": 138,
       "summary": "Extracted _spawn_zones reused by on_location, on_tick, and spawn_clock_held."
+    },
+    "server/app/engine/modules/hot_cold.py": {
+      "status": "kept",
+      "lines_before": 127,
+      "lines_after": 129,
+      "summary": "Extracted _clear_hint for duplicated full hint clears in refresh_hints."
+    },
+    "server/app/realtime/manager.py": {
+      "status": "kept",
+      "lines_before": 217,
+      "lines_after": 217,
+      "summary": "broadcast now uses envelope() for view/event/qr_token sends."
+    },
+    "server/app/engine/modules/points.py": {
+      "status": "kept",
+      "lines_before": 114,
+      "lines_after": 114,
+      "summary": "Extracted _active_role; cached points settings in apply_taunt."
+    },
+    "server/app/arenas/routes.py": {
+      "status": "kept",
+      "lines_before": 134,
+      "lines_after": 129,
+      "summary": "Extracted _body_data so create/update share ArenaIn→dict packing."
+    },
+    "server/app/games/join_limit.py": {
+      "status": "skipped",
+      "summary": "Shared sliding-window helper grew the file ~22 lines; left unchanged."
     }
   }
 }

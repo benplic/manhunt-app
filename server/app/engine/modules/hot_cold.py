@@ -39,13 +39,17 @@ def _hints_active(settings: dict) -> bool:
     return bool(settings.get("enabled", True))
 
 
+def _clear_hint(player: PlayerState) -> None:
+    player.hint = None
+    player.hint_at_s = None
+    player.hint_until_s = None
+
+
 def refresh_hints(s: GameSession, *, after_pulse: bool = False) -> None:
     settings = _reveal_settings(s)
     if not _hints_active(settings):
         for player in s.state.players.values():
-            player.hint = None
-            player.hint_at_s = None
-            player.hint_until_s = None
+            _clear_hint(player)
         return
 
     hints_persistence = str(settings.get("hints_persistence", "persistent"))
@@ -60,9 +64,7 @@ def refresh_hints(s: GameSession, *, after_pulse: bool = False) -> None:
 
     for player in s.state.players.values():
         if jammed or s.state.phase != "active" or player.role != "seeker":
-            player.hint = None
-            player.hint_at_s = None
-            player.hint_until_s = None
+            _clear_hint(player)
             continue
 
         if hints_persistence == "timed":
