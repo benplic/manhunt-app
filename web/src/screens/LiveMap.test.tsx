@@ -28,18 +28,36 @@ vi.mock('leaflet', () => {
     openPopup: vi.fn().mockReturnThis(),
     remove: vi.fn(),
   }
-  const circle = {
+  const path = {
     addTo: vi.fn().mockReturnThis(),
     setLatLng: vi.fn().mockReturnThis(),
+    setLatLngs: vi.fn().mockReturnThis(),
     setRadius: vi.fn().mockReturnThis(),
+    setStyle: vi.fn().mockReturnThis(),
     remove: vi.fn(),
+  }
+  class FakeCircle {
+    addTo = path.addTo
+    setLatLng = path.setLatLng
+    setRadius = path.setRadius
+    setStyle = path.setStyle
+    remove = path.remove
+  }
+  class FakePolygon {
+    addTo = path.addTo
+    setLatLngs = path.setLatLngs
+    setStyle = path.setStyle
+    remove = path.remove
   }
   return {
     default: {
       map: vi.fn(() => map),
       tileLayer: vi.fn(() => ({ addTo: vi.fn() })),
       marker: vi.fn(() => marker),
-      circle: vi.fn(() => circle),
+      circle: vi.fn(() => new FakeCircle()),
+      polygon: vi.fn(() => new FakePolygon()),
+      Circle: FakeCircle,
+      Polygon: FakePolygon,
       latLng: vi.fn(() => ({ toBounds: vi.fn().mockReturnValue({}) })),
       latLngBounds: vi.fn(() => ({ pad: vi.fn().mockReturnValue({}) })),
       Icon: { Default: { mergeOptions: vi.fn(), prototype: { options: {} } } },
@@ -163,7 +181,94 @@ describe('LiveMap', () => {
       />,
     )
     expect(screen.getByText(/head start 0:45/i)).toBeInTheDocument()
-    expect(screen.getByText(/outside the play circle — 12s/i)).toBeInTheDocument()
+    expect(screen.getByText(/outside the play area — 12s/i)).toBeInTheDocument()
+  })
+
+  it('renders a polygon play area without a boundary_circle', async () => {
+    const L = await import('leaflet')
+    const polygonArena: PlayerView = {
+      ...view,
+      arena: {
+        boundary: [
+          { lat: 40.1, lon: -73.1 },
+          { lat: 40.12, lon: -73.1 },
+          { lat: 40.12, lon: -73.08 },
+          { lat: 40.1, lon: -73.08 },
+        ],
+      },
+    }
+    render(
+      <LiveMap
+        view={polygonArena}
+        socket={{ sendLocation: vi.fn() } as never}
+        qrToken={null}
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    expect(document.querySelector('.map-frame')).toBeTruthy()
+    expect(screen.getByText(/yellow play area/i)).toBeInTheDocument()
+    expect(L.default.polygon).toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /recenter/i })).toBeInTheDocument()
+  })
+
+  it('draws seeker spawn during head start and drops it when active', async () => {
+    const L = await import('leaflet')
+    const spawnZone = {
+      id: 'spawn-1',
+      name: 'Gate',
+      kind: 'seeker_spawn' as const,
+      shape: {
+        type: 'polygon' as const,
+        vertices: [
+          { lat: 40.11, lon: -73.11 },
+          { lat: 40.112, lon: -73.11 },
+          { lat: 40.112, lon: -73.108 },
+        ],
+      },
+    }
+    const headStart: PlayerView = {
+      ...view,
+      phase: 'head_start',
+      phase_remaining_s: 30,
+      seeker_lock: 'spawn_zone',
+      arena: {
+        boundary_circle: { center: { lat: 40.1, lon: -73.1 }, radius_m: 400 },
+        zones: [spawnZone],
+      },
+    }
+    const { rerender } = render(
+      <LiveMap
+        view={headStart}
+        socket={{ sendLocation: vi.fn() } as never}
+        qrToken={null}
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    const polygonsDuring = vi.mocked(L.default.polygon).mock.calls.length
+    expect(polygonsDuring).toBeGreaterThan(0)
+
+    rerender(
+      <LiveMap
+        view={{ ...headStart, phase: 'active', phase_remaining_s: null }}
+        socket={{ sendLocation: vi.fn() } as never}
+        qrToken={null}
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    // Spawn layer is removed; no extra polygon for spawn after active.
+    expect(vi.mocked(L.default.polygon).mock.calls.length).toBe(polygonsDuring)
   })
 
   it('hides Scan tag during head start so a late claim cannot land on active', () => {
@@ -209,6 +314,47 @@ describe('LiveMap', () => {
     await user.click(screen.getByRole('button', { name: /scan tag/i }))
     expect(document.querySelector('.map-frame')).toBe(frame)
     expect(screen.getByRole('button', { name: /close scan/i })).toBeInTheDocument()
+  })
+
+  it('keeps the map frame after head start ends', () => {
+    const headStart: PlayerView = {
+      ...view,
+      phase: 'head_start',
+      phase_remaining_s: 1,
+      you: { ...view.you, role: 'seeker', is_host: true },
+    }
+    const { rerender } = render(
+      <LiveMap
+        view={headStart}
+        socket={{ sendLocation: vi.fn() } as never}
+        qrToken={null}
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    const frame = document.querySelector('.map-frame')
+    expect(frame).toBeTruthy()
+    expect(frame?.classList.contains('map-frame--hidden')).toBe(false)
+
+    rerender(
+      <LiveMap
+        view={{ ...headStart, phase: 'active', phase_remaining_s: null, time_limit_remaining_s: 1799 }}
+        socket={{ sendLocation: vi.fn() } as never}
+        qrToken={null}
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    expect(document.querySelector('.map-frame')).toBe(frame)
+    expect(frame?.classList.contains('map-frame--hidden')).toBe(false)
+    expect(screen.getByText(/hunt 29:59/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /scan tag/i })).toBeInTheDocument()
   })
 
   it('shows going-dark copy when this player is signal_lost', () => {

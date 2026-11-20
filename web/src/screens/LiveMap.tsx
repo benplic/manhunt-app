@@ -10,13 +10,23 @@ import { startLivePresence } from '../geo/presence'
 import { requestHuntWakeLock } from '../geo/wakeLock'
 import { watchVisibleLocation } from '../geo/watchVisible'
 import type { GeoFix } from '../geo/watchVisible'
+import {
+  arenaIdentityKey,
+  centroid,
+  resolvePlayBoundary,
+} from '../map/arenaBoundary'
 import { fitArenaOnce, recenterOnArena } from '../map/arenaCamera'
 import { formatClock } from '../map/clock'
 import { ensureLeafletDefaultIcons } from '../map/leafletIcons'
 import { pinsFromView } from '../map/pins'
 import { revealsFromView } from '../map/reveals'
+import {
+  emphasizeSpawnFromView,
+  visibleZones,
+  zoneStyle,
+} from '../map/zones'
 import { blockPlayer, reportMailto } from '../social/blockList'
-import type { PlayerView } from '../api/types'
+import type { ArenaZone, PlayerView } from '../api/types'
 import { QrScan } from './QrScan'
 import { QrShow } from './QrShow'
 import './LiveMap.css'
@@ -44,13 +54,13 @@ function boundsMessage(view: PlayerView): string | null {
     return null
   }
   if (view.phase === 'head_start' && bounds.phase === 'warning') {
-    return 'Outside the play circle — walk in before the hunt starts.'
+    return 'Outside the play area — walk in before the hunt starts.'
   }
   if (bounds.phase === 'countdown' && bounds.remaining_s != null) {
-    return `Outside the play circle — ${bounds.remaining_s}s until auto-tag.`
+    return `Outside the play area — ${bounds.remaining_s}s until auto-tag.`
   }
   if (bounds.phase === 'warning' || bounds.phase === 'countdown') {
-    return 'Outside the play circle — walk back in.'
+    return 'Outside the play area — walk back in.'
   }
   if (bounds.phase === 'penalized') {
     return 'Tagged out of bounds.'
@@ -63,6 +73,41 @@ function darkMessage(view: PlayerView): string | null {
     return 'You went dark. Keep this tab visible and the screen on.'
   }
   return null
+}
+
+type ZonePathOpts = {
+  color: string
+  weight: number
+  fillColor: string
+  fillOpacity: number
+  opacity: number
+}
+
+/** Create or update a circle/polygon zone layer; returns the live Leaflet path. */
+function upsertZoneLayer(
+  map: L.Map,
+  existing: L.Circle | L.Polygon | undefined,
+  zone: ArenaZone,
+  pathOpts: ZonePathOpts,
+): L.Circle | L.Polygon {
+  if (zone.shape.type === 'circle') {
+    const latLng: L.LatLngExpression = [zone.shape.center.lat, zone.shape.center.lon]
+    if (existing && existing instanceof L.Circle) {
+      existing.setLatLng(latLng)
+      existing.setRadius(zone.shape.radius_m)
+      existing.setStyle(pathOpts)
+      return existing
+    }
+    return L.circle(latLng, { radius: zone.shape.radius_m, ...pathOpts }).addTo(map)
+  }
+  const latLngs = zone.shape.vertices.map((v) => [v.lat, v.lon] as [number, number])
+  if (existing && !(existing instanceof L.Circle)) {
+    existing.setLatLngs(latLngs)
+    existing.setStyle(pathOpts)
+    return existing
+  }
+  // Shape kind changed (circle → polygon): caller removes `existing`.
+  return L.polygon(latLngs, pathOpts).addTo(map)
 }
 
 export function LiveMap({
@@ -80,7 +125,9 @@ export function LiveMap({
   const markersRef = useRef<Map<string, L.Marker>>(new Map())
   const revealRef = useRef<Map<string, L.Circle>>(new Map())
   const arenaCircleRef = useRef<L.Circle | null>(null)
-  /** Last arenaKey we framed — re-fit only when the circle identity changes. */
+  const arenaPolygonRef = useRef<L.Polygon | null>(null)
+  const zoneLayersRef = useRef<Map<string, L.Circle | L.Polygon>>(new Map())
+  /** Last arenaKey we framed — re-fit only when the play area identity changes. */
   const fittedArenaKeyRef = useRef<string>('')
   const [localNote, setLocalNote] = useState<string | null>(null)
   const [accuracyM, setAccuracyM] = useState<number | null>(null)
@@ -90,6 +137,20 @@ export function LiveMap({
 
   const pins = useMemo(() => pinsFromView(view), [view])
   const reveals = useMemo(() => revealsFromView(view), [view])
+  const playBoundary = useMemo(() => resolvePlayBoundary(view.arena ?? null), [view.arena])
+  const arenaKey = arenaIdentityKey(playBoundary)
+  const emphasizeSpawn = emphasizeSpawnFromView(view)
+  const lockdown = (view.you.effects ?? []).includes('lockdown')
+  const zonesOnMap = useMemo(
+    () =>
+      visibleZones({
+        arenaZones: view.arena?.zones ?? [],
+        spawnLockZones: view.spawn_lock?.zones ?? [],
+        phase: view.phase,
+        emphasizeSpawn,
+      }),
+    [view.arena?.zones, view.spawn_lock?.zones, view.phase, emphasizeSpawn],
+  )
   const banners = view.banners ?? []
   const isHider = view.you.role === 'hider'
   const isSeeker = view.you.role === 'seeker'
@@ -148,27 +209,42 @@ export function LiveMap({
       mapRef.current = null
       markersRef.current.clear()
       revealRef.current.clear()
+      zoneLayersRef.current.clear()
       arenaCircleRef.current = null
+      arenaPolygonRef.current = null
       fittedArenaKeyRef.current = ''
     }
   }, [])
 
+  // Keep Leaflet sized when chrome grows (head start → active banners/dock)
+  // or when the mobile URL bar shows/hides. A zero-size frame paints black.
   useEffect(() => {
-    if (panel !== 'map') {
-      return
-    }
     const map = mapRef.current
-    if (!map) {
+    const frame = mapEl.current
+    if (!map || !frame) {
       return
     }
-    const id = window.setTimeout(() => map.invalidateSize(), 0)
-    return () => window.clearTimeout(id)
+    const refresh = () => {
+      if (panel !== 'map') {
+        return
+      }
+      map.invalidateSize({ animate: false })
+    }
+    const id = window.setTimeout(refresh, 0)
+    const delayed = window.setTimeout(refresh, 120)
+    const observer =
+      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => refresh()) : null
+    observer?.observe(frame)
+    window.addEventListener('resize', refresh)
+    window.addEventListener('orientationchange', refresh)
+    return () => {
+      window.clearTimeout(id)
+      window.clearTimeout(delayed)
+      observer?.disconnect()
+      window.removeEventListener('resize', refresh)
+      window.removeEventListener('orientationchange', refresh)
+    }
   }, [panel, view.phase])
-
-  const arenaCircle = view.arena?.boundary_circle
-  const arenaKey = arenaCircle
-    ? `${arenaCircle.center.lat},${arenaCircle.center.lon},${arenaCircle.radius_m}`
-    : ''
 
   useEffect(() => {
     const map = mapRef.current
@@ -176,34 +252,86 @@ export function LiveMap({
       return
     }
     // arenaKey is the stable identity; view.arena object identity changes every tick.
-    const circle = arenaCircle
-    if (!circle || !arenaKey) {
+    if (!playBoundary || !arenaKey) {
       arenaCircleRef.current?.remove()
       arenaCircleRef.current = null
+      arenaPolygonRef.current?.remove()
+      arenaPolygonRef.current = null
       fittedArenaKeyRef.current = ''
       return
     }
-    const latLng: L.LatLngExpression = [circle.center.lat, circle.center.lon]
-    if (!arenaCircleRef.current) {
-      arenaCircleRef.current = L.circle(latLng, {
-        radius: circle.radius_m,
-        color: '#f0c75e',
-        weight: 2,
-        fillColor: '#111',
-        fillOpacity: 0.18,
-      }).addTo(map)
+    const style = {
+      color: '#f0c75e',
+      weight: 2,
+      fillColor: '#111',
+      fillOpacity: 0.18,
+    }
+    if (playBoundary.kind === 'circle') {
+      arenaPolygonRef.current?.remove()
+      arenaPolygonRef.current = null
+      const latLng: L.LatLngExpression = [
+        playBoundary.circle.center.lat,
+        playBoundary.circle.center.lon,
+      ]
+      if (!arenaCircleRef.current) {
+        arenaCircleRef.current = L.circle(latLng, {
+          radius: playBoundary.circle.radius_m,
+          ...style,
+        }).addTo(map)
+      } else {
+        arenaCircleRef.current.setLatLng(latLng)
+        arenaCircleRef.current.setRadius(playBoundary.circle.radius_m)
+      }
     } else {
-      arenaCircleRef.current.setLatLng(latLng)
-      arenaCircleRef.current.setRadius(circle.radius_m)
+      arenaCircleRef.current?.remove()
+      arenaCircleRef.current = null
+      const latLngs = playBoundary.vertices.map(
+        (v) => [v.lat, v.lon] as [number, number],
+      )
+      if (!arenaPolygonRef.current) {
+        arenaPolygonRef.current = L.polygon(latLngs, style).addTo(map)
+      } else {
+        arenaPolygonRef.current.setLatLngs(latLngs)
+      }
     }
     // Frame once per arena identity. Re-fitting every WS tick snapped pan/zoom.
     if (fittedArenaKeyRef.current !== arenaKey) {
-      fitArenaOnce(map, circle, L)
+      fitArenaOnce(map, playBoundary, L)
       fittedArenaKeyRef.current = arenaKey
       window.setTimeout(() => map.invalidateSize(), 0)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [arenaKey])
+  }, [arenaKey, playBoundary])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) {
+      return
+    }
+    const seen = new Set<string>()
+    for (const zone of zonesOnMap) {
+      seen.add(zone.id)
+      const style = zoneStyle(zone.kind, { emphasizeSpawn, lockdown })
+      const pathOpts = {
+        color: style.color,
+        weight: style.weight,
+        fillColor: style.fillColor,
+        fillOpacity: style.fillOpacity,
+        opacity: style.strokeOpacity,
+      }
+      const existing = zoneLayersRef.current.get(zone.id)
+      const next = upsertZoneLayer(map, existing, zone, pathOpts)
+      if (next !== existing) {
+        existing?.remove()
+        zoneLayersRef.current.set(zone.id, next)
+      }
+    }
+    for (const [id, layer] of zoneLayersRef.current) {
+      if (!seen.has(id)) {
+        layer.remove()
+        zoneLayersRef.current.delete(id)
+      }
+    }
+  }, [zonesOnMap, emphasizeSpawn, lockdown])
 
   useEffect(() => {
     const map = mapRef.current
@@ -268,12 +396,21 @@ export function LiveMap({
   }, [pins])
 
   useEffect(() => {
-    // Mac/desktop often never gets watchPosition. Seed the arena center so the
-    // host hider does not go dark after classic silence while desk-testing.
-    const circle = view.arena?.boundary_circle
-    const seedFix: GeoFix | null = circle
-      ? { lat: circle.center.lat, lon: circle.center.lon, accuracyM: 12 }
-      : null
+    // Mac/desktop often never gets watchPosition. Seed the play-area center so
+    // the host hider does not go dark after classic silence while desk-testing.
+    let seedFix: GeoFix | null = null
+    if (playBoundary?.kind === 'circle') {
+      seedFix = {
+        lat: playBoundary.circle.center.lat,
+        lon: playBoundary.circle.center.lon,
+        accuracyM: 12,
+      }
+    } else if (playBoundary?.kind === 'polygon') {
+      const mid = centroid(playBoundary.vertices)
+      if (mid) {
+        seedFix = { lat: mid.lat, lon: mid.lon, accuracyM: 12 }
+      }
+    }
     const stop = startLivePresence({
       seedFix,
       watchLocation,
@@ -288,16 +425,15 @@ export function LiveMap({
       onError: (message) => setLocalNote(message),
     })
     return () => stop()
-  }, [socket, watchLocation, view.arena?.boundary_circle?.center.lat, view.arena?.boundary_circle?.center.lon, view.arena?.boundary_circle?.radius_m])
+  }, [socket, watchLocation, arenaKey])
 
   function recenter() {
     const map = mapRef.current
     if (!map) {
       return
     }
-    const circle = view.arena?.boundary_circle
-    if (circle) {
-      recenterOnArena(map, circle, L)
+    if (playBoundary) {
+      recenterOnArena(map, playBoundary, L)
       return
     }
     if (pins.length === 0) {
@@ -494,7 +630,7 @@ export function LiveMap({
               </div>
             </div>
           ) : null}
-          <p className="hint">Keep this tab visible and the screen on. Stay inside the yellow circle.</p>
+          <p className="hint">Keep this tab visible and the screen on. Stay inside the yellow play area.</p>
         </footer>
       ) : null}
 

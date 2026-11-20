@@ -5,6 +5,7 @@ import { SessionExpiredError, withAuthRetry } from './api/session'
 import type { PlayerView } from './api/types'
 import { GameSocket, wsUrlForGame } from './api/ws'
 import { clearSession, loadSession } from './auth/storage'
+import { closedGameMessage, isClosedGameError } from './game/rejoin'
 import { clearActiveGame, loadActiveGameId, rememberActiveGame } from './game/resume'
 import { Home } from './screens/Home'
 import { LiveMap } from './screens/LiveMap'
@@ -26,9 +27,12 @@ function App() {
   const [gameView, setGameView] = useState<PlayerView | null>(null)
   const [qrToken, setQrToken] = useState<string | null>(null)
   const [socketNote, setSocketNote] = useState<string | null>(null)
+  const [homeNote, setHomeNote] = useState<string | null>(null)
   const [socketReady, setSocketReady] = useState(false)
   const [resuming, setResuming] = useState(false)
   const socketRef = useRef<GameSocket | null>(null)
+  /** Bumps when the player cancels rejoin so an in-flight fetch cannot land. */
+  const rejoinEpochRef = useRef(0)
 
   function tearDownSocket() {
     socketRef.current?.disconnect()
@@ -39,6 +43,7 @@ function App() {
 
   function applyView(next: PlayerView) {
     rememberActiveGame(next.game_id)
+    setHomeNote(null)
     // Result only needs the last view; stop the socket as soon as the hunt ends.
     if (next.phase === 'ended') {
       tearDownSocket()
@@ -53,51 +58,68 @@ function App() {
   }
 
   function signOut() {
+    rejoinEpochRef.current += 1
     tearDownSocket()
     clearActiveGame()
     clearSession()
     setSocketNote(null)
+    setHomeNote(null)
+    setResuming(false)
     setGameView(null)
     setSignedIn(false)
   }
 
-  // Rejoin the open game after a refresh.
+  function cancelRejoin() {
+    rejoinEpochRef.current += 1
+    clearActiveGame()
+    setResuming(false)
+    setHomeNote('Rejoin cancelled.')
+  }
+
+  // Rejoin the open game after a refresh. Do not put `resuming` in the deps —
+  // that cancelled the in-flight fetch and left a blank "Rejoining…" screen.
   useEffect(() => {
-    if (!signedIn || gameView || resuming) {
+    if (!signedIn || gameView) {
       return
     }
     const gameId = loadActiveGameId()
     if (!gameId) {
       return
     }
-    let cancelled = false
+    const epoch = rejoinEpochRef.current
     setResuming(true)
+    setHomeNote(null)
     void withAuthRetry((token) => fetchGameView({ token, gameId }))
       .then((view) => {
-        if (!cancelled) {
-          applyView(view)
+        if (epoch !== rejoinEpochRef.current) {
+          return
         }
+        applyView(view)
       })
       .catch((err) => {
-        if (cancelled) {
+        if (epoch !== rejoinEpochRef.current) {
           return
         }
         clearActiveGame()
         if (err instanceof SessionExpiredError) {
           signOut()
+          return
         }
+        if (isClosedGameError(err)) {
+          setHomeNote(closedGameMessage(err))
+          return
+        }
+        setHomeNote(closedGameMessage(err))
       })
       .finally(() => {
-        if (!cancelled) {
+        if (epoch === rejoinEpochRef.current) {
           setResuming(false)
         }
       })
-    return () => {
-      cancelled = true
-    }
-  }, [signedIn, gameView, resuming])
+  }, [signedIn, gameView])
 
-  // One long-lived socket per game so Lobby → LiveMap keeps lastSeq.
+  // One long-lived socket per game id. Phase changes (head_start → active) must
+  // not tear down or flash the "Connecting…" shell — that looked like a black page.
   useEffect(() => {
     if (!gameView) {
       tearDownSocket()
@@ -126,7 +148,7 @@ function App() {
       tearDownSocket()
       clearActiveGame()
       setGameView(null)
-      setSocketNote('You were removed from this hunt.')
+      setHomeNote('You were removed from this hunt.')
     }
     socket.connect({
       url: wsUrlForGame(apiBaseUrl(), gameView.game_id),
@@ -134,7 +156,7 @@ function App() {
       lastSeq: socket.lastSeq,
     })
     setSocketReady(true)
-  }, [gameView?.game_id, gameView?.phase])
+  }, [gameView?.game_id])
 
   async function leaveCurrentGame() {
     if (!gameView) {
@@ -163,6 +185,9 @@ function App() {
     return (
       <main className="home">
         <p>Rejoining the hunt…</p>
+        <button type="button" className="secondary" onClick={cancelRejoin}>
+          Cancel rejoin
+        </button>
       </main>
     )
   }
@@ -220,6 +245,8 @@ function App() {
     <Home
       onSignedOut={signOut}
       onEnteredGame={(view) => applyView(view)}
+      bannerNote={homeNote}
+      onClearBanner={() => setHomeNote(null)}
     />
   )
 }
