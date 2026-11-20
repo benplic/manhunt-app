@@ -3,6 +3,7 @@ import { ApiError } from '../api/client'
 import { fetchGameEvents, rematchGame } from '../api/games'
 import { SessionExpiredError, withAuthRetry } from '../api/session'
 import type { PlayerView, TimelineEvent } from '../api/types'
+import { displayNameFor } from '../social/blockList'
 import './Result.css'
 
 type Props = {
@@ -104,7 +105,7 @@ export function Result({ view, onDone, onRematch, onSignedOut }: Props) {
           <ul>
             {ranked.map((player) => (
               <li key={player.player_id}>
-                <strong>{player.display_name}</strong>
+                <strong>{displayNameFor(player.player_id, player.display_name)}</strong>
                 <span>
                   {player.role} · {player.points_earned ?? player.points ?? 0} pts
                 </span>

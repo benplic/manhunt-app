@@ -205,8 +205,8 @@ final class LiveGameService: GameService {
         return auth
     }
 
-    func claimQR(gameID: UUID, token: String) async throws {
-        let _: [String: String] = try await client.post(
+    func claimQR(gameID: UUID, token: String) async throws -> PlayerViewDTO {
+        try await client.post(
             "/v1/games/\(gameID.uuidString)/tags/qr",
             body: QRBody(token: token)
         )

@@ -141,6 +141,7 @@ const view: PlayerView = {
 describe('LiveMap', () => {
   beforeEach(() => {
     tauntGame.mockReset()
+    window.localStorage.clear()
   })
 
   it('watches visible GPS and offers Scan tag / End for a host seeker', async () => {
@@ -489,5 +490,71 @@ describe('LiveMap', () => {
       />,
     )
     expect(screen.getByText(/you went dark/i)).toBeInTheDocument()
+  })
+
+  it('masks a blocked name on the leaderboard and shows shield remaining', async () => {
+    const user = userEvent.setup()
+    const blocked: PlayerView = {
+      ...view,
+      active_effects: [
+        {
+          type: 'shield',
+          owner_id: 'hider-1',
+          display_name: 'Riley',
+          remaining_s: 18,
+        },
+      ],
+      players: [
+        ...view.players,
+        {
+          player_id: 'hider-1',
+          display_name: 'Riley',
+          role: 'hider',
+          status: 'active',
+          is_host: false,
+          points: 40,
+        },
+      ],
+    }
+    render(
+      <LiveMap
+        view={blocked}
+        socket={{ sendLocation: vi.fn() } as never}
+        qrToken={null}
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    expect(screen.getByText(/shield · riley · 0:18/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /scores/i }))
+    expect(screen.getByText('Riley')).toBeInTheDocument()
+    const blockButtons = screen.getAllByRole('button', { name: /^block$/i })
+    await user.click(blockButtons[0])
+    expect(screen.getByText(/blocked player #1/i)).toBeInTheDocument()
+    expect(screen.queryByText('Riley')).not.toBeInTheDocument()
+  })
+
+  it('shows you are out and hides Show tag when eliminated', () => {
+    const out: PlayerView = {
+      ...view,
+      you: { ...view.you, role: 'hider', status: 'eliminated', is_host: false },
+    }
+    render(
+      <LiveMap
+        view={out}
+        socket={{ sendLocation: vi.fn() } as never}
+        qrToken="tok"
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    expect(screen.getByText(/you.?re out/i)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /show tag/i })).not.toBeInTheDocument()
   })
 })

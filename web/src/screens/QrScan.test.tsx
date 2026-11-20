@@ -39,7 +39,14 @@ describe('QrScan', () => {
   })
 
   it('posts a scanned token and reports success', async () => {
-    claimQrTag.mockResolvedValue(undefined)
+    const taggedView = {
+      game_id: 'game-1',
+      join_code: 'ABCDEF',
+      phase: 'active',
+      you: { player_id: 'u1', role: 'seeker', status: 'active', is_host: true },
+      players: [],
+    }
+    claimQrTag.mockResolvedValue(taggedView)
     const onTagged = vi.fn()
     const { rerender } = render(
       <QrScan
@@ -68,7 +75,7 @@ describe('QrScan', () => {
         gameId: 'game-1',
         qrToken: 'scanned-token',
       })
-      expect(onTagged).toHaveBeenCalled()
+      expect(onTagged).toHaveBeenCalledWith(taggedView)
     })
   })
 

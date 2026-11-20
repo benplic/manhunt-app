@@ -382,9 +382,15 @@ final class FakeGameService: GameService {
         ]
     }
 
-    func claimQR(gameID: UUID, token: String) async throws {
-        guard games[gameID] != nil else { throw ServiceError(code: .gameNotFound, message: "") }
+    func claimQR(gameID: UUID, token: String) async throws -> PlayerViewDTO {
+        guard var game = games[gameID] else { throw ServiceError(code: .gameNotFound, message: "") }
         if token.isEmpty { throw ServiceError(code: .tokenInvalid, message: "Empty token.") }
+        // Mark the first active hider eliminated so tests can assert the seeker view updates.
+        if let index = game.players.firstIndex(where: { $0.role == .hider && $0.status == .active }) {
+            game.players[index].status = .eliminated
+            games[gameID] = game
+        }
+        return game.view()
     }
 
     /// Tests hold the preset screen closed until the schema fetch finishes.

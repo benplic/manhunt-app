@@ -29,7 +29,7 @@ protocol GameService: AnyObject {
     func ackSafety(gameID: UUID) async throws -> PlayerViewDTO
     func taunt(gameID: UUID) async throws -> PlayerViewDTO
     func view(gameID: UUID) async throws -> PlayerViewDTO
-    func claimQR(gameID: UUID, token: String) async throws
+    func claimQR(gameID: UUID, token: String) async throws -> PlayerViewDTO
     func purchase(
         gameID: UUID,
         powerID: String,

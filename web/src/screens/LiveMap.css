@@ -230,6 +230,11 @@
   color: #f0c75e;
 }
 
+.live-map .hud-sub--effect {
+  color: #9ecbff;
+  font-weight: 600;
+}
+
 .live-map .hud-hint {
   flex: 1 1 100%;
 }
@@ -255,6 +260,10 @@
 
 .live-map .banner--safety {
   color: #f0c75e;
+}
+
+.live-map .banner--danger {
+  color: #f07167;
 }
 
 .live-map .bottom-stack {

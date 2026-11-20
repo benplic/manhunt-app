@@ -6,20 +6,35 @@ describe('claimQrTag', () => {
     vi.unstubAllGlobals()
   })
 
-  it('POSTs the scanned token to /tags/qr', async () => {
+  it('POSTs the scanned token to /tags/qr and returns the seeker view', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ result: 'accepted' }),
+      json: async () => ({
+        game_id: 'game-1',
+        join_code: 'ABCDEF',
+        phase: 'active',
+        you: { player_id: 'seeker-1', role: 'seeker', status: 'active', is_host: true },
+        players: [
+          {
+            player_id: 'hider-1',
+            display_name: 'Riley',
+            role: 'hider',
+            status: 'eliminated',
+            is_host: false,
+          },
+        ],
+      }),
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    await claimQrTag({ token: 'tok', gameId: 'game-1', qrToken: 'qr-secret' })
+    const view = await claimQrTag({ token: 'tok', gameId: 'game-1', qrToken: 'qr-secret' })
 
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toMatch(/\/v1\/games\/game-1\/tags\/qr$/)
     expect(JSON.parse(init.body)).toEqual({ token: 'qr-secret' })
     expect(init.headers.Authorization).toBe('Bearer tok')
+    expect(view.players[0].status).toBe('eliminated')
   })
 })
 

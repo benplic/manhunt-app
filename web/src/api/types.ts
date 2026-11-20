@@ -121,6 +121,14 @@ export type ViewTimers = {
   } | null
 }
 
+/** Timed effect visible on the HUD (shield, lockdown, …). */
+export type ActiveEffect = {
+  type: string
+  owner_id: string
+  display_name: string
+  remaining_s: number
+}
+
 /** Player view fields the web client consumes. */
 export type PlayerView = {
   game_id: string
@@ -139,6 +147,8 @@ export type PlayerView = {
     zones?: ArenaZone[]
   } | null
   power_ups?: PowerUpRow[]
+  /** Public timed effects so seekers and hiders both see shield countdowns. */
+  active_effects?: ActiveEffect[]
   you: {
     player_id: string
     role: string
@@ -149,6 +159,8 @@ export type PlayerView = {
     /** String on older payloads; live server sends `{ band, meters, name, bearing_deg }`. */
     hint?: string | HintObject | null
     effects?: string[]
+    /** Seconds left per effect type on you (including shared lockdown). */
+    effect_remaining?: Record<string, number>
     taunt_cooldown_s?: number
     taunt_enabled?: boolean
     cooldowns?: Record<string, number>

@@ -154,13 +154,13 @@ export async function endGame(input: { token: string; gameId: string }): Promise
   })
 }
 
-/** Seeker claims a hider QR. Distance (30 m) is enforced server-side. */
+/** Seeker claims a hider QR. Distance (30 m) is enforced server-side. Returns the seeker view. */
 export async function claimQrTag(input: {
   token: string
   gameId: string
   qrToken: string
-}): Promise<void> {
-  await apiRequest<{ result: string }>(`/v1/games/${input.gameId}/tags/qr`, {
+}): Promise<PlayerView> {
+  return apiRequest<PlayerView>(`/v1/games/${input.gameId}/tags/qr`, {
     method: 'POST',
     token: input.token,
     body: { token: input.qrToken },

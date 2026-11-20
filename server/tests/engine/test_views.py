@@ -48,6 +48,33 @@ def test_cooldowns_ride_on_you_only() -> None:
         assert "cooldowns" not in row
 
 
+def test_active_effects_show_shield_remaining_to_both_roles() -> None:
+    """Seekers and hiders both see how long a live shield has left."""
+    session, clock, hider, seeker = two_player_hunt()
+    session.record_location(hider, reading(meters(40, 40), clock))
+    run_for(session, clock, 1)
+    session.state.players[hider].points = 200
+    session.purchase(hider, "shield")
+    hider_view = build_view(session, hider)
+    seeker_view = build_view(session, seeker)
+    assert "shield" in hider_view["you"]["effects"]
+    assert hider_view["you"]["effect_remaining"]["shield"] == 30
+    for view in (hider_view, seeker_view):
+        shields = [row for row in view["active_effects"] if row["type"] == "shield"]
+        assert len(shields) == 1
+        assert shields[0]["owner_id"] == str(hider)
+        assert shields[0]["display_name"] == "Riley"
+        assert shields[0]["remaining_s"] == 30
+    run_for(session, clock, 12)
+    later = build_view(session, seeker)
+    shield = next(row for row in later["active_effects"] if row["type"] == "shield")
+    assert shield["remaining_s"] == 18
+    run_for(session, clock, 20)
+    expired = build_view(session, seeker)
+    assert all(row["type"] != "shield" for row in expired["active_effects"])
+    assert "shield" not in expired["you"]["effects"]
+
+
 def test_both_viewers_get_the_same_play_boundary() -> None:
     session, _, hider, seeker = two_player_hunt()
     hider_view = build_view(session, hider)

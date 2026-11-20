@@ -101,6 +101,8 @@ def build_view(
             "points_earned": viewer.points_earned,
             "hint": viewer.hint,
             "effects": _effects_for(state, viewer),
+            # Remaining seconds for effects on you (including shared lockdown).
+            "effect_remaining": _effect_remaining_for(state, viewer),
             "cooldowns": cooldowns,
             "taunt_cooldown_s": taunt_cooldown_s,
             "taunt_enabled": bool(session.module_settings("points").get("taunt_enabled", True)),
@@ -118,10 +120,16 @@ def build_view(
             }
             for b in state.banners
         ],
+        # Public timed effects (shield, lockdown, …) so every role can show a countdown.
+        "active_effects": _active_effects(state, viewer),
         "result": result,
         "power_ups": _power_ups_for(session, viewer),
         "demo": _build_demo(session, viewer, demo_controls_enabled=demo_controls_enabled),
     }
+
+
+# Effects every viewer may see with a countdown. Radar/tracker stay owner-only.
+_PUBLIC_EFFECT_TYPES = frozenset({"shield", "lockdown", "jammer", "taunt"})
 
 
 def _effects_for(state, viewer: PlayerState) -> list[str]:
@@ -130,6 +138,54 @@ def _effects_for(state, viewer: PlayerState) -> list[str]:
     if state.lockdown_until_s is not None and "lockdown" not in owned:
         owned.append("lockdown")
     return owned
+
+
+def _remaining_s(effect, now: int) -> int:
+    if effect.expires_at_game_s is None:
+        return 0
+    return max(0, int(effect.expires_at_game_s) - now)
+
+
+def _effect_remaining_for(state, viewer: PlayerState) -> dict[str, int]:
+    """Map effect type → seconds left for effects listed on you.effects."""
+    now = state.game_elapsed_s
+    remaining: dict[str, int] = {}
+    for effect in state.effects:
+        left = _remaining_s(effect, now)
+        if left <= 0:
+            continue
+        if effect.owner_id == viewer.player_id:
+            remaining[effect.type] = max(remaining.get(effect.type, 0), left)
+        elif effect.type == "lockdown":
+            remaining["lockdown"] = max(remaining.get("lockdown", 0), left)
+    if state.lockdown_until_s is not None and "lockdown" not in remaining:
+        # Tick keeps lockdown_until_s as now+1 while an effect is live.
+        left = max(0, int(state.lockdown_until_s) - now)
+        if left > 0:
+            remaining["lockdown"] = left
+    return remaining
+
+
+def _active_effects(state, viewer: PlayerState) -> list[dict]:
+    """Timed effects visible on the HUD. Owner always sees own; everyone sees public types."""
+    now = state.game_elapsed_s
+    rows: list[dict] = []
+    for effect in state.effects:
+        left = _remaining_s(effect, now)
+        if left <= 0:
+            continue
+        if effect.type not in _PUBLIC_EFFECT_TYPES and effect.owner_id != viewer.player_id:
+            continue
+        owner = state.players.get(effect.owner_id)
+        rows.append(
+            {
+                "type": effect.type,
+                "owner_id": str(effect.owner_id),
+                "display_name": owner.display_name if owner is not None else "",
+                "remaining_s": left,
+            }
+        )
+    return rows
 
 
 def _arena_for_view(session: GameSession) -> dict:

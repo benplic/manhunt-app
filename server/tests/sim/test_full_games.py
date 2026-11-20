@@ -119,9 +119,52 @@ def test_scenario_a_qr_tag_seekers_win(client: TestClient) -> None:
         headers=_hdr(seeker["access_token"]),
     )
     assert tagged.status_code == 200, tagged.text
+    # Tag route returns the seeker view so clients do not wait on the tick.
+    body = tagged.json()
+    assert body["you"]["player_id"] == seeker_id
+    assert body["result"]["winner"] == "seekers"
+    pin = next(p for p in body["players"] if p["player_id"] == hider_id)
+    assert pin["status"] == "eliminated"
     view = client.get(f"/v1/games/{gid}", headers=_hdr(seeker["access_token"])).json()
     assert view["result"]["winner"] == "seekers"
     _no_hider_exact(view, hider_id)
+
+
+def test_qr_tag_broadcasts_eliminated_view_to_hider(client: TestClient) -> None:
+    """Tagged phone must get a view push immediately, not on the next tick."""
+    from tests.sim.test_live_lobby import _next
+
+    gid, host, hider, seeker, hider_id, seeker_id = _open_game(
+        client,
+        overrides={"head_start": {"enabled": False}, "win": {"condition": "all_caught"}},
+    )
+    manager = client.app.state.manager
+    session = manager.get(UUID(gid))
+    assert session is not None
+    _put(session, hider_id, meters(100, 100), session.clock)
+    _put(session, seeker_id, meters(100, 101), session.clock)
+    token = make_qr_token(
+        game_id=session.state.game_id,
+        hider_id=UUID(hider_id),
+        expires_at=session.clock.now() + timedelta(seconds=30),
+        key=session.qr_signing_key,
+    )
+    with client.websocket_connect(f"/v1/games/{gid}/ws") as hider_ws:
+        hider_ws.send_json({"type": "hello", "data": {"token": hider["access_token"]}})
+        assert _next(hider_ws)["type"] == "welcome"
+        assert _next(hider_ws)["type"] == "view"
+
+        tagged = client.post(
+            f"/v1/games/{gid}/tags/qr",
+            json={"token": token},
+            headers=_hdr(seeker["access_token"]),
+        )
+        assert tagged.status_code == 200, tagged.text
+
+        pushed = _next(hider_ws)
+        assert pushed["type"] == "view"
+        assert pushed["data"]["you"]["status"] == "eliminated"
+        assert pushed["data"]["you"]["player_id"] == hider_id
 
 
 def test_scenario_b_hider_oob_eliminated(client: TestClient) -> None:

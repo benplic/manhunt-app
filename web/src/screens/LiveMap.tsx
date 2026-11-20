@@ -47,8 +47,8 @@ import {
   visibleZones,
   zoneStyle,
 } from '../map/zones'
-import { blockPlayer, reportMailto } from '../social/blockList'
-import type { ArenaZone, PlayerView } from '../api/types'
+import { blockPlayer, displayNameFor, reportMailto } from '../social/blockList'
+import type { ActiveEffect, ArenaZone, PlayerView } from '../api/types'
 import { EventLog } from './EventLog'
 import { QrScan } from './QrScan'
 import { QrShow } from './QrShow'
@@ -102,6 +102,18 @@ function rescueCandidates(view: PlayerView) {
 
 function phaseLabel(phase: string): string {
   return phase.replaceAll('_', ' ')
+}
+
+/** HUD copy for a timed effect. Shield always names the owner for seekers. */
+export function effectHudLine(effect: ActiveEffect, youId: string): string {
+  const clock = formatClock(effect.remaining_s)
+  const title = effect.type.replaceAll('_', ' ')
+  const titled = title.charAt(0).toUpperCase() + title.slice(1)
+  if (effect.owner_id === youId) {
+    return `${titled} ${clock}`
+  }
+  const name = displayNameFor(effect.owner_id, effect.display_name || 'Player')
+  return `${titled} · ${name} · ${clock}`
 }
 
 function boundsMessage(view: PlayerView): string | null {
@@ -200,8 +212,10 @@ export function LiveMap({
   const [busyDock, setBusyDock] = useState(false)
   const [powerPick, setPowerPick] = useState<PowerPick>(null)
   const [pingFlash, setPingFlash] = useState<string | null>(null)
+  /** Bumped when the local block list changes so leaderboard names re-mask. */
+  const [blockRevision, setBlockRevision] = useState(0)
 
-  const pins = useMemo(() => pinsFromView(view), [view])
+  const pins = useMemo(() => pinsFromView(view), [view, blockRevision])
   const reveals = useMemo(() => revealsFromView(view), [view])
   const playBoundary = useMemo(() => resolvePlayBoundary(view.arena ?? null), [view.arena])
   const arenaKey = arenaIdentityKey(playBoundary)
@@ -232,10 +246,16 @@ export function LiveMap({
   )
   const tauntCooldown = view.you.taunt_cooldown_s ?? 0
   const tauntEnabled = view.you.taunt_enabled !== false
+  const youActive = view.you.status === 'active'
+  const youEliminated = view.you.status === 'eliminated'
   const canTaunt =
-    isHider && view.phase === 'active' && tauntEnabled && view.you.status === 'active'
+    isHider && view.phase === 'active' && tauntEnabled && youActive
   // Server hint is a dict. Never render it as a React child — that unmounts the app.
   const hintText = hintLine(view.you.role, view.you.hint)
+  // Prefer shield (and other public timed effects) so the countdown is always visible.
+  const effectLines = (view.active_effects ?? [])
+    .filter((row) => row.remaining_s > 0)
+    .map((row) => effectHudLine(row, view.you.player_id))
 
   // Never leave the tag scanner open during head start.
   useEffect(() => {
@@ -745,8 +765,10 @@ export function LiveMap({
 
   function onBlock(playerId: string, displayName: string) {
     blockPlayer(playerId, displayName)
-    setToast(`${displayName} blocked on this device.`)
-    setPanel('map')
+    setBlockRevision((n) => n + 1)
+    const masked = displayNameFor(playerId, displayName)
+    setToast(`${masked} blocked on this device.`)
+    // Stay on the board so the anonymized name is visible immediately.
   }
 
   function onReport(playerId: string, displayName: string) {
@@ -811,6 +833,21 @@ export function LiveMap({
             <span className="hud-sub hud-sub--warn">GPS…</span>
           )}
           {hintText ? <span className="hud-hint">{hintText}</span> : null}
+          {effectLines.map((line) => (
+            <span key={line} className="hud-sub hud-sub--effect">
+              {line}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {youEliminated && !overlayOpen ? (
+        <div className="banners">
+          <p className="banner banner--danger" role="status">
+            <strong>You&apos;re out</strong>
+            {' — '}
+            A seeker tagged you. Stay safe and wait for the hunt to end.
+          </p>
         </div>
       ) : null}
 
@@ -845,12 +882,12 @@ export function LiveMap({
             </p>
           ) : null}
           <div className="dock">
-            {isHider ? (
+            {isHider && youActive ? (
               <button type="button" className="chip chip--accent" disabled={!qrToken} onClick={() => setPanel('show')}>
                 Show tag
               </button>
             ) : null}
-            {isSeeker && view.phase === 'active' ? (
+            {isSeeker && view.phase === 'active' && youActive ? (
               <button type="button" className="chip chip--accent" onClick={() => setPanel('scan')}>
                 Scan tag
               </button>
@@ -1020,7 +1057,8 @@ export function LiveMap({
             gameId={view.game_id}
             accuracyM={accuracyM}
             onClose={() => setPanel('map')}
-            onTagged={() => {
+            onTagged={(next) => {
+              onView(next)
               setLocalNote('Tag accepted.')
               setToast('Tag accepted.')
               setPanel('map')
@@ -1047,34 +1085,44 @@ export function LiveMap({
             </button>
           </header>
           <ul>
-            {ranked.map((player) => (
-              <li key={player.player_id}>
-                <div>
-                  <strong>{player.display_name}</strong>
-                  <span>
-                    {player.role} · {player.points_earned ?? player.points ?? 0} pts
-                  </span>
-                </div>
-                {player.player_id !== view.you.player_id ? (
-                  <div className="chip-row">
-                    <button
-                      type="button"
-                      className="chip"
-                      onClick={() => onBlock(player.player_id, player.display_name)}
-                    >
-                      Block
-                    </button>
-                    <button
-                      type="button"
-                      className="chip"
-                      onClick={() => onReport(player.player_id, player.display_name)}
-                    >
-                      Report
-                    </button>
+            {ranked.map((player) => {
+              const shownName = displayNameFor(player.player_id, player.display_name)
+              const statusBit =
+                player.status === 'eliminated'
+                  ? ' · out'
+                  : player.status === 'signal_lost'
+                    ? ' · dark'
+                    : ''
+              return (
+                <li key={player.player_id}>
+                  <div>
+                    <strong>{shownName}</strong>
+                    <span>
+                      {player.role}
+                      {statusBit} · {player.points_earned ?? player.points ?? 0} pts
+                    </span>
                   </div>
-                ) : null}
-              </li>
-            ))}
+                  {player.player_id !== view.you.player_id ? (
+                    <div className="chip-row">
+                      <button
+                        type="button"
+                        className="chip"
+                        onClick={() => onBlock(player.player_id, player.display_name)}
+                      >
+                        Block
+                      </button>
+                      <button
+                        type="button"
+                        className="chip"
+                        onClick={() => onReport(player.player_id, player.display_name)}
+                      >
+                        Report
+                      </button>
+                    </div>
+                  ) : null}
+                </li>
+              )
+            })}
           </ul>
         </div>
       ) : null}

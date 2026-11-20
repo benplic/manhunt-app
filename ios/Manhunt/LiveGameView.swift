@@ -90,6 +90,15 @@ struct LiveGameView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .allowsHitTesting(false)
                 }
+                if store.match?.snapshot.you.status == .eliminated {
+                    banner(
+                        title: "You're out",
+                        detail: "A seeker tagged you. Stay safe and wait for the hunt to end.",
+                        tint: HuntColor.danger
+                    )
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .allowsHitTesting(false)
+                }
                 if store.decoyPicking {
                     // Hide the dock while picking so HuntMap's Drop point stays tappable.
                     HStack(spacing: 10) {
@@ -318,55 +327,59 @@ struct LiveGameView: View {
                 }
                 Spacer()
             }
-            switch DockChrome.state(
-                phase: store.match?.snapshot.phase ?? .active,
-                role: store.viewingRole,
-                remainingS: store.match?.snapshot.phaseRemainingS,
-                spawnHolding: store.match?.snapshot.spawnLock?.holding == true,
-                seekerOutsideSpawn: store.match?.snapshot.spawnLock?.outside == true
-            ) {
-            case let .headStartWaiting(title, subtitle):
-                waitingCard(title: title, subtitle: subtitle)
-            case .activeTagging:
-                scanTagButton
-                if let tagMessage = store.tagMessage {
-                    Text(tagMessage)
-                        .font(.caption)
-                        .foregroundStyle(HuntColor.warning)
-                }
-            case .activeHider:
-                if store.match?.snapshot.phase == .active,
-                   store.match?.snapshot.you.tauntEnabled != false
-                {
-                    let wait = store.match?.snapshot.you.tauntCooldownS ?? 0
-                    Button(action: store.taunt) {
-                        Label {
-                            Text(wait > 0 ? "Taunt · \(wait)s" : "Taunt")
-                                .contentTransition(.numericText(countsDown: true))
-                        } icon: {
-                            Image(systemName: "megaphone.fill")
+            if store.match?.snapshot.you.status == .eliminated {
+                waitingCard(title: "You're out", subtitle: "Wait for the hunt to end")
+            } else {
+                switch DockChrome.state(
+                    phase: store.match?.snapshot.phase ?? .active,
+                    role: store.viewingRole,
+                    remainingS: store.match?.snapshot.phaseRemainingS,
+                    spawnHolding: store.match?.snapshot.spawnLock?.holding == true,
+                    seekerOutsideSpawn: store.match?.snapshot.spawnLock?.outside == true
+                ) {
+                case let .headStartWaiting(title, subtitle):
+                    waitingCard(title: title, subtitle: subtitle)
+                case .activeTagging:
+                    scanTagButton
+                    if let tagMessage = store.tagMessage {
+                        Text(tagMessage)
+                            .font(.caption)
+                            .foregroundStyle(HuntColor.warning)
+                    }
+                case .activeHider:
+                    if store.match?.snapshot.phase == .active,
+                       store.match?.snapshot.you.tauntEnabled != false
+                    {
+                        let wait = store.match?.snapshot.you.tauntCooldownS ?? 0
+                        Button(action: store.taunt) {
+                            Label {
+                                Text(wait > 0 ? "Taunt · \(wait)s" : "Taunt")
+                                    .contentTransition(.numericText(countsDown: true))
+                            } icon: {
+                                Image(systemName: "megaphone.fill")
+                            }
+                                .font(.body.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                                .frame(minHeight: 48)
+                                .background(HuntColor.warning, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .foregroundStyle(HuntColor.ink)
                         }
+                        .buttonStyle(.huntPress(.medium))
+                        .disabled(wait > 0)
+                        .accessibilityIdentifier("taunt")
+                    }
+                    Button {
+                        showCode = true
+                    } label: {
+                        Label("Show tag code", systemImage: "qrcode")
                             .font(.body.weight(.semibold))
                             .frame(maxWidth: .infinity)
                             .frame(minHeight: 48)
-                            .background(HuntColor.warning, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .background(HuntColor.paper, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                             .foregroundStyle(HuntColor.ink)
                     }
-                    .buttonStyle(.huntPress(.medium))
-                    .disabled(wait > 0)
-                    .accessibilityIdentifier("taunt")
+                    .buttonStyle(.huntPress(.light))
                 }
-                Button {
-                    showCode = true
-                } label: {
-                    Label("Show tag code", systemImage: "qrcode")
-                        .font(.body.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: 48)
-                        .background(HuntColor.paper, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .foregroundStyle(HuntColor.ink)
-                }
-                .buttonStyle(.huntPress(.light))
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -515,13 +528,23 @@ private struct LeaderboardSheet: View {
                             .frame(width: 24, alignment: .leading)
                             .foregroundStyle(HuntColor.signal)
                         PlayerAvatar(name: player.name, playerID: player.id, size: 24)
-                        HStack(spacing: 4) {
-                            Text(player.isYou ? "\(player.name) (you)" : player.name)
-                            if player.isHost {
-                                Image(systemName: "crown.fill")
-                                    .font(.caption2.weight(.bold))
-                                    .foregroundStyle(HuntColor.signal)
-                                    .accessibilityLabel("Host")
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 4) {
+                                Text(player.isYou ? "\(player.name) (you)" : player.name)
+                                if player.isHost {
+                                    Image(systemName: "crown.fill")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(HuntColor.signal)
+                                        .accessibilityLabel("Host")
+                                }
+                            }
+                            if let status = store.match?.snapshot.players
+                                .first(where: { $0.playerId.uuidString == player.id })?.status,
+                               status == .eliminated || status == .signalLost
+                            {
+                                Text(status == .eliminated ? "Out" : "Dark")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(HuntColor.muted)
                             }
                         }
                         Spacer()

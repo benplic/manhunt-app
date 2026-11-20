@@ -657,6 +657,8 @@ class GameService:
             raise _http_for_rule(exc) from exc
         await self.persist_inputs(session, game)
         await session.commit()
+        # Shield / lockdown timers must show on every phone while the effect is live.
+        await self.manager.broadcast(game_id)
         return game
 
     async def taunt(self, session: AsyncSession, user: User, game_id: UUID) -> GameSession:
@@ -681,7 +683,10 @@ class GameService:
         await session.commit()
         return game
 
-    async def qr_tag(self, session: AsyncSession, user: User, game_id: UUID, token: str) -> None:
+    async def qr_tag(
+        self, session: AsyncSession, user: User, game_id: UUID, token: str
+    ) -> GameSession:
+        """Apply a QR tag, persist, and push views so the tagged phone drops immediately."""
         row, _ = await self.require_member(session, game_id, user)
         game = self._live(row)
         try:
@@ -696,6 +701,9 @@ class GameService:
             row.status = game.state.phase
             await session.commit()
             self.finalize_persist(game)
+        # Do not wait for the 1s tick — tagged web/iOS clients must see eliminated now.
+        await self.manager.broadcast(game_id)
+        return game
 
     def _trail_material(self) -> tuple[bytes | None, str]:
         from app.config import get_settings

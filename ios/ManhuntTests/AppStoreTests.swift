@@ -968,7 +968,7 @@ private final class CapturingLiveGameService: GameService {
     func ackSafety(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
     func taunt(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
     func view(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
-    func claimQR(gameID: UUID, token: String) async throws { throw stub }
+    func claimQR(gameID: UUID, token: String) async throws -> PlayerViewDTO { throw stub }
     func purchase(
         gameID: UUID,
         powerID: String,

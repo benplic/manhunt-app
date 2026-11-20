@@ -125,6 +125,22 @@ struct TimersDTO: Codable, Equatable {
     }
 }
 
+struct ActiveEffectDTO: Codable, Equatable, Identifiable {
+    var type: String
+    var ownerId: UUID
+    var displayName: String
+    var remainingS: Int
+
+    var id: String { "\(type)-\(ownerId.uuidString)" }
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case ownerId = "owner_id"
+        case displayName = "display_name"
+        case remainingS = "remaining_s"
+    }
+}
+
 struct PlayerViewDTO: Codable {
     var gameId: UUID
     var joinCode: String
@@ -149,6 +165,8 @@ struct PlayerViewDTO: Codable {
     var demo: DemoDTO? = nil
     /// Dock chips for the viewer. Nil on older servers (use SamplePark fallback).
     var powerUps: [PowerUpDTO]? = nil
+    /// Public timed effects (shield, lockdown, …) with remaining seconds.
+    var activeEffects: [ActiveEffectDTO]? = nil
 
     enum CodingKeys: String, CodingKey {
         case gameId = "game_id"
@@ -166,6 +184,7 @@ struct PlayerViewDTO: Codable {
         case arena
         case demo
         case powerUps = "power_ups"
+        case activeEffects = "active_effects"
     }
 }
 
@@ -220,6 +239,8 @@ struct YouDTO: Codable {
     var pointsEarned: Int? = nil
     var hint: HintDTO? = nil
     var effects: [String]? = nil
+    /// Seconds left per effect type on you. Nil on older servers.
+    var effectRemaining: [String: Int]? = nil
     var cooldowns: [String: Int]? = nil
     /// Seconds until this hider may taunt again. Nil on older servers.
     var tauntCooldownS: Int? = nil
@@ -235,6 +256,7 @@ struct YouDTO: Codable {
         case points
         case pointsEarned = "points_earned"
         case hint, effects, cooldowns
+        case effectRemaining = "effect_remaining"
         case tauntCooldownS = "taunt_cooldown_s"
         case tauntEnabled = "taunt_enabled"
     }

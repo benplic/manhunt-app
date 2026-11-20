@@ -1721,7 +1721,8 @@ final class AppStore {
         guard let id = match?.snapshot.gameId else { return }
         Task {
             do {
-                try await service.claimQR(gameID: id, token: token)
+                let view = try await service.claimQR(gameID: id, token: token)
+                apply(view)
                 tagMessage = "Tag accepted."
             } catch let error as ServiceError {
                 // Prefer server copy so web GPS "fuzzy" vs "too far" stays honest on iOS.

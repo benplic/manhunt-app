@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PlayerView } from '../api/types'
+import { blockPlayer } from '../social/blockList'
 import { Result } from './Result'
 
 const rematchGame = vi.fn()
@@ -20,11 +21,38 @@ const endedView: PlayerView = {
   join_code: 'ABCDEF',
   phase: 'ended',
   you: { player_id: 'u1', role: 'seeker', status: 'active', is_host: true },
-  players: [],
+  players: [
+    {
+      player_id: 'u2',
+      display_name: 'Riley',
+      role: 'hider',
+      status: 'eliminated',
+      is_host: false,
+      points: 20,
+    },
+  ],
   result: { winner: 'seekers', reason: 'All hiders were tagged.', ended_at: null },
 }
 
 describe('Result screen', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  it('masks blocked players on the score list', () => {
+    blockPlayer('u2', 'Riley')
+    render(
+      <Result
+        view={endedView}
+        onDone={() => undefined}
+        onRematch={() => undefined}
+        onSignedOut={() => undefined}
+      />,
+    )
+    expect(screen.getByText(/blocked player #1/i)).toBeInTheDocument()
+    expect(screen.queryByText('Riley')).not.toBeInTheDocument()
+  })
+
   it('shows winner and reason from view.result', () => {
     render(
       <Result

@@ -567,6 +567,56 @@ final class LiveHudAndPresetsTests: XCTestCase {
         XCTAssertEqual(store.liveReveals.first?.radiusMeters, 30)
     }
 
+    func testEffectLinesShowShieldRemainingForSelfAndOthers() throws {
+        let youId = UUID()
+        let otherId = UUID()
+        let json = """
+        {
+          "game_id": "00000000-0000-0000-0000-000000000010",
+          "join_code": "TACO42",
+          "phase": "active",
+          "phase_remaining_s": null,
+          "game_elapsed_s": 40,
+          "time_limit_remaining_s": 1760,
+          "you": {
+            "player_id": "\(youId.uuidString)",
+            "role": "seeker",
+            "status": "active",
+            "is_host": true,
+            "bounds": {"phase": "inside", "remaining_s": null},
+            "safe_zone": null,
+            "points": 100,
+            "effects": [],
+            "effect_remaining": {}
+          },
+          "players": [],
+          "reveals": [],
+          "banners": [],
+          "result": null,
+          "active_effects": [
+            {
+              "type": "shield",
+              "owner_id": "\(otherId.uuidString)",
+              "display_name": "Riley",
+              "remaining_s": 18
+            },
+            {
+              "type": "shield",
+              "owner_id": "\(youId.uuidString)",
+              "display_name": "Casey",
+              "remaining_s": 12
+            }
+          ]
+        }
+        """
+        let view = try JSONDecoder().decode(PlayerViewDTO.self, from: Data(json.utf8))
+        XCTAssertEqual(view.activeEffects?.count, 2)
+        let lines = LiveHUD.effectLines(snapshot: view, leadS: 0)
+        XCTAssertEqual(lines.map(\.text), ["Shield · Riley · 0:18", "Shield 0:12"])
+        let later = LiveHUD.effectLines(snapshot: view, leadS: 5)
+        XCTAssertEqual(later.map(\.text), ["Shield · Riley · 0:13", "Shield 0:07"])
+    }
+
     @MainActor
     func testPauseIsOnlyTheClockLabel() {
         XCTAssertEqual(LiveHUDLayout.clockPointSize, 20)

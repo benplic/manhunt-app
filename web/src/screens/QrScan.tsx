@@ -4,6 +4,7 @@ import { Html5Qrcode } from 'html5-qrcode'
 import { ApiError } from '../api/client'
 import { claimQrTag } from '../api/games'
 import { SessionExpiredError, withAuthRetry } from '../api/session'
+import type { PlayerView } from '../api/types'
 import { isAccuracyTooFuzzy, localAccuracyBlockMessage } from '../api/tagErrors'
 import { releaseScanner } from './scannerRelease'
 import './QrScan.css'
@@ -11,7 +12,8 @@ import './QrScan.css'
 type Props = {
   gameId: string
   onClose: () => void
-  onTagged: () => void
+  /** Seeker view after a successful tag so LiveMap can drop the tagged player. */
+  onTagged: (view: PlayerView) => void
   onSignedOut: () => void
   /** Latest GPS accuracy from this phone. Null until the first fix. */
   accuracyM?: number | null
@@ -111,10 +113,10 @@ export function QrScan({
     await releaseScanner(startPromiseRef.current, () => stopScanner())
     setPaused(true)
     try {
-      await withAuthRetry((access) =>
+      const view = await withAuthRetry((access) =>
         claimQrTag({ token: access, gameId, qrToken: token }),
       )
-      onTagged()
+      onTagged(view)
     } catch (err) {
       if (err instanceof SessionExpiredError) {
         onSignedOut()
