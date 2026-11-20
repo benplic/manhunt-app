@@ -1,0 +1,28 @@
+{
+  "audited": {
+    "server/app/engine/modules/reveal_fuzzy.py": {
+      "status": "kept",
+      "lines_before": 139,
+      "lines_after": 135,
+      "summary": "Extracted _republish_timed_hints and merged identical precise/zero-fuzz pin branches."
+    },
+    "server/app/engine/arena.py": {
+      "status": "kept",
+      "lines_before": 319,
+      "lines_after": 322,
+      "summary": "Deduped shape/circle dict round-trips via private helpers."
+    },
+    "server/app/demo/controls.py": {
+      "status": "kept",
+      "lines_before": 421,
+      "lines_after": 420,
+      "summary": "Extracted _optional_uuid and _prefer_bot for repeated UUID/bot selection."
+    },
+    "web/src/geo/presence.ts": {
+      "status": "kept",
+      "lines_before": 191,
+      "lines_after": 191,
+      "summary": "Extracted duplicated desk-GPS hold message strings into constants."
+    }
+  }
+}
