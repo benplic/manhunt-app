@@ -201,6 +201,14 @@ Horizon, in this order. Closed until Scott opens one. On 2026-11-23 he said not 
 
 Product facts Scott states in chat that are not already in the repo. Testing and programming lessons do not go here.
 
+### 2026-11-23 — Tag announcements
+
+Scott asked for every live player on web and iOS to see a short full-screen
+announcement naming a player when they are tagged. Seeker tags and
+out-of-bounds auto-tags both announce. Structured WebSocket event fields drive
+the overlay; clients do not infer tags from status changes or parse names from
+event prose.
+
 ### 2026-11-23 — Next work is hold
 
 Scott's answer, America/New_York, about 7:34 AM: leave features alone. The next agent takes only bugs or tasks he names. The human gates (park playtest, cellular tunnel, Azure, Apple team, APNs on a phone, App Insights in the portal, TestFlight) stay his. Do not open capture the flag, another horizon mode, or an iOS/web parity project to fill the gap.
