@@ -48,6 +48,7 @@ import {
   visibleZones,
   zoneStyle,
 } from '../map/zones'
+import { ConfirmDialog } from '../game/ConfirmDialog'
 import { blockPlayer, displayNameFor, reportMailto } from '../social/blockList'
 import type { ActiveEffect, ArenaZone, PlayerView } from '../api/types'
 import { EventLog } from './EventLog'
@@ -213,6 +214,9 @@ export function LiveMap({
   const [busyDock, setBusyDock] = useState(false)
   const [powerPick, setPowerPick] = useState<PowerPick>(null)
   const [pingFlash, setPingFlash] = useState<string | null>(null)
+  const pingTimerRef = useRef<number | null>(null)
+  const [pendingLeave, setPendingLeave] = useState(false)
+  const [pendingBlock, setPendingBlock] = useState<{ id: string; name: string } | null>(null)
   /** Bumped when the local block list changes so leaderboard names re-mask. */
   const [blockRevision, setBlockRevision] = useState(0)
 
@@ -432,15 +436,31 @@ export function LiveMap({
     const added = newRevealIds(prevRevealsRef.current, view.reveals)
     prevRevealsRef.current = view.reveals
     if (added.length === 0) {
+      // A later view often refreshes expires_in_s on the same reveal. Clearing
+      // the timer here left "PINGED" on screen for the rest of the ping.
       return
     }
     const selfPing = (view.reveals ?? []).some(
       (r) => added.includes(r.reveal_id) && r.player_id === view.you.player_id,
     )
     setPingFlash(selfPing ? 'PING' : 'PINGED')
-    const timer = window.setTimeout(() => setPingFlash(null), 1200)
-    return () => window.clearTimeout(timer)
+    if (pingTimerRef.current != null) {
+      window.clearTimeout(pingTimerRef.current)
+    }
+    pingTimerRef.current = window.setTimeout(() => {
+      pingTimerRef.current = null
+      setPingFlash(null)
+    }, 1200)
   }, [view.reveals, view.you.player_id])
+
+  useEffect(
+    () => () => {
+      if (pingTimerRef.current != null) {
+        window.clearTimeout(pingTimerRef.current)
+      }
+    },
+    [],
+  )
 
   useEffect(() => {
     const map = mapRef.current
@@ -767,11 +787,7 @@ export function LiveMap({
   }
 
   function onBlock(playerId: string, displayName: string) {
-    blockPlayer(playerId, displayName)
-    setBlockRevision((n) => n + 1)
-    const masked = displayNameFor(playerId, displayName)
-    setToast(`${masked} blocked on this device.`)
-    // Stay on the board so the anonymized name is visible immediately.
+    setPendingBlock({ id: playerId, name: displayName })
   }
 
   function onReport(playerId: string, displayName: string) {
@@ -811,7 +827,7 @@ export function LiveMap({
           <button type="button" className="chip" onClick={() => setPanel('log')}>
             Log
           </button>
-          <button type="button" className="chip chip--accent" onClick={onLeave}>
+          <button type="button" className="chip chip--accent" onClick={() => setPendingLeave(true)}>
             Leave
           </button>
         </div>
@@ -1047,6 +1063,33 @@ export function LiveMap({
           ) : null}
           <p className="hint">Keep this tab visible and the screen on. Stay inside the yellow play area.</p>
         </footer>
+      ) : null}
+
+      {pendingLeave ? (
+        <ConfirmDialog
+          title="Leave this hunt?"
+          confirmLabel="Leave"
+          onConfirm={() => {
+            setPendingLeave(false)
+            onLeave()
+          }}
+          onCancel={() => setPendingLeave(false)}
+        />
+      ) : null}
+      {pendingBlock ? (
+        <ConfirmDialog
+          title="Block this player?"
+          message="Their pin stays on the map as “Blocked Player #…”. You can unblock them in Account."
+          confirmLabel="Block"
+          onConfirm={() => {
+            const pending = pendingBlock
+            setPendingBlock(null)
+            blockPlayer(pending.id, pending.name)
+            setBlockRevision((n) => n + 1)
+            setToast(`${displayNameFor(pending.id, pending.name)} blocked on this device.`)
+          }}
+          onCancel={() => setPendingBlock(null)}
+        />
       ) : null}
 
       {panel === 'show' && qrToken ? (

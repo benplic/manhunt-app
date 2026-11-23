@@ -112,7 +112,7 @@
   margin-left: 0.5rem;
   font-weight: 700;
   color: #6ea8fe;
-  animation: ping-flash 1.2s ease-out;
+  animation: ping-flash 1.2s ease-out forwards;
 }
 
 @keyframes ping-flash {
@@ -165,6 +165,23 @@
   grid-auto-columns: 1fr;
   gap: 0.4rem;
   align-items: stretch;
+}
+
+/* Seekers get five power chips. The single-row grid above plus nowrap
+   min-width paints those labels on top of each other. Wrap them instead. */
+.live-map .chip-row.power-dock {
+  display: flex;
+  flex-wrap: wrap;
+  grid-auto-flow: unset;
+  grid-auto-columns: unset;
+}
+
+.live-map .power-dock .chip {
+  flex: 1 1 8.5rem;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  text-align: center;
 }
 
 .live-map .chip,

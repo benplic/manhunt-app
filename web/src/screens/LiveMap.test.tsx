@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import L from 'leaflet'
@@ -537,8 +537,66 @@ describe('LiveMap', () => {
     expect(screen.getByText('Riley')).toBeInTheDocument()
     const blockButtons = screen.getAllByRole('button', { name: /^block$/i })
     await user.click(blockButtons[0])
+    expect(screen.getByText('Riley')).toBeInTheDocument()
+    const dialog = screen.getByRole('dialog', { name: /block this player/i })
+    await user.click(within(dialog).getByRole('button', { name: /^block$/i }))
     expect(screen.getByText(/blocked player #1/i)).toBeInTheDocument()
     expect(screen.queryByText('Riley')).not.toBeInTheDocument()
+  })
+
+  it('asks before leaving the hunt', async () => {
+    const user = userEvent.setup()
+    const onLeave = vi.fn()
+    render(
+      <LiveMap
+        view={view}
+        socket={{ sendLocation: vi.fn() } as never}
+        qrToken={null}
+        note={null}
+        onView={() => undefined}
+        onLeave={onLeave}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    await user.click(screen.getByRole('button', { name: /^leave$/i }))
+    expect(onLeave).not.toHaveBeenCalled()
+    const dialog = screen.getByRole('dialog', { name: /leave this hunt/i })
+    await user.click(within(dialog).getByRole('button', { name: /^leave$/i }))
+    expect(onLeave).toHaveBeenCalledOnce()
+  })
+
+  it('clears PINGED after 1.2s even when the same reveal keeps updating', () => {
+    vi.useFakeTimers()
+    const reveal = {
+      reveal_id: 'r1',
+      player_id: 'h1',
+      lat: 40.11,
+      lon: -73.11,
+      radius_m: 30,
+      expires_in_s: 10,
+      display_name: 'Riley',
+    }
+    const props = {
+      socket: { sendLocation: vi.fn() } as never,
+      qrToken: null,
+      note: null,
+      onView: () => undefined,
+      onLeave: () => undefined,
+      onSignedOut: () => undefined,
+      watchLocation: () => () => undefined,
+    }
+    const { rerender } = render(<LiveMap view={{ ...view, reveals: [] }} {...props} />)
+    rerender(<LiveMap view={{ ...view, reveals: [reveal] }} {...props} />)
+    expect(screen.getByText('PINGED')).toBeInTheDocument()
+    rerender(
+      <LiveMap view={{ ...view, reveals: [{ ...reveal, expires_in_s: 9 }] }} {...props} />,
+    )
+    act(() => {
+      vi.advanceTimersByTime(1200)
+    })
+    expect(screen.queryByText('PINGED')).not.toBeInTheDocument()
+    vi.useRealTimers()
   })
 
   it('shows you are out and hides Show tag when eliminated', () => {
