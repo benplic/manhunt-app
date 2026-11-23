@@ -11,7 +11,13 @@ final class AppStoreTests: XCTestCase {
         XCTAssertNil(store.session)
         store.signInPreview()
         XCTAssertEqual(store.screen, .home)
-        XCTAssertEqual(store.session?.displayName, "Casey Lee")
+        XCTAssertEqual(store.session?.displayName, AppStore.previewDisplayName)
+    }
+
+    @MainActor
+    func testPreviewStoreStartsWithEmptyDisplayName() {
+        let store = AppStore.makePreview()
+        XCTAssertEqual(store.displayName, "")
     }
 
     @MainActor
@@ -620,13 +626,13 @@ final class AppStoreTests: XCTestCase {
         let store = AppStore(service: fake)
         store.signInPreview()
         let before = fake.signInCalls
-        store.displayName = "  Morgan Reed  "
+        store.displayName = "  Riley Chen  "
         store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
         XCTAssertEqual(fake.signInCalls, before + 1)
-        XCTAssertEqual(fake.lastSignInDisplayName, "Morgan Reed")
-        XCTAssertEqual(store.session?.displayName, "Morgan Reed")
-        XCTAssertEqual(store.displayName, "Morgan Reed")
-        XCTAssertEqual(store.players.first(where: \.isYou)?.name, "Morgan Reed")
+        XCTAssertEqual(fake.lastSignInDisplayName, "Riley Chen")
+        XCTAssertEqual(store.session?.displayName, "Riley Chen")
+        XCTAssertEqual(store.displayName, "Riley Chen")
+        XCTAssertEqual(store.players.first(where: \.isYou)?.name, "Riley Chen")
     }
 
     @MainActor
@@ -649,10 +655,10 @@ final class AppStoreTests: XCTestCase {
         let store = AppStore(service: fake)
         store.signInPreview()
         let before = fake.signInCalls
-        store.displayName = "Casey Lee"
+        store.displayName = AppStore.previewDisplayName
         XCTAssertNil(store.join(code: "PARK42"))
         XCTAssertEqual(fake.signInCalls, before)
-        XCTAssertEqual(store.session?.displayName, "Casey Lee")
+        XCTAssertEqual(store.session?.displayName, AppStore.previewDisplayName)
     }
 
     @MainActor
@@ -910,7 +916,7 @@ final class AppStoreTests: XCTestCase {
         store.displayName = "hello retard"
         store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
         XCTAssertEqual(store.note, AppStore.nameBlockedNote)
-        XCTAssertEqual(store.session?.displayName, "Casey Lee")
+        XCTAssertEqual(store.session?.displayName, AppStore.previewDisplayName)
     }
 }
 

@@ -287,7 +287,7 @@ enum SamplePark {
     )
 
     static let players: [VisualPlayer] = [
-        VisualPlayer(id: "casey", name: "Casey Lee", role: .seeker, isYou: true, isHost: true, point: VisualPoint(latitude: 40.66070, longitude: -73.96940), points: 120, earned: 120),
+        VisualPlayer(id: "morgan", name: "Morgan Reed", role: .seeker, isYou: true, isHost: true, point: VisualPoint(latitude: 40.66070, longitude: -73.96940), points: 120, earned: 120),
         VisualPlayer(id: "riley", name: "Riley Chen", role: .hider, isYou: false, isHost: false, point: VisualPoint(latitude: 40.66240, longitude: -73.96840), points: 85, earned: 85),
         VisualPlayer(id: "jordan", name: "Jordan Blake", role: .seeker, isYou: false, isHost: false, point: VisualPoint(latitude: 40.66110, longitude: -73.97010), points: 60, earned: 60),
         VisualPlayer(id: "quinn", name: "Quinn Adler", role: .hider, isYou: false, isHost: false, point: VisualPoint(latitude: 40.66290, longitude: -73.96960), points: 40, earned: 40),
