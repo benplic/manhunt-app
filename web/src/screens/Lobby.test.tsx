@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PlayerView } from '../api/types'
@@ -64,6 +64,42 @@ describe('Lobby screen', () => {
     setManualRoles.mockReset()
     setLobbyCircle.mockReset()
     removeLobbyPlayer.mockReset()
+    window.localStorage.clear()
+  })
+
+  it('asks before leaving', async () => {
+    const user = userEvent.setup()
+    const onLeave = vi.fn()
+    render(
+      <Lobby
+        view={lobbyView()}
+        onView={() => undefined}
+        onLeave={onLeave}
+        onSignedOut={() => undefined}
+      />,
+    )
+    await user.click(screen.getByRole('button', { name: /^leave$/i }))
+    expect(onLeave).not.toHaveBeenCalled()
+    const leaveDialog = screen.getByRole('dialog', { name: /leave this hunt/i })
+    await user.click(within(leaveDialog).getByRole('button', { name: /^leave$/i }))
+    expect(onLeave).toHaveBeenCalledOnce()
+  })
+
+  it('asks before blocking', async () => {
+    const user = userEvent.setup()
+    render(
+      <Lobby
+        view={lobbyView()}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+      />,
+    )
+    await user.click(screen.getByRole('button', { name: /^block$/i }))
+    expect(screen.getByText(/Riley/)).toBeInTheDocument()
+    const blockDialog = screen.getByRole('dialog', { name: /block this player/i })
+    await user.click(within(blockDialog).getByRole('button', { name: /^block$/i }))
+    expect(screen.getByText(/blocked on this device/i)).toBeInTheDocument()
   })
 
   it('shows the join code, join QR, and players', async () => {

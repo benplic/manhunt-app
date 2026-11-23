@@ -14,6 +14,7 @@ import { joinUrlForCode } from '../api/joinCode'
 import { SUPPORT_EMAIL } from '../api/legal'
 import { SessionExpiredError, withAuthRetry } from '../api/session'
 import type { PlayerView } from '../api/types'
+import { ConfirmDialog } from '../game/ConfirmDialog'
 import { blockPlayer, displayNameFor, reportMailto } from '../social/blockList'
 import './Lobby.css'
 
@@ -35,6 +36,8 @@ function rolesReady(view: PlayerView): boolean {
 
 export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props) {
   const [error, setError] = useState<string | null>(null)
+  const [pendingLeave, setPendingLeave] = useState(false)
+  const [pendingBlock, setPendingBlock] = useState<{ id: string; name: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [joinQr, setJoinQr] = useState<string | null>(null)
   const radiusNow = view.arena?.boundary_circle?.radius_m ?? DEFAULT_ARENA_RADIUS_M
@@ -290,10 +293,12 @@ export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props)
                     <button
                       type="button"
                       className="chip"
-                      onClick={() => {
-                        blockPlayer(player.player_id, player.display_name)
-                        setNote('Player blocked on this device.')
-                      }}
+                      onClick={() =>
+                        setPendingBlock({
+                          id: player.player_id,
+                          name: player.display_name,
+                        })
+                      }
                     >
                       Block
                     </button>
@@ -376,9 +381,33 @@ export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props)
         </p>
       ) : null}
 
-      <button type="button" className="linkish" onClick={onLeave}>
+      <button type="button" className="linkish" onClick={() => setPendingLeave(true)}>
         Leave
       </button>
+      {pendingLeave ? (
+        <ConfirmDialog
+          title="Leave this hunt?"
+          confirmLabel="Leave"
+          onConfirm={() => {
+            setPendingLeave(false)
+            onLeave()
+          }}
+          onCancel={() => setPendingLeave(false)}
+        />
+      ) : null}
+      {pendingBlock ? (
+        <ConfirmDialog
+          title="Block this player?"
+          message="Their name is masked on this device. You can unblock them in Account."
+          confirmLabel="Block"
+          onConfirm={() => {
+            blockPlayer(pendingBlock.id, pendingBlock.name)
+            setPendingBlock(null)
+            setNote('Player blocked on this device.')
+          }}
+          onCancel={() => setPendingBlock(null)}
+        />
+      ) : null}
     </main>
   )
 }
