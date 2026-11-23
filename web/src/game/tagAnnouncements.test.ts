@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import type { WsEvent } from '../api/ws'
+import { blockPlayer } from '../social/blockList'
 import {
   initialTagAnnouncementQueue,
   tagAnnouncementFromEvent,
@@ -20,6 +21,10 @@ function event(overrides: Partial<WsEvent> = {}): WsEvent {
 }
 
 describe('tag announcements', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
   it('builds exact normal and out-of-bounds copy from structured fields', () => {
     expect(tagAnnouncementFromEvent(event())?.text).toBe('Riley was tagged!')
     expect(
@@ -53,6 +58,12 @@ describe('tag announcements', () => {
         }),
       ),
     ).toBeNull()
+  })
+
+  it('masks a blocked subject using the structured player id', () => {
+    blockPlayer('hider-1', 'Riley')
+
+    expect(tagAnnouncementFromEvent(event())?.text).toBe('Blocked Player #1 was tagged!')
   })
 
   it('queues back-to-back events FIFO and expires only the current item', () => {

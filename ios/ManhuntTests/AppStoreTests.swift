@@ -469,30 +469,54 @@ final class AppStoreTests: XCTestCase {
     }
 
     @MainActor
-    func testEndMatchClearsTagQueueAndAllowsSequenceOneInTheNextHunt() {
+    func testFinalTagEventBridgesEndedViewAndKeepsItsFullQueueDuration() {
         let store = AppStore.makePreview()
         store.screen = .live
+        let t0 = Date(timeIntervalSince1970: 2_000)
         let first = LiveEventDTO(
             seq: 1, type: "tag", text: "Riley was tagged.", tone: "danger",
-            playerId: nil, announcement: "player_tagged", subjectName: "Riley"
+            playerId: UUID(), announcement: "player_tagged", subjectName: "Riley"
         )
         let second = LiveEventDTO(
             seq: 2, type: "tag", text: "Morgan was tagged.", tone: "danger",
-            playerId: nil, announcement: "player_tagged", subjectName: "Morgan"
+            playerId: UUID(), announcement: "player_tagged", subjectName: "Morgan"
         )
-        store.recordLiveEvent(first)
-        store.recordLiveEvent(second)
+        store.recordLiveEvent(first, now: t0)
+        store.recordLiveEvent(second, now: t0.addingTimeInterval(0.1))
 
-        store.endMatch()
+        store.apply(Fixtures.liveView(phase: .ended))
 
         XCTAssertEqual(store.screen, .results)
-        XCTAssertNil(store.tagAnnouncement)
-        XCTAssertTrue(store.pendingTagAnnouncements.isEmpty)
-
-        store.screen = .live
-        store.recordLiveEvent(first)
         XCTAssertEqual(store.tagAnnouncement?.id, 1)
         XCTAssertEqual(store.tagAnnouncement?.text, "Riley was tagged!")
+        XCTAssertEqual(store.pendingTagAnnouncements.map(\.id), [2])
+
+        store.clearExpiredTagAnnouncement(now: t0.addingTimeInterval(1.99))
+        XCTAssertEqual(store.tagAnnouncement?.id, 1)
+        store.clearExpiredTagAnnouncement(now: t0.addingTimeInterval(2))
+        XCTAssertEqual(store.tagAnnouncement?.id, 2)
+        store.clearExpiredTagAnnouncement(now: t0.addingTimeInterval(4))
+        XCTAssertNil(store.tagAnnouncement)
+    }
+
+    @MainActor
+    func testTagAnnouncementMasksBlockedSubjectByPlayerID() {
+        let suite = "manhunt.tests.blocklist.announcement.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = AppStore(service: FakeGameService(), defaults: defaults)
+        let playerID = UUID()
+        store.blockPlayer(playerID.uuidString, displayName: "Riley")
+        store.screen = .live
+
+        store.recordLiveEvent(
+            LiveEventDTO(
+                seq: 3, type: "tag", text: "untrusted prose", tone: "danger",
+                playerId: playerID, announcement: "player_tagged", subjectName: "Riley"
+            )
+        )
+
+        XCTAssertEqual(store.tagAnnouncement?.text, "Blocked Player #1 was tagged!")
     }
 
     @MainActor

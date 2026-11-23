@@ -25,7 +25,8 @@ tag action succeeded even though the player remains active as a seeker.
 
 ## Presentation
 
-Both clients render an ephemeral, non-blocking overlay above the live game:
+Both clients render an ephemeral, non-blocking overlay at the live/results
+root boundary:
 
 - Normal tag: `Riley was tagged!`
 - Out of bounds: `Riley was tagged out of bounds!`
@@ -56,8 +57,12 @@ announcement. A genuinely missed event replayed after reconnect is shown once.
 - No coordinates or sensitive fields are added to the event.
 - The server remains the source of truth. Clients do not infer tags from status
   changes.
-- Lobby and results screens do not show tag overlays. Events are accepted only
-  while the live game screen is active.
+- Events are accepted only while the live game screen is active. An
+  announcement that started live may remain visible and finish its two-second
+  timer over results, including the final game-ending tag. Lobby never shows
+  an announcement.
+- Clients pass `subject_name` through their device-local block list using the
+  structured `player_id`; they do not parse prose or infer the subject.
 
 ## Tests
 

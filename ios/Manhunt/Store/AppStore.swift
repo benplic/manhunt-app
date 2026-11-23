@@ -596,7 +596,7 @@ final class AppStore {
 
     func recordLiveEvent(_ event: LiveEventDTO, now: Date = Date()) {
         if screen == .live,
-           let announcement = TagAnnouncement(event: event),
+           let announcement = TagAnnouncement(event: event, blockList: blockList),
            seenTagAnnouncementSequences.insert(event.seq).inserted
         {
             enqueueTagAnnouncement(announcement, now: now)
@@ -919,6 +919,7 @@ final class AppStore {
     }
 
     func createMatch(arenaID: UUID, presetID: String) {
+        clearTagAnnouncements()
         lastError = nil
         guard let selected = arenas.first(where: { $0.id == arenaID }) else {
             lastError = .missingArena
@@ -962,6 +963,7 @@ final class AppStore {
 
     @discardableResult
     func join(code: String) -> AppError? {
+        clearTagAnnouncements()
         lastError = nil
         let normalized = JoinCode.normalize(code)
         guard JoinCode.isValid(normalized) else {
@@ -1073,7 +1075,6 @@ final class AppStore {
     static let needBothRolesCopy = "Assign at least one hider and one seeker before starting."
 
     func endMatch() {
-        clearTagAnnouncements()
         if let fake, let id = match?.snapshot.gameId, let view = try? fake.endSync(gameID: id) {
             apply(view)
         } else if let id = match?.snapshot.gameId {
@@ -1847,7 +1848,6 @@ final class AppStore {
             note = nil
             liveUpdate = nil
             liveUpdateExpiryTask?.cancel()
-            clearTagAnnouncements()
             noteExpiryTask?.cancel()
             screen = .results
             Task { await loadTimeline() }

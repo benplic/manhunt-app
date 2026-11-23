@@ -1,4 +1,5 @@
 import type { WsEvent } from '../api/ws'
+import { displayNameFor } from '../social/blockList'
 
 export type TagAnnouncement = {
   seq: number
@@ -24,16 +25,17 @@ export const initialTagAnnouncementQueue: TagAnnouncementQueue = {
 }
 
 export function tagAnnouncementFromEvent(event: WsEvent): TagAnnouncement | null {
-  if (!event.subject_name) {
+  if (!event.player_id || !event.subject_name) {
     return null
   }
+  const name = displayNameFor(event.player_id, event.subject_name)
   if (event.announcement === 'player_tagged') {
-    return { seq: event.seq, text: `${event.subject_name} was tagged!` }
+    return { seq: event.seq, text: `${name} was tagged!` }
   }
   if (event.announcement === 'player_tagged_out_of_bounds') {
     return {
       seq: event.seq,
-      text: `${event.subject_name} was tagged out of bounds!`,
+      text: `${name} was tagged out of bounds!`,
     }
   }
   return null

@@ -322,13 +322,17 @@ describe('App rejoin', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
-  it('clears current and queued announcements when the game ends', async () => {
+  it('shows final tag events over results for their full queued durations', async () => {
+    vi.useFakeTimers()
     localStorage.setItem('manhunt.safetyDisclaimerAcked', '1')
     rememberActiveGame('game-live')
     fetchGameView.mockResolvedValue({ ...liveView, phase: 'active', phase_remaining_s: null })
 
     render(<App />)
-    expect(await screen.findByText(/live · ABCDEF/i)).toBeInTheDocument()
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
     const socket = socketInstances[0]
     act(() => {
       socket.onEvent?.({
@@ -356,8 +360,13 @@ describe('App rejoin', () => {
       socket.onView?.({ ...liveView, phase: 'ended', phase_remaining_s: null })
     })
 
-    expect(screen.queryByText('Riley was tagged!')).not.toBeInTheDocument()
-    expect(screen.queryByText('Morgan was tagged!')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Riley was tagged!')
+    await act(() => vi.advanceTimersByTimeAsync(1_999))
+    expect(screen.getByRole('status')).toHaveTextContent('Riley was tagged!')
+    await act(() => vi.advanceTimersByTimeAsync(1))
+    expect(screen.getByRole('status')).toHaveTextContent('Morgan was tagged!')
+    await act(() => vi.advanceTimersByTimeAsync(2_000))
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('clears current and queued announcements when the player leaves', async () => {

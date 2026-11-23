@@ -5,16 +5,19 @@ struct TagAnnouncement: Equatable, Identifiable {
     var id: Int
     var text: String
 
-    init?(event: LiveEventDTO) {
+    init?(event: LiveEventDTO, blockList: PlayerBlockList) {
         guard let name = event.subjectName?.trimmingCharacters(in: .whitespacesAndNewlines),
               !name.isEmpty
         else { return nil }
+        let shownName = event.playerId.map {
+            blockList.displayName(for: $0.uuidString, fallback: name)
+        } ?? name
 
         switch event.announcement {
         case "player_tagged":
-            text = "\(name) was tagged!"
+            text = "\(shownName) was tagged!"
         case "player_tagged_out_of_bounds":
-            text = "\(name) was tagged out of bounds!"
+            text = "\(shownName) was tagged out of bounds!"
         default:
             return nil
         }
