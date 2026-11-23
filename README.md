@@ -77,6 +77,15 @@ Lobby QR codes open `https://manhunt-app.pages.dev/join/{code}`, the same site a
 
 Cloud/home beta sign-in uses **Play** with display name, age, and the **Home key**: the server’s `MANHUNT_DEV_AUTH_SECRET` from the untracked `.env` on the host (`server/.env.example`). The app stores it in the Keychain so testers are not asked on every launch. Sign in with Apple stays hidden in the repo until the paid Apple team is attached; see the Apple plan below.
 
+After a one-off event, rotate the key on the home Mac so strangers cannot sign in with the old value:
+
+```bash
+scripts/rotate-home-key.sh --print-key          # new key for tomorrow’s crew
+scripts/rotate-home-key.sh --revoke-sessions    # also sign everyone out (truncate refresh + new JWT key)
+```
+
+`--dry-run` prints intent without touching `.env` or Docker. Schedule either script with cron, launchd, or Shortcuts on the machine that runs `scripts/home-server.sh`.
+
 ### Age 13+
 
 Sign-in requires age. The server and client reject ages under 13 (`TOO_YOUNG`). This is required for external beta, not only for App Store age rating.
