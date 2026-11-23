@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import L from 'leaflet'
 import type { PlayerView } from '../api/types'
 import { LiveMap } from './LiveMap'
 
@@ -35,6 +36,7 @@ vi.mock('leaflet', () => {
     setLatLngs: vi.fn().mockReturnThis(),
     setRadius: vi.fn().mockReturnThis(),
     setStyle: vi.fn().mockReturnThis(),
+    bindPopup: vi.fn().mockReturnThis(),
     remove: vi.fn(),
   }
   class FakeCircle {
@@ -42,6 +44,8 @@ vi.mock('leaflet', () => {
     setLatLng = path.setLatLng
     setRadius = path.setRadius
     setStyle = path.setStyle
+    // Shared with every circle so a test can see reveal popup content.
+    bindPopup = path.bindPopup
     remove = path.remove
   }
   class FakePolygon {
@@ -558,4 +562,69 @@ describe('LiveMap', () => {
     expect(screen.queryByRole('button', { name: /show tag/i })).not.toBeInTheDocument()
     expect(screen.queryByText(/waiting for a tag qr/i)).not.toBeInTheDocument()
   })
+
+  it('keeps server display names as text in map popups', () => {
+    // Leaflet writes a string popup with innerHTML. The mock records the
+    // content LiveMap passes so this fails while that content is a string.
+    const pinLayer = L.marker([0, 0]) as unknown as {
+      bindPopup: ReturnType<typeof vi.fn>
+      setPopupContent: ReturnType<typeof vi.fn>
+    }
+    const revealLayer = L.circle([0, 0], { radius: 1 }).addTo({} as never) as unknown as {
+      bindPopup: ReturnType<typeof vi.fn>
+    }
+    pinLayer.bindPopup.mockClear()
+    pinLayer.setPopupContent.mockClear()
+    revealLayer.bindPopup.mockClear()
+
+    const hostile = 'A & B <img src=x onerror=alert(1)>'
+    const marked: PlayerView = {
+      ...view,
+      players: [{ ...view.players[0], display_name: hostile }],
+      reveals: [
+        {
+          reveal_id: 'ping-1',
+          player_id: 'hider-1',
+          lat: 40.11,
+          lon: -73.11,
+          radius_m: 40,
+          expires_in_s: 12,
+          display_name: hostile,
+        },
+      ],
+    }
+    const props = {
+      socket: { sendLocation: vi.fn() } as never,
+      qrToken: null,
+      note: null,
+      onView: () => undefined,
+      onLeave: () => undefined,
+      onSignedOut: () => undefined,
+      watchLocation: () => () => undefined,
+    }
+    const { rerender } = render(<LiveMap view={marked} {...props} />)
+
+    expectPlainText(pinLayer.bindPopup.mock.calls[0]?.[0], `${hostile} (seeker) · you`)
+    expectPlainText(revealLayer.bindPopup.mock.calls[0]?.[0], `${hostile} · ping`)
+
+    const renamed = 'Ada </b><svg onload=alert(1)>'
+    rerender(
+      <LiveMap
+        view={{
+          ...marked,
+          players: [{ ...marked.players[0], display_name: renamed }],
+        }}
+        {...props}
+      />,
+    )
+    expectPlainText(pinLayer.setPopupContent.mock.calls.at(-1)?.[0], `${renamed} (seeker) · you`)
+  })
 })
+
+/** Popup content Leaflet will append, not parse as HTML. */
+function expectPlainText(content: unknown, label: string) {
+  expect(content).toBeInstanceOf(HTMLElement)
+  const node = content as HTMLElement
+  expect(node.textContent).toBe(label)
+  expect(node.childElementCount).toBe(0)
+}

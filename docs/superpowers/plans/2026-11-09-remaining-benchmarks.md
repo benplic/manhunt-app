@@ -28,10 +28,6 @@ Each item is open until the acceptance line is true. Human items stay open until
 
 - **5.6 TestFlight (human).** `.github/workflows/testflight.yml` archives with manual signing and uploads with `xcrun altool` when the `prod` environment has `BUILD_CERTIFICATE_BASE64`, `BUILD_PROVISION_PROFILE_BASE64`, `P12_PASSWORD`, `APP_STORE_CONNECT_API_KEY_ID`, `APP_STORE_CONNECT_ISSUER_ID`, and `APP_STORE_CONNECT_API_KEY`. Acceptance: a human with the signing credentials runs that workflow and the build appears in TestFlight. Stays open until that person does it. Before archive: set Release `MANHUNT_API_BASE_URL` to the live cloud origin, publish [docs/legal/privacy.md](../../legal/privacy.md) to the HTTPS URL in `ManhuntPrivacyPolicyURL`, and replace support-email placeholders (README **External beta (Release)**).
 
-### Demo
-
-- **Demo lobby: bots and controls.** Design: [2026-11-12-demo-lobby-design.md](../specs/2026-11-12-demo-lobby-design.md). Acceptance: `PARK42` uses a circle sample arena with `zone_shrink`, safe/no-go/spawn zones, five moving server bots (where seeker bots chase and tag active hiders via `claim_tag`), server-walked `move_me` ignoring phone GPS on the WebSocket, host-only `POST /v1/games/{id}/demo` gated off in `azure`/`prod`, and iOS `DemoPanelView` + `LobbyView` demo card verified by server `pytest` and iOS `DemoControlsTests`. Status: server code and tests (`pytest -q`: 114 passed, `ruff check .` clean) and iOS client + `DemoControlsTests` are committed on `cursor/demo-lobby-bots-controls-49cc`; stays open until `xcodebuild test` runs (`No space left on device` prevented building on this host).
-
 ## How to close an item
 
 1. Read the roadmap bullet and the acceptance line above.
@@ -42,6 +38,10 @@ Each item is open until the acceptance line is true. Human items stay open until
 6. Do not mark a parent phase done while any of its items are still open.
 
 ## Closed
+
+### 2026-11-20
+
+- **Demo lobby: bots and controls.** Feature commits include `8157c61` (BotDriver), `74104ee` (demo controls + view gate), `4f1be0e` (iOS `DemoPanelView` / Lobby demo card + `DemoControlsTests`). Design: [2026-11-12-demo-lobby-design.md](../specs/2026-11-12-demo-lobby-design.md). Acceptance: `PARK42` uses a circle sample arena with `zone_shrink`, safe/no-go/spawn zones, five moving server bots (where seeker bots chase and tag active hiders via `claim_tag`), server-walked `move_me` ignoring phone GPS on the WebSocket, host-only `POST /v1/games/{id}/demo` gated off in `azure`/`prod`, and iOS `DemoPanelView` + `LobbyView` demo card verified by server `pytest` and iOS `DemoControlsTests`. Verified on `main` at `dabb78b`: server `pytest -q` (189 passed), `ruff check .` clean; `xcodebuild test` `ManhuntTests/DemoControlsTests` (3 passed) on iPhone 16 Pro / iOS 18.4. Tests: `test_demo_view_and_all_host_actions`, `test_bot_seeker_chases_and_tags_hider_even_with_human_seeker`, `test_ws_ignores_human_location_in_demo_game`, `testPlayerViewDecodesDemoPayloadAndOmitsForNormalGame`, `testFakeGameServiceDemoActionsUpdateState`, `testAppStoreDemoPickingMutualExclusionAndFixSuppression`.
 
 ### 2026-11-18
 
