@@ -59,6 +59,7 @@ def test_modules_schema_lists_classic_ids(client: TestClient) -> None:
         "shrink_to",
         "min_radius_m",
     }
+    assert body["modules"]["roles"]["fields"]["seeker_count"]["max"] == 30
     duration = body["modules"]["head_start"]["fields"]["duration"]
     assert duration["min"] == 15
     assert duration["max"] == 600

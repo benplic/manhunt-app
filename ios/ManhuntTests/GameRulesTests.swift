@@ -908,7 +908,7 @@ final class GameRulesTests: XCTestCase {
           }},
           "roles":{"version":1,"fields":{
             "mode":{"type":"enum","values":["random","manual"],"default":"random"},
-            "seeker_count":{"type":"int","min":1,"max":20,"default":1}
+            "seeker_count":{"type":"int","min":1,"max":30,"default":1}
           }}
         }}
         """

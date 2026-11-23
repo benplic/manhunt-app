@@ -122,7 +122,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "field_order": ["mode", "seeker_count"],
         "fields": {
             "mode": _enum("Assignment", ["random", "manual"], "random", ["Random", "Manual"]),
-            "seeker_count": _int("Seekers", 1, 20, 1),
+            "seeker_count": _int("Seekers", 1, 30, 1),
         },
     },
     "head_start": {

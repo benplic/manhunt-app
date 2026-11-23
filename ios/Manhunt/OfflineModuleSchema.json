@@ -26,7 +26,7 @@
           "type": "int",
           "title": "Seekers",
           "min": 1,
-          "max": 20,
+          "max": 30,
           "step": 1,
           "default": 1,
           "suffix": ""

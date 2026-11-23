@@ -44,6 +44,7 @@ from app.engine.views import build_view
 from app.errors import ApiError, ErrorCode, GameRuleError
 from app.games.join_code import SAMPLE_CODE, generate, is_valid, normalize
 from app.games.join_limit import JoinRateLimiter
+from app.limits import MAX_GAME_PLAYERS
 from app.presets.classic import CLASSIC_ID, classic_preset
 from app.realtime.manager import SessionManager, envelope
 
@@ -249,7 +250,7 @@ class GameService:
                 .select_from(GamePlayerRow)
                 .where(GamePlayerRow.game_id == row.id)
             )
-            if (count or 0) >= 20:
+            if (count or 0) >= MAX_GAME_PLAYERS:
                 raise ApiError(ErrorCode.GAME_FULL, "This lobby is full.", status_code=409)
             game = self._live(row)
             self._reject_duplicate_display_name(game, user)
@@ -575,7 +576,7 @@ class GameService:
             .select_from(GamePlayerRow)
             .where(GamePlayerRow.game_id == rematch_id)
         )
-        if (count or 0) >= 20:
+        if (count or 0) >= MAX_GAME_PLAYERS:
             raise ApiError(ErrorCode.GAME_FULL, "This lobby is full.", status_code=409)
         self._reject_duplicate_display_name(game, user)
         member = await session.get(GamePlayerRow, (rematch_id, user.id))

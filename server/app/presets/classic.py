@@ -103,7 +103,7 @@ CLASSIC_MODULES: dict[str, dict[str, Any]] = {
 }
 
 RANGES: dict[tuple[str, str], tuple[float, float]] = {
-    ("roles", "seeker_count"): (1, 20),
+    ("roles", "seeker_count"): (1, 30),
     ("head_start", "duration"): (15, 600),
     ("reveal_fuzzy", "interval"): (20, 600),
     ("reveal_fuzzy", "display"): (5, 60),
