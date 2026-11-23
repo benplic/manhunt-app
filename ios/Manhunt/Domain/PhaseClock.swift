@@ -6,6 +6,8 @@ struct PhaseClock: Equatable {
     var primaryClock: String
     var primaryProgress: Double
     var pingClock: String?
+    /// Hider-only countdown for the next seeker pulse. Nil for seekers and when Seeker reveal is Off.
+    var seekerPingClock: String?
     var pingProgress: Double
     var zoneLine: String?
     var zoneImminent: Bool
@@ -16,6 +18,7 @@ struct PhaseClock: Equatable {
             primaryClock = "30:00"
             primaryProgress = 0
             pingClock = "1:00"
+            seekerPingClock = nil
             pingProgress = 0
             zoneLine = nil
             zoneImminent = false
@@ -68,6 +71,17 @@ struct PhaseClock: Equatable {
         } else {
             pingClock = nil
             pingProgress = 0
+        }
+
+        // Seekers keep the hider-exposure Ping line only. This countdown is the reverse pulse.
+        if snapshot.you.role == .hider,
+           let nextSeeker = timers?.nextSeekerRevealInS,
+           let seekerInterval = timers?.seekerRevealIntervalS,
+           seekerInterval > 0 {
+            let left = Self.left(nextSeeker, leadS)
+            seekerPingClock = Self.clock(Int(left.rounded(.up)))
+        } else {
+            seekerPingClock = nil
         }
 
         if let zone = timers?.zone {

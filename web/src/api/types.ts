@@ -113,6 +113,9 @@ export type ViewTimers = {
   time_limit_s?: number
   reveal_interval_s?: number | null
   next_reveal_in_s?: number | null
+  /** Nil when Seeker reveal is Off. Countdown until hiders get the next seeker pulse. */
+  seeker_reveal_interval_s?: number | null
+  next_seeker_reveal_in_s?: number | null
   zone?: {
     radius_m: number
     next_radius_m: number

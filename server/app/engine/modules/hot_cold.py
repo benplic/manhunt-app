@@ -1,4 +1,4 @@
-"""Distance band and bearing toward hiders. Jammer mutes it."""
+"""Distance band and bearing toward the other role. Jammer mutes it."""
 
 from __future__ import annotations
 
@@ -30,6 +30,8 @@ def _reveal_settings(s: GameSession) -> dict:
 
 def _hints_active(settings: dict) -> bool:
     mode = str(settings.get("location_mode", "fuzzy"))
+    if mode == "off":
+        return False
     if mode == "hot_cold":
         return True
     if mode == "precise":
@@ -39,17 +41,37 @@ def _hints_active(settings: dict) -> bool:
     return bool(settings.get("enabled", True))
 
 
+def _audience_settings(s: GameSession, audience: str) -> dict:
+    """Seeker hints read Reveal. Hider hints read Seeker reveal, and missing means Off."""
+    if audience == "seeker":
+        return _reveal_settings(s)
+    settings = s.module_settings("reveal_seekers")
+    if "location_mode" not in settings:
+        return {"location_mode": "off"}
+    return settings
+
+
 def _clear_hint(player: PlayerState) -> None:
     player.hint = None
     player.hint_at_s = None
     player.hint_until_s = None
 
 
-def refresh_hints(s: GameSession, *, after_pulse: bool = False) -> None:
-    settings = _reveal_settings(s)
+def refresh_hints(
+    s: GameSession, *, after_pulse: bool = False, audience: str | None = None
+) -> None:
+    """Refresh one role, or both. Each role keeps its own settings and hint window."""
+    roles = ("seeker", "hider") if audience is None else (audience,)
+    for role in roles:
+        _refresh_audience(s, role, after_pulse=after_pulse)
+
+
+def _refresh_audience(s: GameSession, audience: str, *, after_pulse: bool) -> None:
+    settings = _audience_settings(s, audience)
     if not _hints_active(settings):
         for player in s.state.players.values():
-            _clear_hint(player)
+            if player.role == audience:
+                _clear_hint(player)
         return
 
     hints_persistence = str(settings.get("hints_persistence", "persistent"))
@@ -61,9 +83,12 @@ def refresh_hints(s: GameSession, *, after_pulse: bool = False) -> None:
     )
     jammed = s.state.jammer_until_s is not None
     now = s.state.game_elapsed_s
+    opponent = "seeker" if audience == "hider" else "hider"
 
     for player in s.state.players.values():
-        if jammed or s.state.phase != "active" or player.role != "seeker":
+        if player.role != audience:
+            continue
+        if jammed or s.state.phase != "active":
             _clear_hint(player)
             continue
 
@@ -74,7 +99,7 @@ def refresh_hints(s: GameSession, *, after_pulse: bool = False) -> None:
                 player.hint_at_s = None
                 continue
             if player.hint is None and after_pulse:
-                player.hint = _hint_for(s, player)
+                player.hint = _hint_for(s, player, opponent_role=opponent)
                 player.hint_at_s = now
             continue
 
@@ -84,7 +109,7 @@ def refresh_hints(s: GameSession, *, after_pulse: bool = False) -> None:
             and now - player.hint_at_s < interval
         ):
             continue
-        player.hint = _hint_for(s, player)
+        player.hint = _hint_for(s, player, opponent_role=opponent)
         player.hint_at_s = now
 
 
@@ -95,21 +120,21 @@ class HotColdModule(BaseModule):
         refresh_hints(s)
 
 
-def _hint_for(s: GameSession, seeker: PlayerState) -> dict | None:
-    if seeker.location is None or seeker.location.accuracy_m > ACCURACY_CUTOFF_M:
+def _hint_for(s: GameSession, viewer: PlayerState, *, opponent_role: str) -> dict | None:
+    if viewer.location is None or viewer.location.accuracy_m > ACCURACY_CUTOFF_M:
         return None
     best = None
     target_name = None
     target_point = None
     for other in s.state.players.values():
-        if other.player_id == seeker.player_id:
+        if other.player_id == viewer.player_id:
             continue
-        if other.role != "hider" or other.status != "active":
+        if other.role != opponent_role or other.status != "active":
             continue
         loc = other.last_precise or other.location
         if loc is None or loc.accuracy_m > ACCURACY_CUTOFF_M:
             continue
-        dist = distance_m(seeker.location.point, loc.point)
+        dist = distance_m(viewer.location.point, loc.point)
         if best is None or dist < best:
             best = dist
             target_name = other.display_name
@@ -125,5 +150,5 @@ def _hint_for(s: GameSession, seeker: PlayerState) -> dict | None:
         "band": band,
         "meters": int(best),
         "name": target_name,
-        "bearing_deg": bearing_deg(seeker.location.point, target_point),
+        "bearing_deg": bearing_deg(viewer.location.point, target_point),
     }

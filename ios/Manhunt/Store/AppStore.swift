@@ -421,7 +421,7 @@ final class AppStore {
                 if let displayName = pin.displayName, !displayName.isEmpty {
                     return displayName
                 }
-                return "Hider"
+                return "Player"
             }()
             return MapReveal(
                 id: pin.revealId.uuidString,

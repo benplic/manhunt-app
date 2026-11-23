@@ -22,6 +22,16 @@ CLASSIC_MODULES: dict[str, dict[str, Any]] = {
         "hints_persistence": "persistent",
         "hints_interval": 5,
     },
+    "reveal_seekers": {
+        "location_mode": "off",
+        "persistence": "timed",
+        "interval": 60,
+        "display": 10,
+        "fuzz": 30,
+        "hints_enabled": True,
+        "hints_persistence": "persistent",
+        "hints_interval": 5,
+    },
     "tag_policy": {
         "method": "qr",
         "radius_m": 2,
@@ -117,6 +127,10 @@ RANGES: dict[tuple[str, str], tuple[float, float]] = {
     ("win", "time_limit"): (5, 180),
     ("hot_cold", "interval"): (2, 30),
     ("reveal_fuzzy", "hints_interval"): (2, 30),
+    ("reveal_seekers", "interval"): (20, 600),
+    ("reveal_seekers", "display"): (5, 60),
+    ("reveal_seekers", "fuzz"): (0, 100),
+    ("reveal_seekers", "hints_interval"): (2, 30),
     ("points", "taunt_cooldown"): (10, 180),
 }
 

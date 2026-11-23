@@ -114,13 +114,36 @@ struct TimersDTO: Codable, Equatable {
     var timeLimitS: Int
     var revealIntervalS: Int?
     var nextRevealInS: Int?
+    /// Nil when Seeker reveal is Off or the server is older than that module.
+    var seekerRevealIntervalS: Int?
+    var nextSeekerRevealInS: Int?
     var zone: ZoneTimerDTO?
+
+    init(
+        headStartS: Int,
+        timeLimitS: Int,
+        revealIntervalS: Int?,
+        nextRevealInS: Int?,
+        zone: ZoneTimerDTO?,
+        seekerRevealIntervalS: Int? = nil,
+        nextSeekerRevealInS: Int? = nil
+    ) {
+        self.headStartS = headStartS
+        self.timeLimitS = timeLimitS
+        self.revealIntervalS = revealIntervalS
+        self.nextRevealInS = nextRevealInS
+        self.zone = zone
+        self.seekerRevealIntervalS = seekerRevealIntervalS
+        self.nextSeekerRevealInS = nextSeekerRevealInS
+    }
 
     enum CodingKeys: String, CodingKey {
         case headStartS = "head_start_s"
         case timeLimitS = "time_limit_s"
         case revealIntervalS = "reveal_interval_s"
         case nextRevealInS = "next_reveal_in_s"
+        case seekerRevealIntervalS = "seeker_reveal_interval_s"
+        case nextSeekerRevealInS = "next_seeker_reveal_in_s"
         case zone
     }
 }

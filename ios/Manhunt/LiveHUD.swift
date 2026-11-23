@@ -49,6 +49,16 @@ struct LiveHUD: View {
                         .contentTransition(.numericText(countsDown: true))
                         .animation(.snappy(duration: 0.2), value: pingClock)
                 }
+                if let seekerPing = clock.seekerPingClock {
+                    Text("Seekers \(seekerPing)")
+                        .font(.caption2)
+                        .monospacedDigit()
+                        .foregroundStyle(HuntColor.paper)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                        .contentTransition(.numericText(countsDown: true))
+                        .animation(.snappy(duration: 0.2), value: seekerPing)
+                }
                 if let zoneLine = clock.zoneLine {
                     Text(zoneLine)
                         .font(.caption2)

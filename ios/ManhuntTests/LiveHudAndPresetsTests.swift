@@ -226,6 +226,83 @@ final class LiveHudAndPresetsTests: XCTestCase {
         XCTAssertNotNil(offline.first { $0.id == "power_ups" }?.rows.first { $0.id == "tracker_enabled" }?.help)
     }
 
+    func testSeekerRevealOffHidesRowsAndFuzzyShowsFuzz() {
+        let modules = ModuleForm.offlineModules()
+        let card = modules.first { $0.id == "reveal_seekers" }
+        XCTAssertEqual(card?.locked, true)
+        XCTAssertEqual(card?.title, "Seeker reveal")
+        XCTAssertTrue(
+            RevealFormVisibility.shows(rowID: "location_mode", moduleID: "reveal_seekers", modules: modules)
+        )
+        XCTAssertFalse(RevealFormVisibility.shows(rowID: "fuzz", moduleID: "reveal_seekers", modules: modules))
+        XCTAssertFalse(RevealFormVisibility.shows(rowID: "interval", moduleID: "reveal_seekers", modules: modules))
+        XCTAssertFalse(
+            RevealFormVisibility.shows(rowID: "hints_enabled", moduleID: "reveal_seekers", modules: modules)
+        )
+        var edited = modules
+        if let mIdx = edited.firstIndex(where: { $0.id == "reveal_seekers" }),
+           let rIdx = edited[mIdx].rows.firstIndex(where: { $0.id == "location_mode" }),
+           case let .options(_, values) = edited[mIdx].rows[rIdx].control,
+           let fuzzy = values.firstIndex(of: "fuzzy") {
+            edited[mIdx].rows[rIdx].choice = fuzzy
+        }
+        XCTAssertTrue(RevealFormVisibility.shows(rowID: "fuzz", moduleID: "reveal_seekers", modules: edited))
+        XCTAssertTrue(RevealFormVisibility.shows(rowID: "interval", moduleID: "reveal_seekers", modules: edited))
+    }
+
+    func testSeekerPingClockIsHiderOnly() {
+        let timers = TimersDTO(
+            headStartS: 60,
+            timeLimitS: 1800,
+            revealIntervalS: 60,
+            nextRevealInS: 40,
+            zone: nil,
+            seekerRevealIntervalS: 120,
+            nextSeekerRevealInS: 90
+        )
+        let hider = PlayerViewDTO(
+            gameId: UUID(),
+            joinCode: "TACO42",
+            phase: .active,
+            phaseRemainingS: nil,
+            gameElapsedS: 30,
+            timeLimitRemainingS: 900,
+            timers: timers,
+            you: YouDTO(
+                playerId: UUID(),
+                role: .hider,
+                status: .active,
+                isHost: false,
+                bounds: BoundsDTO(phase: "inside", remainingS: nil),
+                safeZone: nil,
+                points: 0
+            ),
+            players: [],
+            reveals: [],
+            banners: [],
+            result: nil
+        )
+        let hiderClock = PhaseClock(snapshot: hider, paused: false)
+        XCTAssertEqual(hiderClock.pingClock, "0:40")
+        XCTAssertEqual(hiderClock.seekerPingClock, "1:30")
+
+        var seeker = hider
+        seeker.you.role = .seeker
+        let seekerClock = PhaseClock(snapshot: seeker, paused: false)
+        XCTAssertEqual(seekerClock.pingClock, "0:40")
+        XCTAssertNil(seekerClock.seekerPingClock)
+
+        var off = hider
+        off.timers = TimersDTO(
+            headStartS: 60,
+            timeLimitS: 1800,
+            revealIntervalS: 60,
+            nextRevealInS: 40,
+            zone: nil
+        )
+        XCTAssertNil(PhaseClock(snapshot: off, paused: false).seekerPingClock)
+    }
+
     func testPresetOverridesGatesZoneShrinkToCircleArenas() {
         var modules = ModuleForm.offlineModules()
         if let idx = modules.firstIndex(where: { $0.id == "zone_shrink" }) {

@@ -136,6 +136,8 @@ def test_view_timers_match_phase_reveal_and_pause_for_both_roles() -> None:
         "time_limit_s": 1200,
         "reveal_interval_s": 30,
         "next_reveal_in_s": 30,
+        "seeker_reveal_interval_s": None,
+        "next_seeker_reveal_in_s": None,
         "zone": None,
     }
 
