@@ -46,7 +46,7 @@ Ask Scott only what those sources do not answer. One question, not a list of que
 - If you did not run the test, say so. Do not report a pass you did not see.
 - Do not rebuild Phase 0 or the Phase 1 engine.
 - Do not edit the Cursor plan file under the agent store. Update the copies in `docs/superpowers/plans/`.
-- Do not start a horizon mode unless Scott opens that goal.
+- Do not start a feature, a horizon mode, or an iOS/web parity project unless Scott names that task. On 2026-11-23 he said to leave features alone. Human gates stay his.
 
 ### Code
 
@@ -123,3 +123,7 @@ Rejected alternatives: pasting the whole architecture into `AGENTS.md` (that fil
 ### 2026-11-23 — Do not re-interview the repo
 
 Scott asked for a brainstorm and also said not to ask questions the repo already answers. The design spec, roadmap, remaining-benchmarks file, and `docs/agent/project-context.md` already settle the game, the clients, the visibility rules, and the open human gates. Ask only a gap those sources leave open. One question.
+
+### 2026-11-23 — Next product goal is hold
+
+He answered the one open product question: leave features alone, take only bugs or tasks he names, and leave the human gates to him. The decision is in `docs/agent/project-context.md` under Heard in conversation. Do not ask it again.

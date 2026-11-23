@@ -178,7 +178,7 @@ Human gates, still open until a person does them:
 - 2.9 App Insights resource visible in the portal after a human deploy.
 - 5.6 TestFlight upload by a human with the signing credentials.
 
-Horizon, in this order, and not started until Scott opens one:
+Horizon, in this order. Closed until Scott opens one. On 2026-11-23 he said not to open one to fill the gap:
 
 1. Capture the flag
 2. Senior assassin
@@ -201,8 +201,12 @@ Horizon, in this order, and not started until Scott opens one:
 
 Product facts Scott states in chat that are not already in the repo. Testing and programming lessons do not go here.
 
-None yet. The 2026-11-23 request that created this file set the agent process, which is recorded in `docs/agent/agent-learnings.md`. It did not add a product requirement.
+### 2026-11-23 — Next work is hold
+
+Scott's answer, America/New_York, about 7:34 AM: leave features alone. The next agent takes only bugs or tasks he names. The human gates (park playtest, cellular tunnel, Azure, Apple team, APNs on a phone, App Insights in the portal, TestFlight) stay his. Do not open capture the flag, another horizon mode, or an iOS/web parity project to fill the gap.
+
+The same morning he asked for these two agent files. That process is in `docs/agent/agent-learnings.md`. It is not a product requirement.
 
 ## Not settled
 
-The repo does not say what to build next. Human gates above are waiting on a person. Horizon modes stay closed until Scott opens one. Do not pick a horizon mode, a new rule, or a public-launch feature to fill the gap.
+Nothing from that question remains open. Ask again only when he states a new goal.
