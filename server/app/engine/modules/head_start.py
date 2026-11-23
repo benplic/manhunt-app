@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar
 from uuid import uuid4
 
-from app.engine.arena import ZoneKind
+from app.engine.arena import Arena, ZoneKind
 from app.engine.geo import ACCURACY_CUTOFF_M
 from app.engine.modules.base import BaseModule
 from app.engine.modules.zone_policy import _covered_by_out_zone, _in_zone
@@ -13,6 +13,10 @@ if TYPE_CHECKING:
     from app.engine.session import GameSession
 
 _SPAWN_STREAK_REQUIRED = 2
+
+
+def _spawn_zones(arena: Arena) -> list:
+    return [z for z in arena.zones if z.kind == ZoneKind.SEEKER_SPAWN]
 
 
 class HeadStartModule(BaseModule):
@@ -42,7 +46,7 @@ class HeadStartModule(BaseModule):
             return
         if p.role != "seeker" or p.status != "active":
             return
-        spawns = [z for z in s.state.arena.zones if z.kind == ZoneKind.SEEKER_SPAWN]
+        spawns = _spawn_zones(s.state.arena)
         if not spawns:
             return
         if _raw_seeker_in_spawn(p, spawns, s.state.arena.zones):
@@ -62,7 +66,7 @@ class HeadStartModule(BaseModule):
             return
         if self.settings.get("seeker_lock") != "spawn_zone":
             return
-        spawns = [z for z in s.state.arena.zones if z.kind == ZoneKind.SEEKER_SPAWN]
+        spawns = _spawn_zones(s.state.arena)
         if not spawns:
             return
         for player in s.state.players.values():
@@ -104,7 +108,7 @@ def spawn_clock_held(s: GameSession) -> bool:
         return False
     if s.module_settings("head_start").get("seeker_lock") != "spawn_zone":
         return False
-    spawns = [z for z in s.state.arena.zones if z.kind == ZoneKind.SEEKER_SPAWN]
+    spawns = _spawn_zones(s.state.arena)
     if not spawns:
         return False
     seekers = [

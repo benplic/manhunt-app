@@ -146,13 +146,19 @@ class GameSession:
         self.emit("ended", {"text": reason, "winner": winner})
         self._note_input("end", {"reason": reason, "winner": winner})
 
-    def record_location(self, player_id: UUID, reading: LocationReading) -> None:
-        player = self.state.players[player_id]
+    def _apply_location(self, player: PlayerState, reading: LocationReading) -> None:
+        """Copy reading onto the player and notify modules."""
         player.location = reading
         player.last_location_at = reading.recorded_at
         player.battery = reading.battery
         if reading.accuracy_m <= 30:
             player.last_precise = reading
+        for module in self.modules:
+            module.on_location(self, player, reading)
+
+    def record_location(self, player_id: UUID, reading: LocationReading) -> None:
+        player = self.state.players[player_id]
+        self._apply_location(player, reading)
         self.emit(
             "location",
             {
@@ -190,19 +196,10 @@ class GameSession:
                 player_id=player_id,
                 tone="safety",
             )
-        for module in self.modules:
-            module.on_location(self, player, reading)
 
     def set_synthetic_location(self, player_id: UUID, reading: LocationReading) -> None:
         """Update a demo bot or virtual player location without event/input log bloat."""
-        player = self.state.players[player_id]
-        player.location = reading
-        player.last_location_at = reading.recorded_at
-        player.battery = reading.battery
-        if reading.accuracy_m <= 30:
-            player.last_precise = reading
-        for module in self.modules:
-            module.on_location(self, player, reading)
+        self._apply_location(self.state.players[player_id], reading)
 
     def claim_tag(self, claim: TagClaim) -> None:
         require_tag_ok(self, claim)
@@ -394,6 +391,20 @@ class GameSession:
                 self.state.phase = "ended"
                 self.emit("ended", {"text": result.reason, "winner": result.winner})
                 return
+
+
+# One reposition after a synthetic desk pin. Further resets inside this window
+# go through the speed check so the flag is not a teleport button.
+LOCATION_RESET_COOLDOWN_S = 60.0
+
+
+def consume_location_reset(player: PlayerState, at: datetime) -> bool:
+    """True when this reading may replace the pin despite the speed check."""
+    previous = player.last_location_reset_at
+    if previous is not None and (at - previous).total_seconds() < LOCATION_RESET_COOLDOWN_S:
+        return False
+    player.last_location_reset_at = at
+    return True
 
 
 def movement_too_fast(player: PlayerState, reading: LocationReading) -> bool:

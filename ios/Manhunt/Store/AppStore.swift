@@ -1721,10 +1721,11 @@ final class AppStore {
 
     func submitQR(_ token: String) {
         tagMessage = nil
-        guard let id = match?.snapshot.gameId else { return }
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let id = match?.snapshot.gameId else { return }
         Task {
             do {
-                let view = try await service.claimQR(gameID: id, token: token)
+                let view = try await service.claimQR(gameID: id, token: trimmed)
                 apply(view)
                 tagMessage = "Tag accepted."
             } catch let error as ServiceError {

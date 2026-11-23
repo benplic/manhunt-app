@@ -97,7 +97,14 @@ describe('QrScan', () => {
     expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument()
   })
 
-  it('holds a scan when GPS is fuzzy instead of posting', async () => {
+  it('posts a trimmed scan when GPS is coarse', async () => {
+    claimQrTag.mockResolvedValue({
+      game_id: 'game-1',
+      join_code: 'ABCDEF',
+      phase: 'active',
+      you: { player_id: 'u1', role: 'seeker', status: 'active', is_host: true },
+      players: [],
+    })
     render(
       <QrScan
         gameId="game-1"
@@ -105,11 +112,43 @@ describe('QrScan', () => {
         onTagged={() => undefined}
         onSignedOut={() => undefined}
         accuracyM={45}
-        injectScan="scanned-token"
+        injectScan="  scanned-token  "
       />,
     )
-    expect(await screen.findByText(/too fuzzy/i)).toBeInTheDocument()
-    expect(claimQrTag).not.toHaveBeenCalled()
+    await waitFor(() => {
+      expect(claimQrTag).toHaveBeenCalledWith({
+        token: 'tok',
+        gameId: 'game-1',
+        qrToken: 'scanned-token',
+      })
+    })
+  })
+
+  it('posts a scan when GPS has not arrived', async () => {
+    claimQrTag.mockResolvedValue({
+      game_id: 'game-1',
+      join_code: 'ABCDEF',
+      phase: 'active',
+      you: { player_id: 'u1', role: 'seeker', status: 'active', is_host: true },
+      players: [],
+    })
+    render(
+      <QrScan
+        gameId="game-1"
+        onClose={() => undefined}
+        onTagged={() => undefined}
+        onSignedOut={() => undefined}
+        accuracyM={null}
+        injectScan="other-token"
+      />,
+    )
+    await waitFor(() => {
+      expect(claimQrTag).toHaveBeenCalledWith({
+        token: 'tok',
+        gameId: 'game-1',
+        qrToken: 'other-token',
+      })
+    })
   })
 
   it('expands manual entry when the camera is blocked', async () => {

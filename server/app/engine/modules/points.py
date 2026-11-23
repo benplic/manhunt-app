@@ -21,6 +21,10 @@ def grant_points(player, amount: int) -> None:
     player.points_earned += gained
 
 
+def _active_role(s: GameSession, role: str):
+    return [p for p in s.state.players.values() if p.role == role and p.status == "active"]
+
+
 class PointsModule(BaseModule):
     module_id: ClassVar[str] = "points"
 
@@ -31,10 +35,8 @@ class PointsModule(BaseModule):
         close_m = float(self.settings.get("close_m", 15))
         escape_m = float(self.settings.get("escape_m", 30))
         close_hold_s = int(self.settings.get("close_hold_s", 5))
-        hiders = [p for p in s.state.players.values() if p.role == "hider" and p.status == "active"]
-        seekers = [
-            p for p in s.state.players.values() if p.role == "seeker" and p.status == "active"
-        ]
+        hiders = _active_role(s, "hider")
+        seekers = _active_role(s, "seeker")
         for hider in hiders:
             if s.state.game_elapsed_s - hider.last_survival_award_s >= survival_every:
                 grant_points(hider, int(self.settings.get("survival_points", 10)))
@@ -64,15 +66,13 @@ class PointsModule(BaseModule):
         if e.type != "tag":
             return
         bonus = int(self.settings.get("others_tagged_points", 15))
-        remaining = [
-            p for p in s.state.players.values() if p.role == "hider" and p.status == "active"
-        ]
-        for hider in remaining:
+        for hider in _active_role(s, "hider"):
             grant_points(hider, bonus)
 
 
 def apply_taunt(s: GameSession, player_id) -> None:
-    if not bool(s.module_settings("points").get("taunt_enabled", True)):
+    settings = s.module_settings("points")
+    if not bool(settings.get("taunt_enabled", True)):
         raise GameRuleError(ErrorCode.WRONG_PHASE, "Taunts are off.")
     player = s.state.players[player_id]
     if player.role != "hider" or player.status != "active":
@@ -88,8 +88,8 @@ def apply_taunt(s: GameSession, player_id) -> None:
     # Closer taunts score more. A distant ping is cheap bragging.
     points = max(5, int(40 - dist / 10))
     grant_points(player, points)
-    duration = int(s.module_settings("points").get("taunt_s", 8))
-    cooldown = int(s.module_settings("points").get("taunt_cooldown", 45))
+    duration = int(settings.get("taunt_s", 8))
+    cooldown = int(settings.get("taunt_cooldown", 45))
     player.taunt_until_s = now + duration
     player.taunt_cooldown_until_s = now + max(0, cooldown)
     add_effect(s, owner_id=player_id, type="taunt", duration_s=duration)

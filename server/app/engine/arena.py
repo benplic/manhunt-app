@@ -77,33 +77,51 @@ def point_from_dict(data: dict[str, Any]) -> GeoPoint:
     return GeoPoint(lat=float(data["lat"]), lon=float(data["lon"]))
 
 
+def _point_to_dict(point: GeoPoint) -> dict[str, float]:
+    return {"lat": point.lat, "lon": point.lon}
+
+
+def _circle_from_dict(data: dict[str, Any]) -> CircleShape:
+    return CircleShape(
+        center=point_from_dict(data["center"]),
+        radius_m=float(data["radius_m"]),
+    )
+
+
+def _shape_from_dict(shape_raw: dict[str, Any]) -> CircleShape | PolygonShape:
+    if shape_raw["type"] == "circle":
+        return _circle_from_dict(shape_raw)
+    return PolygonShape(vertices=[point_from_dict(v) for v in shape_raw["vertices"]])
+
+
+def _shape_to_dict(shape: CircleShape | PolygonShape) -> dict[str, Any]:
+    if isinstance(shape, CircleShape):
+        return {
+            "type": "circle",
+            "center": _point_to_dict(shape.center),
+            "radius_m": shape.radius_m,
+        }
+    return {
+        "type": "polygon",
+        "vertices": [_point_to_dict(v) for v in shape.vertices],
+    }
+
+
 def arena_from_dict(data: dict[str, Any]) -> Arena:
-    zones: list[ArenaZone] = []
-    for raw in data.get("zones", []):
-        shape_raw = raw["shape"]
-        if shape_raw["type"] == "circle":
-            shape: CircleShape | PolygonShape = CircleShape(
-                center=point_from_dict(shape_raw["center"]),
-                radius_m=float(shape_raw["radius_m"]),
-            )
-        else:
-            shape = PolygonShape(vertices=[point_from_dict(v) for v in shape_raw["vertices"]])
-        zones.append(
-            ArenaZone(
-                id=UUID(str(raw["id"])) if raw.get("id") else uuid4(),
-                name=str(raw["name"]),
-                kind=ZoneKind(raw["kind"]),
-                shape=shape,
-            )
+    zones = [
+        ArenaZone(
+            id=UUID(str(raw["id"])) if raw.get("id") else uuid4(),
+            name=str(raw["name"]),
+            kind=ZoneKind(raw["kind"]),
+            shape=_shape_from_dict(raw["shape"]),
         )
+        for raw in data.get("zones", [])
+    ]
     arena_id = data.get("id")
     raw_circle = data.get("boundary_circle")
     boundary_circle: CircleShape | None = None
     if isinstance(raw_circle, dict) and "center" in raw_circle and "radius_m" in raw_circle:
-        boundary_circle = CircleShape(
-            center=point_from_dict(raw_circle["center"]),
-            radius_m=float(raw_circle["radius_m"]),
-        )
+        boundary_circle = _circle_from_dict(raw_circle)
     if boundary_circle is not None:
         if math.isfinite(boundary_circle.radius_m) and boundary_circle.radius_m > 0:
             boundary = circle_sample_ring(
@@ -125,38 +143,23 @@ def arena_from_dict(data: dict[str, Any]) -> Arena:
 
 
 def arena_to_dict(arena: Arena) -> dict[str, Any]:
-    zones = []
-    for zone in arena.zones:
-        if isinstance(zone.shape, CircleShape):
-            shape = {
-                "type": "circle",
-                "center": {"lat": zone.shape.center.lat, "lon": zone.shape.center.lon},
-                "radius_m": zone.shape.radius_m,
-            }
-        else:
-            shape = {
-                "type": "polygon",
-                "vertices": [{"lat": v.lat, "lon": v.lon} for v in zone.shape.vertices],
-            }
-        zones.append(
-            {
-                "id": str(zone.id),
-                "name": zone.name,
-                "kind": zone.kind.value,
-                "shape": shape,
-            }
-        )
+    zones = [
+        {
+            "id": str(zone.id),
+            "name": zone.name,
+            "kind": zone.kind.value,
+            "shape": _shape_to_dict(zone.shape),
+        }
+        for zone in arena.zones
+    ]
     payload: dict[str, Any] = {
         "name": arena.name,
-        "boundary": [{"lat": v.lat, "lon": v.lon} for v in arena.boundary],
+        "boundary": [_point_to_dict(v) for v in arena.boundary],
         "zones": zones,
     }
     if arena.boundary_circle is not None:
         payload["boundary_circle"] = {
-            "center": {
-                "lat": arena.boundary_circle.center.lat,
-                "lon": arena.boundary_circle.center.lon,
-            },
+            "center": _point_to_dict(arena.boundary_circle.center),
             "radius_m": arena.boundary_circle.radius_m,
         }
     if arena.id:

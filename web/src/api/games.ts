@@ -154,7 +154,7 @@ export async function endGame(input: { token: string; gameId: string }): Promise
   })
 }
 
-/** Seeker claims a hider QR. Distance (30 m) is enforced server-side. Returns the seeker view. */
+/** Seeker claims a hider QR. The token is the tag; distance is not checked. */
 export async function claimQrTag(input: {
   token: string
   gameId: string

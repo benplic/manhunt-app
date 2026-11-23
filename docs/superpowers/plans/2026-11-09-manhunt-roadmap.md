@@ -17,7 +17,7 @@
 3. **No PostGIS in v1.** Geometry is stored as JSONB (the shape is under Contracts), validated with Shapely and checked in memory. No spatial queries exist yet; add PostGIS when one does.
 4. **Precise location is never persisted in the MVP.** Phase 2 adds field-level AES-GCM encryption (key in Key Vault), the 7-day purge, and access logging. Until then, events flagged sensitive are kept in memory only. This satisfies the field-level PII encryption rule.
 5. **`POST /v1/auth/dev` is the MVP sign-in.** Allowed when `MANHUNT_ENV` is in `{local,test,home}` and `MANHUNT_DEV_AUTH=true`. The server refuses to start if `MANHUNT_DEV_AUTH` is true in `{azure,prod}`. Sign in with Apple is Phase 2 (needs the paid Apple Developer Program).
-6. **QR is the MVP tag method; UWB comes in Phase 3.** QR tags also require a GPS pairing check (distance no more than 30 m plus the reported accuracy).
+6. **QR is the MVP tag method; UWB comes in Phase 3.** A valid rotating QR token is the tag. GPS distance and accuracy do not block it. Shield and safe zone still do.
 7. **Out-of-bounds is role-specific.** Hiders: warning → countdown → `auto_tag` (eliminated). Seekers: as soon as they are confidently outside, their **exact location is shown to every player** until they return inside. Seekers are not auto-tagged. The warning/countdown banner still tells them to get back.
 8. **Session tokens are 24-hour JWTs in the MVP.** Rotating refresh tokens come in Phase 2.
 9. **MVP is self-hosted + sideloaded.** Docker Compose on a home machine; iOS apps installed from Xcode onto friends' phones. Azure, TestFlight, APNs, and Sign in with Apple are Phase 2+.

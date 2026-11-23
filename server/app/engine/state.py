@@ -75,6 +75,8 @@ class PlayerState:
     safe_expired: bool = False
     safe_cooldown_until_s: int | None = None
     last_location_at: datetime | None = None
+    # When flag=reset last replaced the pin. A second reset inside 60s is a normal move.
+    last_location_reset_at: datetime | None = None
     ghost_next_reveal: bool = False
     decoy_point: GeoPoint | None = None
     shield_until_s: int | None = None

@@ -134,8 +134,9 @@ def test_overhanging_circle_arena_clips_on_create(client: TestClient) -> None:
     game_id = game.json()["id"]
     invite = client.get(f"/v1/games/{game_id}/invite", headers=headers)
     assert invite.status_code == 200
-    assert invite.json()["join_code"] == game.json()["join_code"]
-    assert invite.json()["url"].endswith(game.json()["join_code"])
+    code = game.json()["join_code"]
+    assert invite.json()["join_code"] == code
+    assert invite.json()["url"] == f"https://manhunt-app.pages.dev/join/{code}"
 
 
 def test_zone_shrink_requires_circle_arena_on_create(client: TestClient) -> None:

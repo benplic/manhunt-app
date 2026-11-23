@@ -71,6 +71,8 @@ Use this for TestFlight and other **Release** builds. Home sideload **Debug** st
 
 Release does not show a Server URL on sign-in. The API origin is compiled in via `MANHUNT_API_BASE_URL` → `ManhuntAPIBaseURL` in `ios/Support/Info.plist` (Release is `https://manhunt.pivotlattice.app`). Testers enter display name, age, and the home key only. Debug keeps `http://localhost:8000` and still shows the Server URL field for local work.
 
+Lobby QR codes open `https://manhunt-app.pages.dev/join/{code}`, the same site as the public web client, which talks to `https://manhunt.pivotlattice.app`. A Debug build pointed at a home tunnel is a different server; that public site will not see the tunnel’s game.
+
 ### Home key (party secret)
 
 Cloud/home beta sign-in uses **Play** with display name, age, and the **Home key**: the server’s `MANHUNT_DEV_AUTH_SECRET` from the untracked `.env` on the host (`server/.env.example`). The app stores it in the Keychain so testers are not asked on every launch. Sign in with Apple stays hidden in the repo until the paid Apple team is attached; see the Apple plan below.

@@ -35,6 +35,15 @@ from app.schemas.routes import router as modules_router
 log = logging.getLogger("manhunt.main")
 
 
+def _error_json(
+    status_code: int, *, code: str, message: str, details: dict
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={"error": {"code": code, "message": message, "details": details}},
+    )
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     settings.validate_startup()
@@ -182,25 +191,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.exception_handler(ApiError)
     async def api_error_handler(_request: Request, exc: ApiError) -> JSONResponse:
-        return JSONResponse(
-            status_code=exc.status_code,
-            content={
-                "error": {
-                    "code": exc.code.value,
-                    "message": exc.message,
-                    "details": exc.details,
-                }
-            },
+        return _error_json(
+            exc.status_code,
+            code=exc.code.value,
+            message=exc.message,
+            details=exc.details,
         )
 
     @app.exception_handler(GameRuleError)
     async def rule_error_handler(_request: Request, exc: GameRuleError) -> JSONResponse:
-        return JSONResponse(
-            status_code=409,
-            content={
-                "error": {"code": exc.code.value, "message": exc.message, "details": {}},
-            },
-        )
+        return _error_json(409, code=exc.code.value, message=exc.message, details={})
 
     @app.get("/.well-known/apple-app-site-association")
     @app.get("/apple-app-site-association")

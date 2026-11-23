@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 from uuid import uuid4
 
 from app.engine.geo import ACCURACY_CUTOFF_M, offset_m
@@ -19,6 +19,31 @@ def publish_hints(s: GameSession) -> None:
     from app.engine.modules.hot_cold import refresh_hints
 
     refresh_hints(s, after_pulse=True)
+
+
+def _republish_timed_hints(
+    s: GameSession,
+    settings: dict[str, Any],
+    hints_persistence: str,
+    now: float,
+    display: int,
+) -> None:
+    """Extend seeker hint windows; clear stale hints and skip republish if any expired."""
+    if not (_hints_active(settings) and hints_persistence == "timed"):
+        return
+    until = now + display
+    republish = True
+    for player in s.state.players.values():
+        if player.role != "seeker":
+            continue
+        prev = player.hint_until_s
+        if prev is not None and now >= prev:
+            player.hint = None
+            player.hint_at_s = None
+            republish = False
+        player.hint_until_s = until
+    if republish:
+        publish_hints(s)
 
 
 class RevealFuzzyModule(BaseModule):
@@ -50,20 +75,7 @@ class RevealFuzzyModule(BaseModule):
 
         if location_mode == "hot_cold":
             s.state.reveals = []
-            if _hints_active(settings) and hints_persistence == "timed":
-                until = now + display
-                republish = True
-                for player in s.state.players.values():
-                    if player.role != "seeker":
-                        continue
-                    prev = player.hint_until_s
-                    if prev is not None and now >= prev:
-                        player.hint = None
-                        player.hint_at_s = None
-                        republish = False
-                    player.hint_until_s = until
-                if republish:
-                    publish_hints(s)
+            _republish_timed_hints(s, settings, hints_persistence, now, display)
             return
 
         expiry = (
@@ -88,10 +100,7 @@ class RevealFuzzyModule(BaseModule):
                     continue
                 origin = reading.point
 
-            if location_mode == "precise":
-                pin = origin
-                radius = 0.0
-            elif fuzz <= 0:
+            if location_mode == "precise" or fuzz <= 0:
                 pin = origin
                 radius = 0.0
             else:
@@ -119,20 +128,7 @@ class RevealFuzzyModule(BaseModule):
             )
             pins_added += 1
 
-        if _hints_active(settings) and hints_persistence == "timed":
-            until = now + display
-            republish = True
-            for player in s.state.players.values():
-                if player.role != "seeker":
-                    continue
-                prev = player.hint_until_s
-                if prev is not None and now >= prev:
-                    player.hint = None
-                    player.hint_at_s = None
-                    republish = False
-                player.hint_until_s = until
-            if republish:
-                publish_hints(s)
+        _republish_timed_hints(s, settings, hints_persistence, now, display)
 
         # No toast when every hider was skipped (ghost, no GPS, eliminated).
         if pins_added > 0:

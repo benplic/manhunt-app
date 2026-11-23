@@ -39,14 +39,7 @@ def bind_arena_routes(get_session, current_user):
         session: AsyncSession = Depends(get_session),
         user=Depends(current_user),
     ) -> dict:
-        data = _clip_payload(
-            {
-                "name": body.name,
-                "boundary": body.boundary,
-                "boundary_circle": body.boundary_circle,
-                "zones": body.zones,
-            }
-        )
+        data = _clip_payload(_body_data(body))
         _validate(data)
         row = ArenaRow(owner_id=user.id, name=body.name, data=data)
         session.add(row)
@@ -71,14 +64,7 @@ def bind_arena_routes(get_session, current_user):
         user=Depends(current_user),
     ) -> dict:
         row = await _owned(session, user.id, arena_id)
-        data = _clip_payload(
-            {
-                "name": body.name,
-                "boundary": body.boundary,
-                "boundary_circle": body.boundary_circle,
-                "zones": body.zones,
-            }
-        )
+        data = _clip_payload(_body_data(body))
         _validate(data)
         row.name = body.name
         row.data = data
@@ -98,6 +84,15 @@ def bind_arena_routes(get_session, current_user):
         return {"ok": True}
 
     return router
+
+
+def _body_data(body: ArenaIn) -> dict:
+    return {
+        "name": body.name,
+        "boundary": body.boundary,
+        "boundary_circle": body.boundary_circle,
+        "zones": body.zones,
+    }
 
 
 def _clip_payload(data: dict) -> dict:

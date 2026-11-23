@@ -169,7 +169,7 @@ struct LiveGameView: View {
         }
         .animation(.snappy, value: store.decoyPicking || store.demoPicking)
         .sheet(isPresented: $showCode) {
-            TagCodeSheet(token: store.match?.qrToken ?? "manhunt-preview")
+            TagCodeSheet(token: store.match?.qrToken)
                 .presentationDetents([.medium])
         }
         .sheet(isPresented: $showScanner) {
@@ -623,18 +623,25 @@ private struct EventLogSheet: View {
 }
 
 private struct TagCodeSheet: View {
-    var token: String
+    var token: String?
 
     var body: some View {
         VStack(spacing: 16) {
             Text("Tag code")
                 .font(HuntFont.title(28))
-            QRCodeView(token: token)
-                .frame(width: 220, height: 220)
-            Text("This code rotates about every 30 seconds. A seeker scans it when Ultra Wideband is not available.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+            if let token {
+                QRCodeView(token: token)
+                    .frame(width: 220, height: 220)
+                Text("This code rotates about every 30 seconds. A seeker on the app or the website can scan it.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            } else {
+                Text("Waiting for a tag code from the server.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
         }
         .padding(24)
     }

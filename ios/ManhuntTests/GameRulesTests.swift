@@ -480,13 +480,20 @@ final class GameRulesTests: XCTestCase {
     func testUniversalLinkAndInviteQRBothJoin() {
         let store = AppStore.makePreview()
         let url = InviteLink.url(joinCode: "park42")
-        XCTAssertEqual(url.absoluteString, "https://app.manhunt.ios/join/PARK42")
+        XCTAssertEqual(url.absoluteString, "https://manhunt-app.pages.dev/join/PARK42")
         XCTAssertNil(store.open(url: url))
         XCTAssertEqual(store.screen, .lobby)
         XCTAssertEqual(store.joinCode, "PARK42")
         store.goHome()
         store.openInvite(url.absoluteString)
         XCTAssertEqual(store.screen, .lobby)
+        XCTAssertEqual(store.joinCode, "PARK42")
+        store.goHome()
+        let webQuery = URL(string: "https://manhunt-app.pages.dev/?join=park42")!
+        XCTAssertNil(store.open(url: webQuery))
+        XCTAssertEqual(store.joinCode, "PARK42")
+        store.goHome()
+        store.openInvite("https://app.manhunt.ios/join/PARK42")
         XCTAssertEqual(store.joinCode, "PARK42")
     }
 

@@ -17,8 +17,17 @@ from app.engine.modules.signal_loss import SignalLossModule
 from app.engine.modules.zone_policy import ZonePolicyModule
 from app.engine.qr import make_qr_token, token_ttl
 from app.engine.session import GameSession
-from app.engine.state import LocationReading
+from app.engine.state import LocationReading, PlayerState
 from app.errors import ErrorCode, GameRuleError
+
+
+def _optional_uuid(raw: Any) -> UUID | None:
+    return UUID(str(raw)) if raw else None
+
+
+def _prefer_bot(players: list[PlayerState], demo: DemoState | None) -> PlayerState:
+    bots = [p for p in players if demo is not None and demo.is_bot(p.player_id)]
+    return bots[0] if bots else players[0]
 
 
 def apply_demo_action(
@@ -36,9 +45,7 @@ def apply_demo_action(
     elif action == "skip":
         _skip(session, int(params.get("seconds", 60)))
     elif action == "force_tag":
-        raw_hid = params.get("hider_id")
-        hider_id = UUID(str(raw_hid)) if raw_hid else None
-        _force_tag(session, actor_id, hider_id)
+        _force_tag(session, actor_id, _optional_uuid(params.get("hider_id")))
     elif action == "switch_team":
         raw_role = params.get("role")
         role = str(raw_role) if raw_role is not None else None
@@ -50,15 +57,11 @@ def apply_demo_action(
     elif action == "add_points":
         _add_points(session, actor_id, int(params.get("amount", 100)))
     elif action == "bot_go_dark":
-        raw_bid = params.get("bot_id")
-        bot_id = UUID(str(raw_bid)) if raw_bid else None
         dark = bool(params.get("dark", True))
-        _bot_go_dark(session, demo, bot_id, dark=dark)
+        _bot_go_dark(session, demo, _optional_uuid(params.get("bot_id")), dark=dark)
     elif action == "bot_oob":
-        raw_bid = params.get("bot_id")
-        bot_id = UUID(str(raw_bid)) if raw_bid else None
         oob = bool(params.get("oob", True))
-        _bot_oob(session, demo, bot_id, oob=oob)
+        _bot_oob(session, demo, _optional_uuid(params.get("bot_id")), oob=oob)
     elif action == "move_me":
         _move_me(session, demo, actor_id, params.get("lat"), params.get("lon"))
     elif action == "lobby_hold":
@@ -128,16 +131,12 @@ def _force_tag(session: GameSession, actor_id: UUID, hider_id: UUID | None) -> N
         ]
         if not candidates:
             raise GameRuleError(ErrorCode.NEED_BOTH_ROLES, "Need at least one seeker to tag.")
-        bot_candidates = [
-            p for p in candidates if demo is not None and demo.is_bot(p.player_id)
-        ]
-        promoted = bot_candidates[0] if bot_candidates else candidates[0]
+        promoted = _prefer_bot(candidates, demo)
         promoted.role = "seeker"
         promoted.status = "active"
         promoted.converted_from_hider = False
         seekers = [promoted]
-    bot_seekers = [s for s in seekers if demo is not None and demo.is_bot(s.player_id)]
-    seeker = bot_seekers[0] if bot_seekers else seekers[0]
+    seeker = _prefer_bot(seekers, demo)
 
     center = _arena_center(session.state.arena)
     hider_pt = target.location.point if target.location is not None else center

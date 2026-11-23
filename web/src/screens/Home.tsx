@@ -59,10 +59,18 @@ export function Home({ onSignedOut, onEnteredGame, bannerNote = null, onClearBan
     const fromUrl = joinFromLocation()
     if (fromUrl) {
       setJoinCode(fromUrl)
-      // Drop the query so a refresh does not re-trigger join UX oddly.
+      // Drop the invite from the address bar so a refresh does not look like a new join.
       const url = new URL(window.location.href)
+      let changed = false
       if (url.searchParams.has('join')) {
         url.searchParams.delete('join')
+        changed = true
+      }
+      if (/^\/join\/[^/]+\/?$/i.test(url.pathname)) {
+        url.pathname = '/'
+        changed = true
+      }
+      if (changed) {
         window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
       }
     }

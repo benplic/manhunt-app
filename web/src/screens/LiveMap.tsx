@@ -652,6 +652,8 @@ export function LiveMap({
           lat: fix.lat,
           lon: fix.lon,
           accuracyM: fix.accuracyM,
+          // One reset replaces a desk seed the server would otherwise pin in place.
+          flag: fix.reset ? 'reset' : 'normal',
         })
       },
       onError: (message) => setLocalNote(message),

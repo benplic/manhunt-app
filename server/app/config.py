@@ -54,8 +54,12 @@ class Settings(BaseSettings):
     manhunt_apns_bundle_id: str = "app.manhunt.ios"
     manhunt_apns_production: bool = False
     manhunt_demo_controls: bool | None = None
+    # Origin printed on invite links. This host serves the browser client.
+    manhunt_web_origin: str = "https://manhunt-app.pages.dev"
     # Comma-separated browser origins for the static web client (Vite + Pages).
-    manhunt_cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    manhunt_cors_origins: str = (
+        "http://localhost:5173,http://127.0.0.1:5173,https://manhunt-app.pages.dev"
+    )
 
     @property
     def demo_controls_enabled(self) -> bool:

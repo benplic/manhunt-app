@@ -120,3 +120,93 @@ def test_location_does_not_push_a_view_until_tick(client: TestClient) -> None:
         # Engine state still recorded.
         session = client.app.state.manager.sessions[UUID(game_id)]
         assert session.state.players[UUID(host["user"]["id"])].location is not None
+
+
+def test_reset_flag_moves_a_pin_the_speed_check_would_reject(client: TestClient) -> None:
+    """A desk seed can be replaced once. A second reset inside 60s cannot teleport."""
+    host = _auth(client, "Casey")
+    arena = client.post(
+        "/v1/arenas",
+        json=arena_to_dict(square()),
+        headers=_hdr(host["access_token"]),
+    )
+    game = client.post(
+        "/v1/games",
+        json={
+            "arena_id": arena.json()["id"],
+            "preset_id": "classic",
+            "overrides": {"head_start": {"enabled": False}},
+        },
+        headers=_hdr(host["access_token"]),
+    )
+    game_id = game.json()["id"]
+    guest = _auth(client, "Riley")
+    client.post(
+        "/v1/games/join",
+        json={"join_code": game.json()["join_code"]},
+        headers=_hdr(guest["access_token"]),
+    )
+    client.post(
+        f"/v1/games/{game_id}/roles",
+        json={
+            "mode": "manual",
+            "assignments": {
+                host["user"]["id"]: "hider",
+                guest["user"]["id"]: "seeker",
+            },
+        },
+        headers=_hdr(host["access_token"]),
+    )
+    started = client.post(f"/v1/games/{game_id}/start", headers=_hdr(host["access_token"]))
+    assert started.status_code == 200, started.text
+    clock = client.app.state.manager.clock
+    player_id = UUID(host["user"]["id"])
+
+    def pin_lat() -> float:
+        session = client.app.state.manager.sessions[UUID(game_id)]
+        loc = session.state.players[player_id].location
+        assert loc is not None
+        return loc.lat
+
+    def send(ws, lat: float, flag: str) -> dict | None:
+        # Pace with the game clock. Pump the portal so the handler finishes;
+        # send_json alone returns before record_location runs.
+        clock.advance(1)
+        ws.send_json(
+            {
+                "type": "location",
+                "data": {"lat": lat, "lon": -75.0, "accuracy_m": 12, "flag": flag},
+            }
+        )
+        try:
+            frame = _next(ws, timeout=0.4)
+        except AssertionError:
+            return None
+        return frame
+
+    with client.websocket_connect(f"/v1/games/{game_id}/ws") as host_ws:
+        host_ws.send_json({"type": "hello", "data": {"token": host["access_token"]}})
+        assert _next(host_ws)["type"] == "welcome"
+        assert _next(host_ws)["type"] == "view"
+        _drain_views(host_ws)
+
+        assert send(host_ws, 40.0, "normal") is None
+        assert pin_lat() == 40.0
+
+        error = send(host_ws, 40.01, "normal")
+        assert error is not None
+        assert error["type"] == "error"
+        assert "too fast" in error["data"]["message"].lower()
+        assert pin_lat() == 40.0
+
+        assert send(host_ws, 40.01, "reset") is None
+        assert pin_lat() == 40.01
+
+        error = send(host_ws, 40.02, "reset")
+        assert error is not None
+        assert error["type"] == "error"
+        assert pin_lat() == 40.01
+
+        clock.advance(60)
+        assert send(host_ws, 40.03, "reset") is None
+        assert pin_lat() == 40.03

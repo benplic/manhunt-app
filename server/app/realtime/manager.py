@@ -153,14 +153,14 @@ class SessionManager:
                 demo_controls_enabled=self.demo_controls_enabled,
             )
             try:
-                await ws.send_json({"type": "view", "data": view})
+                await ws.send_json(envelope("view", view))
                 for event in events:
                     if event.sensitive:
                         continue
                     await ws.send_json(
-                        {
-                            "type": "event",
-                            "data": {
+                        envelope(
+                            "event",
+                            {
                                 "seq": event.seq,
                                 "type": event.type,
                                 "text": event.text,
@@ -168,16 +168,16 @@ class SessionManager:
                                 "at": event.created_at.isoformat() if event.created_at else None,
                                 "player_id": str(event.player_id) if event.player_id else None,
                             },
-                        }
+                        )
                     )
                 qr = session.state.qr_by_hider.get(player_id)
                 player = session.state.players[player_id]
                 if qr and player.role == "hider":
                     await ws.send_json(
-                        {
-                            "type": "qr_token",
-                            "data": {"token": qr[0], "expires_at": qr[1].isoformat()},
-                        }
+                        envelope(
+                            "qr_token",
+                            {"token": qr[0], "expires_at": qr[1].isoformat()},
+                        )
                     )
             except Exception:
                 log.exception("ws_send_failed game_id=%s player_id=%s", game_id, player_id)

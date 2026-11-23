@@ -75,12 +75,13 @@ describe('Lobby screen', () => {
         onSignedOut={() => undefined}
       />,
     )
-    expect(screen.getByText(/ABCDEF/)).toBeInTheDocument()
+    expect(screen.getByText('ABCDEF')).toBeInTheDocument()
     expect(screen.getByText(/Casey/)).toBeInTheDocument()
     expect(screen.getByText(/Riley/)).toBeInTheDocument()
     await waitFor(() => {
       expect(screen.getByAltText(/join qr for abcdef/i)).toBeInTheDocument()
     })
+    expect(screen.getByText(`${window.location.origin}/join/ABCDEF`)).toBeInTheDocument()
   })
 
   it('host Start randomizes when roles are incomplete then starts', async () => {

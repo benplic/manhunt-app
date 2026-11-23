@@ -45,10 +45,7 @@ class ZonePolicyModule(BaseModule):
             point = reading.point
             outside = is_confidently_outside(point, reading.accuracy_m, play, margin)
             if not outside:
-                for zone in s.state.arena.zones:
-                    if zone.kind == ZoneKind.OUT_OF_BOUNDS and _in_zone(point, zone):
-                        outside = True
-                        break
+                outside = _covered_by_out_zone(point, s.state.arena.zones)
             # Head start is for placing and walking in. Warn only — do not
             # auto-tag, or a fuzzy first GPS ends a two-player hunt instantly.
             if s.state.phase == "head_start":

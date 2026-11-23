@@ -20,39 +20,14 @@ def build_view(
 ) -> dict:
     state = session.state
     viewer = state.players[viewer_id]
-    players = []
-    for player in state.players.values():
-        players.append(
-            {
-                "player_id": str(player.player_id),
-                "display_name": player.display_name,
-                # Wired for clients; photo upload is intentionally not shipped yet.
-                "avatar_url": None,
-                "role": player.role,
-                "status": player.status,
-                "is_host": player.is_host,
-                "points": player.points,
-                "points_earned": player.points_earned,
-                # Hiders need this to pick a Rescue target; seekers gain nothing sensitive.
-                "converted_from_hider": bool(player.converted_from_hider),
-                "location": _visible_location(state, viewer, player),
-            }
-        )
-    reveals = []
-    for pin in state.reveals:
-        if viewer.role == "seeker" or pin.player_id == viewer_id:
-            player = state.players.get(pin.player_id)
-            reveals.append(
-                {
-                    "reveal_id": str(pin.reveal_id),
-                    "player_id": str(pin.player_id),
-                    "lat": pin.lat,
-                    "lon": pin.lon,
-                    "radius_m": pin.radius_m,
-                    "expires_in_s": max(0, pin.expires_at_game_s - state.game_elapsed_s),
-                    "display_name": player.display_name if player is not None else "",
-                }
-            )
+    players = [
+        _player_row(state, viewer, player) for player in state.players.values()
+    ]
+    reveals = [
+        _reveal_row(state, pin)
+        for pin in state.reveals
+        if viewer.role == "seeker" or pin.player_id == viewer_id
+    ]
     you_safe = None
     if viewer.safe_zone_id is not None:
         you_safe = {
@@ -125,6 +100,36 @@ def build_view(
         "result": result,
         "power_ups": _power_ups_for(session, viewer),
         "demo": _build_demo(session, viewer, demo_controls_enabled=demo_controls_enabled),
+    }
+
+
+def _player_row(state, viewer: PlayerState, player: PlayerState) -> dict:
+    return {
+        "player_id": str(player.player_id),
+        "display_name": player.display_name,
+        # Wired for clients; photo upload is intentionally not shipped yet.
+        "avatar_url": None,
+        "role": player.role,
+        "status": player.status,
+        "is_host": player.is_host,
+        "points": player.points,
+        "points_earned": player.points_earned,
+        # Hiders need this to pick a Rescue target; seekers gain nothing sensitive.
+        "converted_from_hider": bool(player.converted_from_hider),
+        "location": _visible_location(state, viewer, player),
+    }
+
+
+def _reveal_row(state, pin) -> dict:
+    player = state.players.get(pin.player_id)
+    return {
+        "reveal_id": str(pin.reveal_id),
+        "player_id": str(pin.player_id),
+        "lat": pin.lat,
+        "lon": pin.lon,
+        "radius_m": pin.radius_m,
+        "expires_in_s": max(0, pin.expires_at_game_s - state.game_elapsed_s),
+        "display_name": player.display_name if player is not None else "",
     }
 
 
