@@ -286,6 +286,42 @@ describe('App rejoin', () => {
     vi.useRealTimers()
   })
 
+  it('expires two seconds from display across a live phase transition', async () => {
+    vi.useFakeTimers()
+    localStorage.setItem('manhunt.safetyDisclaimerAcked', '1')
+    rememberActiveGame('game-live')
+    fetchGameView.mockResolvedValue({ ...liveView, phase: 'active', phase_remaining_s: null })
+
+    render(<App />)
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const socket = socketInstances[0]
+    act(() => {
+      socket.onEvent?.({
+        seq: 4,
+        type: 'tag',
+        text: 'ignored',
+        tone: 'danger',
+        player_id: 'h1',
+        announcement: 'player_tagged',
+        subject_name: 'Riley',
+      })
+    })
+    expect(screen.getByRole('status')).toHaveTextContent('Riley was tagged!')
+
+    await act(() => vi.advanceTimersByTimeAsync(1_000))
+    act(() => {
+      socket.onView?.({ ...liveView, phase: 'paused', phase_remaining_s: null })
+    })
+    await act(() => vi.advanceTimersByTimeAsync(999))
+    expect(screen.getByRole('status')).toHaveTextContent('Riley was tagged!')
+
+    await act(() => vi.advanceTimersByTimeAsync(1))
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
   it('clears current and queued announcements when the game ends', async () => {
     localStorage.setItem('manhunt.safetyDisclaimerAcked', '1')
     rememberActiveGame('game-live')

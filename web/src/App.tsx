@@ -207,15 +207,18 @@ function App() {
   }, [gameView?.game_id])
 
   const currentTagAnnouncement = tagAnnouncements.items[0] ?? null
+  const currentTagAnnouncementSeq = currentTagAnnouncement?.seq
+  const currentGameId = gameView?.game_id
+  const showingLiveGame = gameView !== null && isLive(gameView.phase)
   useEffect(() => {
-    if (!currentTagAnnouncement || !gameView || !isLive(gameView.phase)) {
+    if (currentTagAnnouncementSeq === undefined || !showingLiveGame) {
       return
     }
     const timer = window.setTimeout(() => {
-      dispatchTagAnnouncement({ type: 'expire', seq: currentTagAnnouncement.seq })
+      dispatchTagAnnouncement({ type: 'expire', seq: currentTagAnnouncementSeq })
     }, 2_000)
     return () => window.clearTimeout(timer)
-  }, [currentTagAnnouncement?.seq, gameView?.game_id, gameView?.phase])
+  }, [currentTagAnnouncementSeq, currentGameId, showingLiveGame])
 
   async function leaveCurrentGame() {
     if (!gameView) {
