@@ -1,0 +1,25 @@
+---
+description: Read the Manhunt project context and agent learnings before any work
+alwaysApply: true
+---
+
+# Read the agent files first
+
+Before planning, editing, reviewing, or asking Scott a question, read both files:
+
+1. `docs/agent/project-context.md` — what Manhunt is, including product facts from chat that are not in the repo yet.
+2. `docs/agent/agent-learnings.md` — restraints and lessons about testing and programming.
+
+Do not ask a question those files, `AGENTS.md`, or the remaining-benchmarks file already answer.
+
+## Where a new fact goes
+
+- Scott states a product fact that is not already in the repo: append it to `docs/agent/project-context.md` under **Heard in conversation**, with the date in America/New_York, before the turn ends.
+- A verified testing, tooling, or implementation lesson the next agent would hit: append it to `docs/agent/agent-learnings.md` under **Lessons**.
+
+Do not put secrets, coordinates, or tokens in either file. If code and the project context disagree, trust the code and fix the context file in the same change.
+
+```markdown
+### 2026-11-23 — example lesson
+What happened. What to do instead. The command or test that showed it.
+```

@@ -1,6 +1,13 @@
 # Agent instructions
 
-Read this before changing Manhunt. The roadmap is `docs/superpowers/plans/2026-11-09-manhunt-roadmap.md`. Unfinished work is `docs/superpowers/plans/2026-11-09-remaining-benchmarks.md`. That gap file wins over any todo list, checklist, or earlier chat that says a phase is done.
+Read this before changing Manhunt. Then read these two files, every time, before planning, editing, or asking Scott a question:
+
+1. `docs/agent/project-context.md` — what the product is. If Scott states a product fact in chat that is not already in the repo, append it there under Heard in conversation before the turn ends.
+2. `docs/agent/agent-learnings.md` — restraints and lessons about testing and programming. Append a verified lesson there when the next agent would hit the same bug or the same wrong command.
+
+Do not ask a question those files, this file, or the remaining-benchmarks file already answer.
+
+The roadmap is `docs/superpowers/plans/2026-11-09-manhunt-roadmap.md`. Unfinished work is `docs/superpowers/plans/2026-11-09-remaining-benchmarks.md`. That gap file wins over any todo list, checklist, or earlier chat that says a phase is done.
 
 ## Do not mark work done early
 
