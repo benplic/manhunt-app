@@ -122,10 +122,14 @@ class GameState:
     time_limit_remaining_s: int | None = None
     players: dict[UUID, PlayerState] = field(default_factory=dict)
     reveals: list[RevealPin] = field(default_factory=list)
+    # Seeker pins for hiders. Separate from `reveals` so the two intervals do not share a list.
+    seeker_reveals: list[RevealPin] = field(default_factory=list)
     banners: list[Banner] = field(default_factory=list)
     result: WinResult | None = None
     next_seq: int = 1
     last_reveal_at_s: int | None = None
+    # Game second of the last seeker pulse. Independent of last_reveal_at_s.
+    last_seeker_reveal_at_s: int | None = None
     qr_by_hider: dict[UUID, tuple[str, datetime]] = field(default_factory=dict)
     effects: list[Effect] = field(default_factory=list)
     event_log: list = field(default_factory=list)

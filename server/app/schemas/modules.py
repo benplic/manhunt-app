@@ -194,6 +194,60 @@ SCHEMAS: dict[str, dict[str, Any]] = {
             "hints_interval": _int("Hints every", 2, 30, 5, suffix="s"),
         },
     },
+    "reveal_seekers": {
+        "version": 1,
+        "title": "Seeker reveal",
+        "blurb": (
+            "Hiders see seeker pulses. Off sends nothing. "
+            "Fuzzy, Precise, and Hot/cold match Reveal."
+        ),
+        "locked": True,
+        "field_order": [
+            "location_mode",
+            "persistence",
+            "interval",
+            "display",
+            "fuzz",
+            "hints_enabled",
+            "hints_persistence",
+            "hints_interval",
+        ],
+        "fields": {
+            "location_mode": _enum(
+                "Location",
+                ["off", "fuzzy", "precise", "hot_cold"],
+                "off",
+                ["Off", "Fuzzy", "Precise", "Hot/cold"],
+                help_text=(
+                    "Off: hiders see no seeker pulses. "
+                    "Fuzzy: offset pins, optional hints. Precise: true pins, no hints. "
+                    "Hot/cold: distance and direction only (hints always on)."
+                ),
+            ),
+            "persistence": _enum(
+                "Location timing",
+                ["timed", "persistent"],
+                "timed",
+                ["Timed", "Persistent"],
+                help_text="Persistent pins never expire.",
+            ),
+            "interval": _int("Every", 20, 600, 60, step=10, suffix="s"),
+            "display": _int("Stays up", 5, 60, 10, step=5, suffix="s"),
+            "fuzz": _int("Fuzz", 0, 100, 30, step=5, suffix="m"),
+            "hints_enabled": _bool(
+                "Hints",
+                True,
+                help_text=(
+                    "Fuzzy only. On: hiders get hot/cold with pins. "
+                    "Hot/cold mode always has hints; Precise never does."
+                ),
+            ),
+            "hints_persistence": _enum(
+                "Hints timing", ["timed", "persistent"], "persistent", ["Timed", "Persistent"]
+            ),
+            "hints_interval": _int("Hints every", 2, 30, 5, suffix="s"),
+        },
+    },
     "tag_policy": {
         "version": 1,
         "title": "Tag",
