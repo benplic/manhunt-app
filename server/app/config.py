@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     manhunt_cors_origins: str = (
         "http://localhost:5173,http://127.0.0.1:5173,https://manhunt-app.pages.dev"
     )
+    # Append-only JSONL playtest timeline. Empty disables. Unset uses
+    # playtest-logs/ for local/test/home and stays off in azure/prod.
+    manhunt_playtest_log_dir: str | None = None
 
     @property
     def demo_controls_enabled(self) -> bool:
@@ -70,6 +73,14 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [part.strip() for part in self.manhunt_cors_origins.split(",") if part.strip()]
+
+    @property
+    def playtest_log_dir(self) -> str | None:
+        if self.manhunt_playtest_log_dir is not None:
+            return self.manhunt_playtest_log_dir or None
+        if self.manhunt_env in {"azure", "prod"}:
+            return None
+        return "playtest-logs"
 
     def validate_startup(self) -> None:
         """Refuse to boot if fake sign-in or a published default secret is on."""

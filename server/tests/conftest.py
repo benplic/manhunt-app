@@ -26,6 +26,8 @@ def make_test_app(tmp_path: Path):
         manhunt_session_signing_key="x" * 32,
         manhunt_qr_signing_key="y" * 32,
         manhunt_database_url=f"sqlite+aiosqlite:///{db}",
+        # Keep unit/sim tests from filling the repo playtest-logs/ tree.
+        manhunt_playtest_log_dir="",
     )
     application = create_app(settings)
     application.state.manager.clock = FakeClock()

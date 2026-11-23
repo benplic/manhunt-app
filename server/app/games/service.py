@@ -45,6 +45,7 @@ from app.errors import ApiError, ErrorCode, GameRuleError
 from app.games.join_code import SAMPLE_CODE, generate, is_valid, normalize
 from app.games.join_limit import JoinRateLimiter
 from app.limits import MAX_GAME_PLAYERS
+from app.playtest_log import get_playtest_log
 from app.presets.classic import CLASSIC_ID, classic_preset
 from app.realtime.manager import SessionManager, envelope
 
@@ -201,6 +202,14 @@ class GameService:
         game.add_player(host.id, host.display_name, is_host=True)
         await self.persist_inputs(session, game)
         await session.commit()
+        get_playtest_log().emit(
+            "game_created",
+            game_id=row.id,
+            player_id=host.id,
+            join_code=join_code,
+            host_name=host.display_name,
+            preset_id=CLASSIC_ID,
+        )
         return row
 
     async def join(
@@ -261,6 +270,14 @@ class GameService:
                 BotDriver.seed_positions(game)
             await self.persist_inputs(session, game)
             await session.commit()
+            get_playtest_log().emit(
+                "player_joined",
+                game_id=row.id,
+                player_id=user.id,
+                join_code=row.join_code,
+                display_name=user.display_name,
+                roster_size=len(game.state.players),
+            )
             # The host is already on the socket. Push the new roster instead of
             # waiting for the next tick, which tests leave disabled.
             await self.manager.broadcast(row.id)
@@ -345,6 +362,16 @@ class GameService:
                 member.role = player.role
         await self.persist_inputs(session, game)
         await session.commit()
+        get_playtest_log().emit(
+            "roles_assigned",
+            game_id=game_id,
+            player_id=user.id,
+            join_code=row.join_code,
+            mode=mode,
+            roles={
+                str(player.player_id): player.role for player in game.state.players.values()
+            },
+        )
         await self.manager.broadcast(game_id)
         return game
 
@@ -436,6 +463,17 @@ class GameService:
                     )
             await session.commit()
             self.finalize_persist(game)
+        get_playtest_log().emit(
+            "game_started",
+            game_id=game_id,
+            player_id=user.id,
+            join_code=row.join_code,
+            phase=game.state.phase,
+            roster_size=len(game.state.players),
+            roles={
+                str(player.player_id): player.role for player in game.state.players.values()
+            },
+        )
         # The host already has this view from the HTTP response. Everyone else
         # is still on the lobby socket, and the tick loop is off in tests.
         await self.manager.broadcast(game_id)
@@ -480,6 +518,23 @@ class GameService:
             await self._persist_events(session, game)
             await session.commit()
             self.finalize_persist(game)
+        get_playtest_log().emit(
+            "game_ended",
+            game_id=game_id,
+            player_id=user.id,
+            join_code=row.join_code,
+            reason="host_ended",
+            winner=game.state.result.winner if game.state.result else "none",
+            scores={
+                str(player.player_id): {
+                    "name": player.display_name,
+                    "role": player.role,
+                    "points": player.points,
+                    "status": player.status,
+                }
+                for player in game.state.players.values()
+            },
+        )
         await self.manager.broadcast(game_id)
         return game
 
@@ -606,6 +661,13 @@ class GameService:
             await session.delete(member)
         await self.persist_inputs(session, game)
         await session.commit()
+        get_playtest_log().emit(
+            "player_removed",
+            game_id=game_id,
+            player_id=player_id,
+            join_code=row.join_code,
+            by_host=str(user.id),
+        )
         await self._close_socket(game_id, player_id, removed_reason="host_removed")
         await self.manager.broadcast(game_id)
         return game
@@ -619,6 +681,12 @@ class GameService:
         await session.delete(member)
         await self.persist_inputs(session, game)
         await session.commit()
+        get_playtest_log().emit(
+            "player_left",
+            game_id=game_id,
+            player_id=user.id,
+            join_code=row.join_code,
+        )
         await self._close_socket(game_id, user.id)
         return row
 
@@ -652,12 +720,25 @@ class GameService:
     ) -> GameSession:
         row, _ = await self.require_member(session, game_id, user)
         game = self._live(row)
+        before = game.state.players[user.id].points
         try:
             game.purchase(user.id, power_id, **extra)
         except GameRuleError as exc:
             raise _http_for_rule(exc) from exc
+        after = game.state.players[user.id].points
         await self.persist_inputs(session, game)
         await session.commit()
+        get_playtest_log().emit(
+            "score_change",
+            game_id=game_id,
+            player_id=user.id,
+            join_code=row.join_code,
+            reason="purchase",
+            power_id=power_id,
+            points_before=before,
+            points_after=after,
+            delta=after - before,
+        )
         # Shield / lockdown timers must show on every phone while the effect is live.
         await self.manager.broadcast(game_id)
         return game
@@ -665,12 +746,24 @@ class GameService:
     async def taunt(self, session: AsyncSession, user: User, game_id: UUID) -> GameSession:
         row, _ = await self.require_member(session, game_id, user)
         game = self._live(row)
+        before = game.state.players[user.id].points
         try:
             game.taunt(user.id)
         except GameRuleError as exc:
             raise _http_for_rule(exc) from exc
+        after = game.state.players[user.id].points
         await self.persist_inputs(session, game)
         await session.commit()
+        get_playtest_log().emit(
+            "score_change",
+            game_id=game_id,
+            player_id=user.id,
+            join_code=row.join_code,
+            reason="taunt",
+            points_before=before,
+            points_after=after,
+            delta=after - before,
+        )
         return game
 
     async def ack_safety(self, session: AsyncSession, user: User, game_id: UUID) -> GameSession:
@@ -702,6 +795,14 @@ class GameService:
             row.status = game.state.phase
             await session.commit()
             self.finalize_persist(game)
+        get_playtest_log().emit(
+            "tag_claimed",
+            game_id=game_id,
+            player_id=user.id,
+            join_code=row.join_code,
+            method="qr",
+            phase=game.state.phase,
+        )
         # Do not wait for the 1s tick — tagged web/iOS clients must see eliminated now.
         await self.manager.broadcast(game_id)
         return game

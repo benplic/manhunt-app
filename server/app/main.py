@@ -26,6 +26,7 @@ from app.games.routes import bind_game_routes
 from app.games.service import GameService
 from app.jobs.purge import purge_trails
 from app.logging_setup import configure_logging
+from app.playtest_log import configure_playtest_log, get_playtest_log
 from app.presets.routes import router as presets_router
 from app.realtime.manager import SessionManager
 from app.realtime.ws import bind_ws
@@ -48,6 +49,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     settings.validate_startup()
     configure_logging(settings.manhunt_env)
+    configure_playtest_log(settings.playtest_log_dir)
 
     engine, factory = lifespan_resources(settings)
     manager = SessionManager(
@@ -137,8 +139,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         async def keep_alive() -> None:
             # Loopback HTTP so ACA request concurrency stays above zero.
-            async with httpx.AsyncClient() as client:
-                await client.get(settings.manhunt_self_ping_url, timeout=5.0)
+            # A down ping must not abort the tick loop during a live hunt.
+            try:
+                async with httpx.AsyncClient() as client:
+                    await client.get(settings.manhunt_self_ping_url, timeout=5.0)
+            except httpx.HTTPError:
+                log.warning("keep_alive_ping_failed url=%s", settings.manhunt_self_ping_url)
 
         task = None
         purge_task = None
@@ -190,7 +196,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.exception_handler(ApiError)
-    async def api_error_handler(_request: Request, exc: ApiError) -> JSONResponse:
+    async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
+        # 4xx noise stays out of the playtest error file except rate limits
+        # and conflict codes that usually mean a real playtest snag.
+        if exc.status_code >= 500 or exc.code in {
+            ErrorCode.RATE_LIMITED,
+            ErrorCode.GAME_FULL,
+            ErrorCode.WRONG_PHASE,
+            ErrorCode.INTERNAL,
+        }:
+            get_playtest_log().emit(
+                "api_error",
+                path=str(request.url.path),
+                code=exc.code.value,
+                status=exc.status_code,
+                message=exc.message,
+            )
         return _error_json(
             exc.status_code,
             code=exc.code.value,
@@ -199,7 +220,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.exception_handler(GameRuleError)
-    async def rule_error_handler(_request: Request, exc: GameRuleError) -> JSONResponse:
+    async def rule_error_handler(request: Request, exc: GameRuleError) -> JSONResponse:
+        get_playtest_log().emit(
+            "api_error",
+            path=str(request.url.path),
+            code=exc.code.value,
+            status=409,
+            message=exc.message,
+        )
         return _error_json(409, code=exc.code.value, message=exc.message, details={})
 
     @app.get("/.well-known/apple-app-site-association")

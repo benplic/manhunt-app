@@ -35,8 +35,12 @@ services:
       # Browser origins for web/ (Vite locally + Cloudflare Pages). Comma-separated.
       MANHUNT_CORS_ORIGINS: ${MANHUNT_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,https://manhunt-app.pages.dev}
       MANHUNT_TICK_LOOP: "true"
+      # JSONL playtest timeline on the host (joins, WS, scores, errors).
+      MANHUNT_PLAYTEST_LOG_DIR: /app/playtest-logs
     ports:
       - "8000:8000"
+    volumes:
+      - ./playtest-logs:/app/playtest-logs
     restart: unless-stopped
     healthcheck:
       # The image has Python but no curl.

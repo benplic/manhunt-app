@@ -21,6 +21,7 @@ from app.engine.qr import make_qr_token, token_ttl
 from app.engine.session import GameSession
 from app.engine.views import build_view
 from app.errors import GameRuleError
+from app.playtest_log import get_playtest_log
 from app.realtime.clock import WallClock
 
 LIVE_PHASES = frozenset({"lobby", "head_start", "active", "paused"})
@@ -147,6 +148,12 @@ class SessionManager:
         if session is None:
             return
         events = session.drain_events()
+        # One JSONL write batch per tick for the drained engine timeline.
+        get_playtest_log().record_engine_events(
+            game_id,
+            events,
+            join_code=session.state.join_code,
+        )
         for player_id, ws in list(self.sockets.get(game_id, {}).items()):
             view = build_view(
                 session,
@@ -175,7 +182,19 @@ class SessionManager:
                     )
             except Exception:
                 log.exception("ws_send_failed game_id=%s player_id=%s", game_id, player_id)
+                get_playtest_log().emit(
+                    "ws_send_failed",
+                    game_id=game_id,
+                    player_id=player_id,
+                    join_code=session.state.join_code,
+                )
                 self.detach(game_id, player_id)
+                get_playtest_log().ws_disconnected(
+                    game_id,
+                    player_id,
+                    join_code=session.state.join_code,
+                    reason="send_failed",
+                )
 
     async def tick_loop(
         self,
