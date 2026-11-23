@@ -468,6 +468,51 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(store.screen, .home)
     }
 
+    @MainActor
+    func testEndMatchClearsTagQueueAndAllowsSequenceOneInTheNextHunt() {
+        let store = AppStore.makePreview()
+        store.screen = .live
+        let first = LiveEventDTO(
+            seq: 1, type: "tag", text: "Riley was tagged.", tone: "danger",
+            playerId: nil, announcement: "player_tagged", subjectName: "Riley"
+        )
+        let second = LiveEventDTO(
+            seq: 2, type: "tag", text: "Morgan was tagged.", tone: "danger",
+            playerId: nil, announcement: "player_tagged", subjectName: "Morgan"
+        )
+        store.recordLiveEvent(first)
+        store.recordLiveEvent(second)
+
+        store.endMatch()
+
+        XCTAssertEqual(store.screen, .results)
+        XCTAssertNil(store.tagAnnouncement)
+        XCTAssertTrue(store.pendingTagAnnouncements.isEmpty)
+
+        store.screen = .live
+        store.recordLiveEvent(first)
+        XCTAssertEqual(store.tagAnnouncement?.id, 1)
+        XCTAssertEqual(store.tagAnnouncement?.text, "Riley was tagged!")
+    }
+
+    @MainActor
+    func testLeaveResultsClearsAnyQueuedTagAnnouncement() {
+        let store = AppStore.makePreview()
+        store.screen = .live
+        store.recordLiveEvent(
+            LiveEventDTO(
+                seq: 3, type: "tag", text: "Riley was tagged.", tone: "danger",
+                playerId: nil, announcement: "player_tagged", subjectName: "Riley"
+            )
+        )
+        store.screen = .results
+
+        store.leaveResults()
+
+        XCTAssertNil(store.tagAnnouncement)
+        XCTAssertTrue(store.pendingTagAnnouncements.isEmpty)
+    }
+
     // LobbyView / LiveGameView confirm Leave this hunt? before goHome(); that dialog is UI-only.
     @MainActor
     func testRematchOpensANewLobbyWithAFreshGameId() {
@@ -491,6 +536,31 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(store.match?.snapshot.phase, .lobby)
         XCTAssertTrue(store.timeline.isEmpty)
         XCTAssertNotEqual(store.joinCode, "")
+    }
+
+    @MainActor
+    func testRematchClearsAStaleTagAnnouncementBeforeTheNewLobby() {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.randomizeRoles(seekerCount: 1)
+        _ = store.startMatch()
+        store.endMatch()
+        store.screen = .live
+        store.recordLiveEvent(
+            LiveEventDTO(
+                seq: 4, type: "tag", text: "Riley was tagged.", tone: "danger",
+                playerId: nil, announcement: "player_tagged", subjectName: "Riley"
+            )
+        )
+        store.screen = .results
+
+        store.rematch()
+
+        XCTAssertEqual(store.screen, .lobby)
+        XCTAssertNil(store.tagAnnouncement)
+        XCTAssertTrue(store.pendingTagAnnouncements.isEmpty)
     }
 
     @MainActor

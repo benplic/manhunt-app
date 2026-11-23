@@ -1073,6 +1073,7 @@ final class AppStore {
     static let needBothRolesCopy = "Assign at least one hider and one seeker before starting."
 
     func endMatch() {
+        clearTagAnnouncements()
         if let fake, let id = match?.snapshot.gameId, let view = try? fake.endSync(gameID: id) {
             apply(view)
         } else if let id = match?.snapshot.gameId {
@@ -1166,12 +1167,14 @@ final class AppStore {
     }
 
     func leaveResults() {
+        clearTagAnnouncements()
         match = nil
         note = nil
         screen = .home
     }
 
     func rematch() {
+        clearTagAnnouncements()
         guard let id = match?.snapshot.gameId else { return }
         lastError = nil
         if let fake {

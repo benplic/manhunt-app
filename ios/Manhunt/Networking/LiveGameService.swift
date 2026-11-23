@@ -214,6 +214,7 @@ final class LiveGameService: GameService {
 
     func connect(gameID: UUID) {
         guard let token = client.token else { return }
+        socket.beginGame(gameID)
         var components = URLComponents(url: client.baseURL, resolvingAgainstBaseURL: false)
         let wsScheme = client.baseURL.scheme == "https" ? "wss" : "ws"
         components?.scheme = wsScheme

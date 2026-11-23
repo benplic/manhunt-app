@@ -18,10 +18,17 @@ final class GameSocket: @unchecked Sendable {
     private var task: URLSessionWebSocketTask?
     private var pingTask: Task<Void, Never>?
     private var runTask: Task<Void, Never>?
+    private var gameID: UUID?
     private let session: URLSession
 
     init(session: URLSession = .shared) {
         self.session = session
+    }
+
+    func beginGame(_ gameID: UUID) {
+        guard self.gameID != gameID else { return }
+        self.gameID = gameID
+        lastSeq = nil
     }
 
     func connect(url: URL, token: String) {

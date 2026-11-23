@@ -58,6 +58,24 @@ final class GameSocketTests: XCTestCase {
         XCTAssertEqual(socket.lastSeq, 42)
     }
 
+    func testEventSequenceResetsForANewGameButNotAReconnect() {
+        let socket = GameSocket()
+        var received: [Int] = []
+        socket.onEvent = { received.append($0.seq) }
+        let gameA = UUID()
+        let gameB = UUID()
+
+        socket.beginGame(gameA)
+        socket.handle(eventEnvelope(seq: 9))
+        socket.beginGame(gameA)
+        socket.handle(eventEnvelope(seq: 9))
+        socket.beginGame(gameB)
+        socket.handle(eventEnvelope(seq: 1))
+
+        XCTAssertEqual(received, [9, 1])
+        XCTAssertEqual(socket.lastSeq, 1)
+    }
+
     func testRemovedEnvelopeStopsReconnectAndFiresCallback() {
         let socket = GameSocket()
         var removedCalls = 0
@@ -95,5 +113,24 @@ final class GameSocketTests: XCTestCase {
 
         XCTAssertFalse(socket.isStopped)
         XCTAssertEqual(removedCalls, 0)
+    }
+
+    private func eventEnvelope(seq: Int) -> Data {
+        Data(
+            """
+            {
+              "type": "event",
+              "data": {
+                "seq": \(seq),
+                "type": "tag",
+                "text": "Riley was tagged.",
+                "tone": "danger",
+                "player_id": null,
+                "announcement": "player_tagged",
+                "subject_name": "Riley"
+              }
+            }
+            """.utf8
+        )
     }
 }
