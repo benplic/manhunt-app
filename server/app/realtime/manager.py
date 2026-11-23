@@ -16,6 +16,7 @@ from fastapi import WebSocket
 from app.demo.bots import BotDriver
 from app.engine.arena import arena_from_dict
 from app.engine.clock import Clock
+from app.engine.events import GameEvent
 from app.engine.qr import make_qr_token, token_ttl
 from app.engine.session import GameSession
 from app.engine.views import build_view
@@ -160,14 +161,7 @@ class SessionManager:
                     await ws.send_json(
                         envelope(
                             "event",
-                            {
-                                "seq": event.seq,
-                                "type": event.type,
-                                "text": event.text,
-                                "tone": event.tone,
-                                "at": event.created_at.isoformat() if event.created_at else None,
-                                "player_id": str(event.player_id) if event.player_id else None,
-                            },
+                            serialize_event(event),
                         )
                     )
                 qr = session.state.qr_by_hider.get(player_id)
@@ -211,6 +205,19 @@ class SessionManager:
 
 def envelope(type: str, data: dict[str, Any]) -> dict[str, Any]:
     return {"type": type, "data": data}
+
+
+def serialize_event(event: GameEvent) -> dict[str, Any]:
+    return {
+        "seq": event.seq,
+        "type": event.type,
+        "text": event.text,
+        "tone": event.tone,
+        "at": event.created_at.isoformat() if event.created_at else None,
+        "player_id": str(event.player_id) if event.player_id else None,
+        "announcement": event.payload.get("announcement"),
+        "subject_name": event.payload.get("subject_name"),
+    }
 
 
 # Silence unused import; token TTL is 30s as specified.

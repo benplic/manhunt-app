@@ -22,7 +22,10 @@ def test_out_of_bounds_countdown_eliminates_a_hider() -> None:
     run_for(session, clock, 3)
     assert session.state.players[hider].status == "eliminated"
     events = session.drain_events()
-    assert any("out of bounds" in e.text.lower() for e in events)
+    event = next(event for event in events if event.type == "out_of_bounds")
+    assert "out of bounds" in event.text.lower()
+    assert event.payload["announcement"] == "player_tagged_out_of_bounds"
+    assert event.payload["subject_name"] == "Riley"
 
 
 def test_out_of_bounds_does_not_eliminate_during_head_start() -> None:

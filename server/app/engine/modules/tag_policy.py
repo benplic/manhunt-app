@@ -51,7 +51,11 @@ class TagPolicyModule(BaseModule):
         grant_points(seeker, 25)
         s.emit(
             "tag",
-            {"text": f"{seeker.display_name} tagged {hider.display_name}."},
+            {
+                "text": f"{seeker.display_name} tagged {hider.display_name}.",
+                "announcement": "player_tagged",
+                "subject_name": hider.display_name,
+            },
             player_id=hider.player_id,
             tone="success",
         )

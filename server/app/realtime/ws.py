@@ -9,7 +9,7 @@ from app.auth.tokens import parse_token
 from app.engine.session import consume_location_reset, movement_too_fast, note_presence
 from app.engine.state import LocationReading
 from app.errors import ApiError, GameRuleError
-from app.realtime.manager import SessionManager, envelope
+from app.realtime.manager import SessionManager, envelope, serialize_event
 
 
 def bind_ws(manager: SessionManager, get_settings, persist_location=None):
@@ -70,14 +70,7 @@ def bind_ws(manager: SessionManager, get_settings, persist_location=None):
                 await ws.send_json(
                     envelope(
                         "event",
-                        {
-                            "seq": event.seq,
-                            "type": event.type,
-                            "text": event.text,
-                            "tone": event.tone,
-                            "at": event.created_at.isoformat() if event.created_at else None,
-                            "player_id": str(event.player_id) if event.player_id else None,
-                        },
+                        serialize_event(event),
                     )
                 )
 

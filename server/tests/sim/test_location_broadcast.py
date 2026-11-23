@@ -1,12 +1,15 @@
 """Location updates state without an immediate view broadcast; the tick pushes views."""
 
 import json
+from datetime import timedelta
 from uuid import UUID, uuid4
 
 import anyio
 from fastapi.testclient import TestClient
 
 from app.engine.arena import arena_to_dict
+from app.engine.modules.base import TagClaim
+from app.engine.qr import make_qr_token
 from tests.engine.helpers import square
 
 
@@ -48,6 +51,112 @@ def _drain_views(ws, limit: int = 20) -> list[dict]:
         if frame["type"] == "view":
             views.append(frame["data"])
     return views
+
+
+def _started_two_player_game(client: TestClient) -> tuple[dict, dict, str]:
+    host = _auth(client, "Casey")
+    guest = _auth(client, "Riley")
+    arena = client.post(
+        "/v1/arenas",
+        json=arena_to_dict(square()),
+        headers=_hdr(host["access_token"]),
+    )
+    assert arena.status_code == 200, arena.text
+    game = client.post(
+        "/v1/games",
+        json={
+            "arena_id": arena.json()["id"],
+            "preset_id": "classic",
+            "overrides": {"head_start": {"enabled": False}},
+        },
+        headers=_hdr(host["access_token"]),
+    )
+    assert game.status_code == 200, game.text
+    game_id = game.json()["id"]
+    joined = client.post(
+        "/v1/games/join",
+        json={"join_code": game.json()["join_code"]},
+        headers=_hdr(guest["access_token"]),
+    )
+    assert joined.status_code == 200, joined.text
+    roles = client.post(
+        f"/v1/games/{game_id}/roles",
+        json={
+            "mode": "manual",
+            "assignments": {
+                host["user"]["id"]: "hider",
+                guest["user"]["id"]: "seeker",
+            },
+        },
+        headers=_hdr(host["access_token"]),
+    )
+    assert roles.status_code == 200, roles.text
+    started = client.post(f"/v1/games/{game_id}/start", headers=_hdr(host["access_token"]))
+    assert started.status_code == 200, started.text
+    return host, guest, game_id
+
+
+def test_tag_announcement_fields_reach_every_player_live_and_on_reconnect(
+    client: TestClient,
+) -> None:
+    host, guest, game_id = _started_two_player_game(client)
+    game_uuid = UUID(game_id)
+    hider_id = UUID(host["user"]["id"])
+    seeker_id = UUID(guest["user"]["id"])
+    manager = client.app.state.manager
+    session = manager.sessions[game_uuid]
+
+    with client.websocket_connect(f"/v1/games/{game_id}/ws") as host_ws:
+        host_ws.send_json({"type": "hello", "data": {"token": host["access_token"]}})
+        assert _next(host_ws)["type"] == "welcome"
+        assert _next(host_ws)["type"] == "view"
+
+        with client.websocket_connect(f"/v1/games/{game_id}/ws") as guest_ws:
+            guest_ws.send_json({"type": "hello", "data": {"token": guest["access_token"]}})
+            assert _next(guest_ws)["type"] == "welcome"
+            assert _next(guest_ws)["type"] == "view"
+
+            token = make_qr_token(
+                game_id=game_uuid,
+                hider_id=hider_id,
+                expires_at=session.clock.now() + timedelta(seconds=30),
+                key=session.qr_signing_key,
+            )
+            session.claim_tag(TagClaim(seeker_id, hider_id, qr_token=token))
+            tag_event = next(event for event in session.state.event_log if event.type == "tag")
+            host_ws.portal.call(manager.broadcast, game_uuid)
+
+            for ws in (host_ws, guest_ws):
+                assert _next(ws)["type"] == "view"
+                event = _next(ws)
+                assert event["type"] == "event"
+                assert event["data"] == {
+                    "seq": tag_event.seq,
+                    "type": "tag",
+                    "text": "Riley tagged Casey.",
+                    "tone": "success",
+                    "at": tag_event.created_at.isoformat(),
+                    "player_id": str(hider_id),
+                    "announcement": "player_tagged",
+                    "subject_name": "Casey",
+                }
+
+    with client.websocket_connect(f"/v1/games/{game_id}/ws") as reconnect_ws:
+        reconnect_ws.send_json(
+            {
+                "type": "hello",
+                "data": {
+                    "token": host["access_token"],
+                    "last_seq": tag_event.seq - 1,
+                },
+            }
+        )
+        assert _next(reconnect_ws)["type"] == "welcome"
+        assert _next(reconnect_ws)["type"] == "view"
+        replay = _next(reconnect_ws)
+        assert replay["type"] == "event"
+        assert replay["data"]["announcement"] == "player_tagged"
+        assert replay["data"]["subject_name"] == "Casey"
 
 
 def test_location_does_not_push_a_view_until_tick(client: TestClient) -> None:

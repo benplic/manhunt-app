@@ -62,7 +62,11 @@ class ZonePolicyModule(BaseModule):
                         player.status = "eliminated"
                         s.emit(
                             "out_of_bounds",
-                            {"text": f"{player.display_name} was tagged out of bounds."},
+                            {
+                                "text": f"{player.display_name} was tagged out of bounds.",
+                                "announcement": "player_tagged_out_of_bounds",
+                                "subject_name": player.display_name,
+                            },
                             player_id=player.player_id,
                             tone="warning",
                         )
