@@ -16,15 +16,14 @@ from stress_thirty_players import print_report, run_stress  # noqa: E402
 from app.limits import MAX_GAME_PLAYERS  # noqa: E402
 
 
-def test_thirty_player_ws_stress_passes() -> None:
-    """Cap is already 30; this proves join + tick + reconnect hold at that size."""
-    assert MAX_GAME_PLAYERS == 30
+def test_full_lobby_ws_stress_passes() -> None:
+    """Full lobby at MAX_GAME_PLAYERS: join + tick + reconnect must hold."""
     report = asyncio.run(
-        run_stress(players=30, seekers=3, gameplay_s=15.0, location_hz=1.0)
+        run_stress(players=MAX_GAME_PLAYERS, seekers=3, gameplay_s=15.0, location_hz=1.0)
     )
     print_report(report)
     assert report.passed, report.fail_reasons
-    assert report.sockets_open == 30
+    assert report.sockets_open == MAX_GAME_PLAYERS
     assert report.reconnect_fail == 0
     assert report.broadcast_p95_ms is not None
     assert report.broadcast_p95_ms < 1000

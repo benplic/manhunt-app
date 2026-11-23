@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.engine.modules.power_ups import CATALOG
+from app.limits import MAX_GAME_PLAYERS
 
 _POWER_TITLES = {
     "ghost": "Ghost",
@@ -122,7 +123,7 @@ SCHEMAS: dict[str, dict[str, Any]] = {
         "field_order": ["mode", "seeker_count"],
         "fields": {
             "mode": _enum("Assignment", ["random", "manual"], "random", ["Random", "Manual"]),
-            "seeker_count": _int("Seekers", 1, 30, 1),
+            "seeker_count": _int("Seekers", 1, MAX_GAME_PLAYERS, 1),
         },
     },
     "head_start": {

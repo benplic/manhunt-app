@@ -3,6 +3,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from app.engine.arena import arena_to_dict
+from app.limits import MAX_GAME_PLAYERS
 from tests.engine.helpers import square
 
 
@@ -59,7 +60,7 @@ def test_modules_schema_lists_classic_ids(client: TestClient) -> None:
         "shrink_to",
         "min_radius_m",
     }
-    assert body["modules"]["roles"]["fields"]["seeker_count"]["max"] == 30
+    assert body["modules"]["roles"]["fields"]["seeker_count"]["max"] == MAX_GAME_PLAYERS
     duration = body["modules"]["head_start"]["fields"]["duration"]
     assert duration["min"] == 15
     assert duration["max"] == 600

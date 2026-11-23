@@ -90,9 +90,9 @@ Tag method in the classic preset is `qr`. Ultra Wideband and Nearby Interaction 
 
 `WinModule` treats only `status == "eliminated"` as caught. `signal_lost` is still in the game. Seekers do not win because a hider went dark. The signal-loss module can eliminate a hider later, only when its `penalty` setting is `eliminate` and `penalty_after` has elapsed. Classic default penalty is `none`. An API host that still counts `signal_lost` as a tag ends the hunt early with "All hiders were tagged." The web README calls that out. Confirm the deployed server before blaming a client.
 
-Classic role assignment is `seeker_count` (default 1, range 1 to 30). `GameSession.assign_roles_random` takes a seeker count. `assign_hiders_random` exists only to replay inputs logged before that change. The Nov 9 roadmap still says `hider_count`. The code is the contract.
+Classic role assignment is `seeker_count` (default 1, range 1 to `MAX_GAME_PLAYERS`, now 40). `GameSession.assign_roles_random` takes a seeker count. `assign_hiders_random` exists only to replay inputs logged before that change. The Nov 9 roadmap still says `hider_count`. The code is the contract.
 
-Start requires both a hider and a seeker (`NEED_BOTH_ROLES`). Player cap is 30 (`GAME_FULL`), from `server/app/limits.py::MAX_GAME_PLAYERS`.
+Start requires both a hider and a seeker (`NEED_BOTH_ROLES`). Player cap is 40 (`GAME_FULL`), from `server/app/limits.py::MAX_GAME_PLAYERS`.
 
 Join codes are 6 characters from `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (no I, L, O, 0, 1), shared by `server/app/games/join_code.py`, `ios/Manhunt/Domain/JoinCode.swift`, and `web/src/api/joinCode.ts`. `PARK42` is reserved for the sample lobby. A live join code is unique; it may be reused after the game is `ended` or `abandoned`. The eleventh join from one user inside a minute is `RATE_LIMITED`.
 

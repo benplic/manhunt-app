@@ -8,7 +8,7 @@ last_seq replay. Prints concrete latency and resource numbers.
 Usage (from server/ with the venv active):
 
     python scripts/stress_thirty_players.py
-    python scripts/stress_thirty_players.py --players 30 --seconds 20
+    python scripts/stress_thirty_players.py --players 40 --seconds 20
 """
 
 from __future__ import annotations
@@ -540,7 +540,7 @@ def print_report(report: StressReport) -> None:
     def fmt(value: float | None) -> str:
         return "n/a" if value is None else f"{value:.1f}"
 
-    print("=== Manhunt 30-player stress ===")
+    print("=== Manhunt full-lobby stress ===")
     print(
         f"players={report.players} seekers(iOS)={report.seekers} "
         f"hiders(web)={report.hiders}"

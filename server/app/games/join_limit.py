@@ -19,7 +19,7 @@ JOIN_WINDOW_S = 60.0
 
 
 # A new dev-auth install is a new user id, so the per-user cap alone does not
-# hold. The IP cap is the backstop. Sized for a full lobby (MAX_GAME_PLAYERS=30)
+# hold. The IP cap is the backstop. Sized for a full lobby (MAX_GAME_PLAYERS=40)
 # joining from one park NAT, with a little room for retries after a bad code.
 JOIN_IP_LIMIT = 80
 DEV_AUTH_IP_LIMIT = 80
