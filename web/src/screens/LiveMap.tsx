@@ -42,6 +42,7 @@ import { formatClock } from '../map/clock'
 import { ensureLeafletDefaultIcons } from '../map/leafletIcons'
 import { pinsFromView } from '../map/pins'
 import { revealsFromView } from '../map/reveals'
+import { textPopup } from '../map/textPopup'
 import {
   emphasizeSpawnFromView,
   visibleZones,
@@ -523,7 +524,7 @@ export function LiveMap({
           fillColor: '#6ea8fe',
           fillOpacity: 0.22,
         }).addTo(map)
-        circle.bindPopup(`${pin.display_name} · ping`)
+        circle.bindPopup(textPopup(`${pin.display_name} · ping`))
         revealRef.current.set(pin.reveal_id, circle)
       } else {
         circle.setLatLng(latLng)
@@ -553,7 +554,7 @@ export function LiveMap({
       }`
       if (!marker) {
         marker = L.marker([pin.lat, pin.lon]).addTo(map)
-        marker.bindPopup(label)
+        marker.bindPopup(textPopup(label))
         markersRef.current.set(pin.playerId, marker)
         pinAnimRef.current.set(pin.playerId, {
           from: { lat: pin.lat, lon: pin.lon },
@@ -578,7 +579,7 @@ export function LiveMap({
           )
           marker.setLatLng([glide.lat, glide.lon])
         }
-        marker.setPopupContent(label)
+        marker.setPopupContent(textPopup(label))
       }
     }
     for (const [id, marker] of markersRef.current) {
