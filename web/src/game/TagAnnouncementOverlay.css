@@ -1,0 +1,57 @@
+.tag-announcement {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  pointer-events: none;
+  color: #fff;
+  text-align: center;
+  background: transparent;
+  box-shadow: inset 0 0 0 8px rgba(255, 38, 38, 0.95);
+  animation: tag-announcement-edge 500ms ease-in-out infinite alternate;
+}
+
+.tag-announcement p {
+  max-width: 24rem;
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: 8px;
+  background: rgba(15, 17, 21, 0.88);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: clamp(1.8rem, 8vw, 3.5rem);
+  font-weight: 800;
+  line-height: 1.05;
+  text-wrap: balance;
+  animation: tag-announcement-text 240ms ease-out both;
+}
+
+@keyframes tag-announcement-edge {
+  from {
+    box-shadow: inset 0 0 0 5px rgba(255, 38, 38, 0.65);
+  }
+
+  to {
+    box-shadow: inset 0 0 30px 12px rgba(255, 38, 38, 1);
+  }
+}
+
+@keyframes tag-announcement-text {
+  from {
+    opacity: 0.75;
+    transform: scale(0.92);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tag-announcement,
+  .tag-announcement p {
+    animation: none;
+  }
+}

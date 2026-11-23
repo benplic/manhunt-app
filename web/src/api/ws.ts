@@ -5,6 +5,16 @@ export type WsError = {
   message: string
 }
 
+export type WsEvent = {
+  seq: number
+  type: string
+  text: string
+  tone: string | null
+  player_id: string | null
+  announcement: string | null
+  subject_name: string | null
+}
+
 export type ConnectOptions = {
   url: string
   /** Static token; prefer getToken when the access token can rotate. */
@@ -34,7 +44,7 @@ export class GameSocket {
   onView: ((view: PlayerView) => void) | null = null
   onQr: ((token: string) => void) | null = null
   onError: ((error: WsError) => void) | null = null
-  onEvent: ((event: { seq?: number; type?: string; text?: string }) => void) | null = null
+  onEvent: ((event: WsEvent) => void) | null = null
   /** Host remove / membership close — do not reconnect. */
   onRemoved: (() => void) | null = null
 
@@ -235,13 +245,25 @@ export class GameSocket {
         })
         break
       case 'event':
-        if (typeof data.seq === 'number') {
-          this.lastSeq = data.seq
+        if (
+          typeof data.seq !== 'number' ||
+          typeof data.type !== 'string' ||
+          typeof data.text !== 'string'
+        ) {
+          break
         }
+        if (this.lastSeq !== undefined && data.seq <= this.lastSeq) {
+          break
+        }
+        this.lastSeq = data.seq
         this.onEvent?.({
-          seq: typeof data.seq === 'number' ? data.seq : undefined,
-          type: typeof data.type === 'string' ? data.type : undefined,
-          text: typeof data.text === 'string' ? data.text : undefined,
+          seq: data.seq,
+          type: data.type,
+          text: data.text,
+          tone: typeof data.tone === 'string' ? data.tone : null,
+          player_id: typeof data.player_id === 'string' ? data.player_id : null,
+          announcement: typeof data.announcement === 'string' ? data.announcement : null,
+          subject_name: typeof data.subject_name === 'string' ? data.subject_name : null,
         })
         break
       case 'removed':

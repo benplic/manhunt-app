@@ -49,6 +49,8 @@ import {
   zoneStyle,
 } from '../map/zones'
 import { ConfirmDialog } from '../game/ConfirmDialog'
+import { TagAnnouncementOverlay } from '../game/TagAnnouncementOverlay'
+import type { TagAnnouncement } from '../game/tagAnnouncements'
 import { blockPlayer, displayNameFor, reportMailto } from '../social/blockList'
 import type { ActiveEffect, ArenaZone, PlayerView } from '../api/types'
 import { EventLog } from './EventLog'
@@ -67,6 +69,7 @@ type Props = {
   watchLocation?: typeof watchVisibleLocation
   /** Safety gate is up. Do not seed or send a position until the player continues. */
   holdPresence?: boolean
+  tagAnnouncement?: TagAnnouncement | null
 }
 
 type Panel = 'map' | 'show' | 'scan' | 'board' | 'log'
@@ -190,6 +193,7 @@ export function LiveMap({
   onSignedOut,
   watchLocation = watchVisibleLocation,
   holdPresence = false,
+  tagAnnouncement = null,
 }: Props) {
   const mapEl = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<L.Map | null>(null)
@@ -1177,6 +1181,7 @@ export function LiveMap({
           </ul>
         </div>
       ) : null}
+      <TagAnnouncementOverlay announcement={tagAnnouncement} />
     </main>
   )
 }
