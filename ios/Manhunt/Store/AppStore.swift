@@ -55,7 +55,9 @@ final class AppStore {
     var lastError: AppError?
     var arenas: [Arena] = []
     var presets: [(id: String, name: String)] = [("classic", "Classic Manhunt")]
-    var displayName = "Casey Lee"
+    var displayName = ""
+    /// Fake sign-in and launch-screen seeding only; not prefilled on the sign-in form.
+    static let previewDisplayName = "Morgan Reed"
     var serverURL: String
     /// Shared house key for the home server's dev sign-in. Not a per-player password.
     var devAuthSecret: String
@@ -238,7 +240,7 @@ final class AppStore {
         }
         if let live, let storedAccess = keychain.readToken() {
             live.token = storedAccess
-            // Pull display_name from /v1/me so Home is not stuck on "Casey Lee".
+            // Pull display_name from /v1/me so Home reflects the signed-in user.
             Task { await restoreSessionFromStoredToken() }
         }
         location.onStreamFailure = { [weak self] in
@@ -249,7 +251,7 @@ final class AppStore {
         if let seeded, let mapped = AppScreen.fromLaunch(seeded) {
             screen = mapped
             if mapped != .signedOut {
-                session = Session(displayName: "Casey Lee", token: "preview")
+                session = Session(displayName: Self.previewDisplayName, token: "preview")
             }
         }
     }
@@ -468,9 +470,10 @@ final class AppStore {
     }
 
     func signInPreview() {
-        fake?.signInSync("Casey Lee")
-        session = Session(displayName: "Casey Lee", token: "preview")
-        displayName = "Casey Lee"
+        let name = Self.previewDisplayName
+        fake?.signInSync(name)
+        session = Session(displayName: name, token: "preview")
+        displayName = name
         screen = .home
         Task { await registerPendingDeviceTokenIfNeeded() }
     }
@@ -2115,7 +2118,7 @@ final class AppStore {
             if let loaded = try? await service.arenas() { arenas = loaded }
             await registerPendingDeviceTokenIfNeeded()
         } catch {
-            // Stale token: stay signed out rather than showing the default Casey Lee name.
+            // Stale token: stay signed out rather than showing a stale placeholder name.
             keychain.deleteToken()
             live?.token = nil
             live?.refreshToken = nil

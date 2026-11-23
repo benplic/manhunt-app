@@ -30,7 +30,7 @@ final class FakeGameService: GameService {
             youAreHost: false,
             players: [
                 FakePlayer(id: UUID(), name: "Jordan Blake", role: .seeker, isHost: true),
-                FakePlayer(id: UUID(), name: "Casey Lee", role: .hider, isHost: false),
+                FakePlayer(id: UUID(), name: "Quinn Adler", role: .hider, isHost: false),
             ],
             demoEnabled: true
         )
@@ -58,7 +58,7 @@ final class FakeGameService: GameService {
     func signInWithApple(identityToken: String, displayName: String?) async throws -> AuthOut {
         appleSignIns += 1
         _ = identityToken
-        return signInSync(displayName ?? "Casey Lee")
+        return signInSync(displayName ?? "")
     }
 
     func registerDeviceToken(_ token: String) async throws {
@@ -468,7 +468,7 @@ final class FakeGameService: GameService {
     func joinDemoAsHostSync() -> PlayerViewDTO {
         let id = UUID()
         let youID = signedIn?.id ?? UUID()
-        let youName = signedIn?.displayName ?? "Casey Lee"
+        let youName = signedIn?.displayName ?? AppStore.previewDisplayName
         let game = FakeGame(
             id: id,
             joinCode: "PARK42",

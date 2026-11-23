@@ -39,7 +39,7 @@ struct SignInView: View {
                         Text("Display name")
                             .font(.caption.weight(.bold))
                             .foregroundStyle(HuntColor.muted)
-                        TextField("Casey Lee", text: $store.displayName)
+                        TextField("Your name", text: $store.displayName)
                             .textInputAutocapitalization(.words)
                             .focused($focusedField, equals: .displayName)
                             .padding(12)
