@@ -233,6 +233,7 @@ struct LiveGameView: View {
         }
 
         PingFlashOverlay(pulse: store.pingPulse)
+        TagAnnouncementOverlay(announcement: store.tagAnnouncement)
     }
 
     private var topBar: some View {

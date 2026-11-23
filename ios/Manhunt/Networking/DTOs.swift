@@ -468,6 +468,24 @@ struct BannerDTO: Codable, Identifiable {
     }
 }
 
+struct LiveEventDTO: Codable, Equatable, Identifiable {
+    var seq: Int
+    var type: String
+    var text: String
+    var tone: String
+    var playerId: UUID?
+    var announcement: String?
+    var subjectName: String?
+
+    var id: Int { seq }
+
+    enum CodingKeys: String, CodingKey {
+        case seq, type, text, tone, announcement
+        case playerId = "player_id"
+        case subjectName = "subject_name"
+    }
+}
+
 struct ResultDTO: Codable {
     var winner: String
     var reason: String
