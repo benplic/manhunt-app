@@ -10,7 +10,9 @@ from fastapi.testclient import TestClient
 from app.engine.arena import arena_to_dict
 from app.engine.modules.base import TagClaim
 from app.engine.qr import make_qr_token
-from tests.engine.helpers import square
+from app.engine.state import LocationReading
+from app.games.service import GameService
+from tests.engine.helpers import meters, square
 
 
 def _auth(client: TestClient, name: str) -> dict:
@@ -53,7 +55,9 @@ def _drain_views(ws, limit: int = 20) -> list[dict]:
     return views
 
 
-def _started_two_player_game(client: TestClient) -> tuple[dict, dict, str]:
+def _started_two_player_game(
+    client: TestClient, overrides: dict | None = None
+) -> tuple[dict, dict, str]:
     host = _auth(client, "Casey")
     guest = _auth(client, "Riley")
     arena = client.post(
@@ -67,7 +71,7 @@ def _started_two_player_game(client: TestClient) -> tuple[dict, dict, str]:
         json={
             "arena_id": arena.json()["id"],
             "preset_id": "classic",
-            "overrides": {"head_start": {"enabled": False}},
+            "overrides": overrides or {"head_start": {"enabled": False}},
         },
         headers=_hdr(host["access_token"]),
     )
@@ -127,7 +131,6 @@ def test_tag_announcement_fields_reach_every_player_live_and_on_reconnect(
             host_ws.portal.call(manager.broadcast, game_uuid)
 
             for ws in (host_ws, guest_ws):
-                assert _next(ws)["type"] == "view"
                 event = _next(ws)
                 assert event["type"] == "event"
                 assert event["data"] == {
@@ -140,6 +143,9 @@ def test_tag_announcement_fields_reach_every_player_live_and_on_reconnect(
                     "announcement": "player_tagged",
                     "subject_name": "Casey",
                 }
+                pushed = _next(ws)
+                while pushed["type"] != "view":
+                    pushed = _next(ws)
 
     with client.websocket_connect(f"/v1/games/{game_id}/ws") as reconnect_ws:
         reconnect_ws.send_json(
@@ -157,6 +163,58 @@ def test_tag_announcement_fields_reach_every_player_live_and_on_reconnect(
         assert replay["type"] == "event"
         assert replay["data"]["announcement"] == "player_tagged"
         assert replay["data"]["subject_name"] == "Casey"
+
+
+def test_tick_persist_then_broadcast_delivers_out_of_bounds_announcement(
+    client: TestClient,
+) -> None:
+    host, _guest, game_id = _started_two_player_game(
+        client,
+        overrides={
+            "head_start": {"enabled": False},
+            "zone_policy": {"oob_countdown": 5},
+        },
+    )
+    game_uuid = UUID(game_id)
+    hider_id = UUID(host["user"]["id"])
+    manager = client.app.state.manager
+    game = manager.sessions[game_uuid]
+    game.record_location(
+        hider_id,
+        LocationReading(
+            lat=meters(300, 100).lat,
+            lon=meters(300, 100).lon,
+            accuracy_m=5,
+            recorded_at=game.clock.now(),
+        ),
+    )
+
+    with client.websocket_connect(f"/v1/games/{game_id}/ws") as host_ws:
+        host_ws.send_json({"type": "hello", "data": {"token": host["access_token"]}})
+        assert _next(host_ws)["type"] == "welcome"
+        assert _next(host_ws)["type"] == "view"
+
+        for _ in range(7):
+            manager.clock.advance(1)
+            manager.tick_all()
+
+        async def persist_then_broadcast() -> None:
+            service = GameService(manager)
+            async with client.app.state.session_factory() as db:
+                await service.persist_game(db, game, commit=True)
+            await manager.broadcast(game_uuid)
+
+        host_ws.portal.call(persist_then_broadcast)
+
+        event = _next(host_ws)
+        assert event["type"] == "event"
+        assert event["data"]["announcement"] == "player_tagged_out_of_bounds"
+        assert event["data"]["subject_name"] == "Casey"
+        assert event["data"]["player_id"] == str(hider_id)
+        pushed = _next(host_ws)
+        while pushed["type"] != "view":
+            pushed = _next(host_ws)
+        assert pushed["data"]["phase"] == "ended"
 
 
 def test_location_does_not_push_a_view_until_tick(client: TestClient) -> None:

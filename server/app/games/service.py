@@ -753,12 +753,11 @@ class GameService:
                 self.finalize_persist(game)
 
     def finalize_persist(self, game: GameSession) -> None:
-        """Advance the watermark and drain pending only after a successful commit."""
+        """Advance the DB watermark after commit; broadcast owns pending delivery."""
         high = getattr(game, "_persist_high_seq", None)
         if high is not None and high > game.last_persisted_seq:
             game.last_persisted_seq = int(high)
         game._persist_high_seq = None
-        game.drain_events()
 
     async def _persist_events(self, session: AsyncSession, game: GameSession) -> None:
         """Stage new game_events. Caller must hold `_persist_lock` through commit."""

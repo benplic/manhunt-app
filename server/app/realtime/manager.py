@@ -154,7 +154,6 @@ class SessionManager:
                 demo_controls_enabled=self.demo_controls_enabled,
             )
             try:
-                await ws.send_json(envelope("view", view))
                 for event in events:
                     if event.sensitive:
                         continue
@@ -164,6 +163,7 @@ class SessionManager:
                             serialize_event(event),
                         )
                     )
+                await ws.send_json(envelope("view", view))
                 qr = session.state.qr_by_hider.get(player_id)
                 player = session.state.players[player_id]
                 if qr and player.role == "hider":

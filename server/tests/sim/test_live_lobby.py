@@ -43,6 +43,13 @@ def _next(ws, timeout: float = 2):
         raise AssertionError("expected a websocket frame") from None
 
 
+def _next_view(ws) -> dict:
+    frame = _next(ws)
+    while frame["type"] != "view":
+        frame = _next(ws)
+    return frame
+
+
 def test_join_and_roles_push_a_lobby_view(client: TestClient) -> None:
     host = _auth(client, "Casey")
     guest = _auth(client, "Riley")
@@ -73,8 +80,7 @@ def test_join_and_roles_push_a_lobby_view(client: TestClient) -> None:
             headers=_hdr(guest["access_token"]),
         )
         assert joined.status_code == 200, joined.text
-        pushed = _next(host_ws)
-        assert pushed["type"] == "view"
+        pushed = _next_view(host_ws)
         names = {player["display_name"] for player in pushed["data"]["players"]}
         assert names == {"Casey", "Riley"}
 
@@ -102,8 +108,7 @@ def test_join_and_roles_push_a_lobby_view(client: TestClient) -> None:
                 headers=_hdr(host["access_token"]),
             )
             assert roles.status_code == 200, roles.text
-            guest_view = _next(guest_ws)
-            assert guest_view["type"] == "view"
+            guest_view = _next_view(guest_ws)
             by_name = {
                 player["display_name"]: player["role"] for player in guest_view["data"]["players"]
             }
@@ -116,8 +121,7 @@ def test_join_and_roles_push_a_lobby_view(client: TestClient) -> None:
                 headers=_hdr(host["access_token"]),
             )
             assert started.status_code == 200, started.text
-            started_view = _next(guest_ws)
-            assert started_view["type"] == "view"
+            started_view = _next_view(guest_ws)
             assert started_view["data"]["phase"] == "head_start"
 
 
@@ -180,7 +184,6 @@ def test_remove_player_sends_removed_and_broadcasts_lobby(client: TestClient) ->
             assert goodbye["data"]["reason"] == "host_removed"
             _expect_close(guest_ws, code=4403)
 
-            host_view = _next(host_ws)
-            assert host_view["type"] == "view"
+            host_view = _next_view(host_ws)
             names = [player["display_name"] for player in host_view["data"]["players"]]
             assert names == ["Casey"]
