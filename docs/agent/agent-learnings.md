@@ -127,3 +127,10 @@ Scott asked for a brainstorm and also said not to ask questions the repo already
 ### 2026-11-23 — Next product goal is hold
 
 He answered the one open product question: leave features alone, take only bugs or tasks he names, and leave the human gates to him. The decision is in `docs/agent/project-context.md` under Heard in conversation. Do not ask it again.
+
+### 2026-11-23 — Preserve WebSocket callback order across the main-actor hop
+
+Separate `Task { @MainActor }` blocks do not guarantee that sequential socket
+callbacks reach `AppStore` in receive order. Route all live-service callbacks
+through one main-queue FIFO instead. The regression is
+`testLiveCallbacksKeepFinalTagBeforeImmediatelyFollowingEndedView`.

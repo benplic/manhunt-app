@@ -191,20 +191,18 @@ final class AppStore {
         location.onAuthorizationChange = { [weak self] accuracy in
             self?.noteLocationAuthorization(accuracy)
         }
-        // Socket callbacks arrive off the main actor. The store is @MainActor,
-        // so a direct call never moves the other phone off the lobby.
         live?.onView = { [weak self] view in
-            Task { @MainActor in
+            Self.deliverLiveCallback {
                 self?.apply(view)
             }
         }
         live?.onQR = { [weak self] token in
-            Task { @MainActor in
+            Self.deliverLiveCallback {
                 self?.match?.qrToken = token
             }
         }
         live?.onEvent = { [weak self] event in
-            Task { @MainActor in
+            Self.deliverLiveCallback {
                 guard let self else { return }
                 // A toast from a hunt that already ended must not land on Home.
                 guard self.match != nil, self.screen == .live || self.screen == .lobby else { return }
@@ -212,31 +210,38 @@ final class AppStore {
             }
         }
         live?.onReconnect = { [weak self] reconnecting in
-            Task { @MainActor in
+            Self.deliverLiveCallback {
                 self?.handleReconnect(reconnecting)
             }
         }
         live?.onRemoved = { [weak self] in
-            Task { @MainActor in
+            Self.deliverLiveCallback {
                 self?.handleRemovedFromLobby()
             }
         }
         live?.onSendFailure = { [weak self] _ in
-            Task { @MainActor in
+            Self.deliverLiveCallback {
                 self?.handleSendFailure()
             }
         }
         live?.onRefreshFailed = { [weak self] in
-            self?.signOut()
-            self?.note = "Session expired. Sign in again."
+            Self.deliverLiveCallback {
+                self?.signOut()
+                self?.note = "Session expired. Sign in again."
+            }
         }
         live?.onTokensRotated = { [weak self] auth in
-            try? self?.keychain.saveToken(auth.accessToken)
-            if let refresh = auth.refreshToken {
-                try? self?.keychain.saveRefreshToken(refresh)
-            }
-            if let session = self?.session {
-                self?.session = Session(displayName: session.displayName, token: auth.accessToken)
+            Self.deliverLiveCallback {
+                try? self?.keychain.saveToken(auth.accessToken)
+                if let refresh = auth.refreshToken {
+                    try? self?.keychain.saveRefreshToken(refresh)
+                }
+                if let session = self?.session {
+                    self?.session = Session(
+                        displayName: session.displayName,
+                        token: auth.accessToken
+                    )
+                }
             }
         }
         // Cold start: restore refresh so a 401 can rotate without forcing sign-in.
@@ -258,6 +263,24 @@ final class AppStore {
             if mapped != .signedOut {
                 session = Session(displayName: Self.previewDisplayName, token: "preview")
             }
+        }
+    }
+
+    /// GameSocket invokes callbacks in receive order. Main queue FIFO preserves
+    /// that order while crossing to AppStore's actor; callbacks already on main
+    /// execute inline so one cannot be deferred behind the next message.
+    private nonisolated static func deliverLiveCallback(
+        _ operation: @escaping @MainActor @Sendable () -> Void
+    ) {
+        let work: @Sendable () -> Void = {
+            MainActor.assumeIsolated {
+                operation()
+            }
+        }
+        if Thread.isMainThread {
+            work()
+        } else {
+            DispatchQueue.main.async(execute: work)
         }
     }
 

@@ -520,6 +520,34 @@ final class AppStoreTests: XCTestCase {
     }
 
     @MainActor
+    func testLiveCallbacksKeepFinalTagBeforeImmediatelyFollowingEndedView() {
+        let live = LiveGameService(baseURL: URL(string: "http://127.0.0.1:1")!)
+        let store = AppStore(service: live)
+        store.match = MatchHandle(snapshot: Fixtures.liveView(phase: .active), qrToken: nil)
+        store.screen = .live
+        let taggedID = UUID()
+        let event = LiveEventDTO(
+            seq: 90,
+            type: "tag",
+            text: "untrusted prose",
+            tone: "danger",
+            playerId: taggedID,
+            announcement: "player_tagged",
+            subjectName: "Riley"
+        )
+        let ended = Fixtures.liveView(phase: .ended)
+
+        XCTAssertNotNil(live.onEvent)
+        XCTAssertNotNil(live.onView)
+        live.onEvent?(event)
+        live.onView?(ended)
+
+        XCTAssertEqual(store.screen, .results)
+        XCTAssertEqual(store.tagAnnouncement?.id, event.seq)
+        XCTAssertEqual(store.tagAnnouncement?.text, "Riley was tagged!")
+    }
+
+    @MainActor
     func testLeaveResultsClearsAnyQueuedTagAnnouncement() {
         let store = AppStore.makePreview()
         store.screen = .live
