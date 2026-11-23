@@ -2,7 +2,7 @@ import hmac
 
 from fastapi import APIRouter, Depends, Header, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.apple import verify_apple_token
@@ -103,16 +103,28 @@ def bind_auth_routes(get_session, get_settings, current_user):
             )
         assert_display_name_allowed(body.display_name)
         name = normalize_display_name(body.display_name)
-        handle = _install_handle(body.installation_id)
-        user = await session.scalar(select(User).where(User.dev_handle == handle))
+        user = None
+        if settings.manhunt_name_sign_in:
+            # Oldest dev account with this name wins, so the account that already
+            # holds the maps and presets keeps them. Case and spacing are ignored.
+            user = await session.scalar(
+                select(User)
+                .where(
+                    User.dev_handle.is_not(None),
+                    func.lower(User.display_name) == name.lower(),
+                )
+                .order_by(User.created_at, User.id)
+                .limit(1)
+            )
         if user is None:
-            user = User(dev_handle=handle, display_name=name)
-            session.add(user)
-            await session.commit()
-            await session.refresh(user)
-        elif user.display_name != name:
-            # Same install can rename between Play taps; identity stays the install id.
-            user.display_name = name
+            handle = _install_handle(body.installation_id)
+            user = await session.scalar(select(User).where(User.dev_handle == handle))
+            if user is None:
+                user = User(dev_handle=handle, display_name=name)
+                session.add(user)
+            else:
+                # Same install can rename between Play taps; identity stays the install id.
+                user.display_name = name
             await session.commit()
             await session.refresh(user)
         return await _issue(session, user, settings)
