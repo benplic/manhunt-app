@@ -37,6 +37,8 @@ services:
       MANHUNT_TICK_LOOP: "true"
       # JSONL playtest timeline on the host (joins, WS, scores, errors).
       MANHUNT_PLAYTEST_LOG_DIR: /app/playtest-logs
+      # Tonight only: same display name on any device = same account. Set to false after the party.
+      MANHUNT_NAME_SIGN_IN: "true"
     ports:
       - "8000:8000"
     volumes:

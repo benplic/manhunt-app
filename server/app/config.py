@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     # Append-only JSONL playtest timeline. Empty disables. Unset uses
     # playtest-logs/ for local/test/home and stays off in azure/prod.
     manhunt_playtest_log_dir: str | None = None
+    # Tonight-only party mode: a display name, not the install id, picks the dev account.
+    # Off by default. Turn it on only for a home host during a shared playtest.
+    # TODO: remove after the playtest, or move it behind a PIN (see the plan's later items).
+    manhunt_name_sign_in: bool = False
 
     @property
     def demo_controls_enabled(self) -> bool:
