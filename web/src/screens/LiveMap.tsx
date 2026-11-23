@@ -244,6 +244,8 @@ export function LiveMap({
   const oobNote = boundsMessage(view)
   const wentDark = darkMessage(view)
   const pingLeft = view.timers?.next_reveal_in_s
+  // Hiders only. Seekers keep the existing Ping line for when they are exposed.
+  const seekerPingLeft = isHider ? view.timers?.next_seeker_reveal_in_s : null
   const zoneTimer = view.timers?.zone
   const powerUps = useMemo(
     () => (view.power_ups ?? []).filter((row) => row.role === view.you.role),
@@ -838,6 +840,9 @@ export function LiveMap({
           <span className="hud-clock">{clockPrimary}</span>
           {pingLeft != null ? (
             <span className="hud-sub">Ping {formatClock(pingLeft)}</span>
+          ) : null}
+          {seekerPingLeft != null ? (
+            <span className="hud-sub">Seekers {formatClock(seekerPingLeft)}</span>
           ) : null}
           {zoneTimer?.shrinks_in_s != null && playBoundary?.kind === 'circle' ? (
             <span className="hud-sub">Shrink {formatClock(zoneTimer.shrinks_in_s)}</span>

@@ -18,7 +18,8 @@ _PERSISTENT_EXTRA_S = 60 * 60 * 24 * 365
 def publish_hints(s: GameSession) -> None:
     from app.engine.modules.hot_cold import refresh_hints
 
-    refresh_hints(s, after_pulse=True)
+    # Seeker hints only. A hider pulse must not open the hider hint window.
+    refresh_hints(s, after_pulse=True, audience="seeker")
 
 
 def _republish_timed_hints(

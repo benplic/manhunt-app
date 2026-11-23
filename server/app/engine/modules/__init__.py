@@ -5,6 +5,7 @@ from app.engine.modules.hot_cold import HotColdModule
 from app.engine.modules.points import PointsModule
 from app.engine.modules.power_ups import PowerUpsModule
 from app.engine.modules.reveal_fuzzy import RevealFuzzyModule
+from app.engine.modules.reveal_seekers import RevealSeekersModule
 from app.engine.modules.roles import RolesModule
 from app.engine.modules.signal_loss import SignalLossModule
 from app.engine.modules.tag_policy import TagPolicyModule
@@ -16,6 +17,7 @@ MODULE_TYPES: dict[str, type[BaseModule]] = {
     "roles": RolesModule,
     "head_start": HeadStartModule,
     "reveal_fuzzy": RevealFuzzyModule,
+    "reveal_seekers": RevealSeekersModule,
     "tag_policy": TagPolicyModule,
     "zone_policy": ZonePolicyModule,
     "zone_shrink": ZoneShrinkModule,

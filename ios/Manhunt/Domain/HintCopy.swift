@@ -3,18 +3,35 @@ import Foundation
 /// Dock line for a hot/cold hint. The server owns the band, meters, and bearing.
 enum HintCopy {
     static func line(role: PlayerRole, hint: HintDTO?) -> String {
+        // Classic Seeker reveal is Off, so a hider with no payload still sees the old line.
         if role == .hider {
-            return "Warmth is hidden from you."
+            guard let hint, let band = hint.band else {
+                return "Warmth is hidden from you."
+            }
+            return sentence(
+                name: hint.name ?? "A seeker",
+                band: band,
+                meters: hint.meters,
+                bearing: hint.bearingDeg
+            )
         }
         guard role == .seeker, let hint, let band = hint.band else {
             return "No hint yet."
         }
-        let name = hint.name ?? "A hider"
-        let meters = hint.meters.map(String.init) ?? "?"
-        guard let bearing = hint.bearingDeg else {
-            return "\(name) is \(band), \(meters) m"
+        return sentence(
+            name: hint.name ?? "A hider",
+            band: band,
+            meters: hint.meters,
+            bearing: hint.bearingDeg
+        )
+    }
+
+    private static func sentence(name: String, band: String, meters: Int?, bearing: Int?) -> String {
+        let metersText = meters.map(String.init) ?? "?"
+        guard let bearing else {
+            return "\(name) is \(band), \(metersText) m"
         }
-        return "\(name) is \(band), \(meters) m, \(cardinal(for: bearing))"
+        return "\(name) is \(band), \(metersText) m, \(cardinal(for: bearing))"
     }
 
     /// Preset / form help for when seekers get hot/cold hints.

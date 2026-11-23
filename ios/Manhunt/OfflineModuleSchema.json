@@ -26,7 +26,7 @@
           "type": "int",
           "title": "Seekers",
           "min": 1,
-          "max": 20,
+          "max": 40,
           "step": 1,
           "default": 1,
           "suffix": ""
@@ -175,10 +175,115 @@
         }
       }
     },
+    "reveal_seekers": {
+      "version": 1,
+      "title": "Seeker reveal",
+      "blurb": "Hiders see seeker pulses. Off sends nothing. Fuzzy, Precise, and Hot/cold match Reveal.",
+      "locked": true,
+      "field_order": [
+        "location_mode",
+        "persistence",
+        "interval",
+        "display",
+        "fuzz",
+        "hints_enabled",
+        "hints_persistence",
+        "hints_interval"
+      ],
+      "fields": {
+        "location_mode": {
+          "type": "enum",
+          "title": "Location",
+          "values": [
+            "off",
+            "fuzzy",
+            "precise",
+            "hot_cold"
+          ],
+          "default": "off",
+          "labels": [
+            "Off",
+            "Fuzzy",
+            "Precise",
+            "Hot/cold"
+          ],
+          "help": "Off: hiders see no seeker pulses. Fuzzy: offset pins, optional hints. Precise: true pins, no hints. Hot/cold: distance and direction only (hints always on)."
+        },
+        "persistence": {
+          "type": "enum",
+          "title": "Location timing",
+          "values": [
+            "timed",
+            "persistent"
+          ],
+          "default": "timed",
+          "labels": [
+            "Timed",
+            "Persistent"
+          ],
+          "help": "Persistent pins never expire."
+        },
+        "interval": {
+          "type": "int",
+          "title": "Every",
+          "min": 20,
+          "max": 600,
+          "step": 10,
+          "default": 60,
+          "suffix": "s"
+        },
+        "display": {
+          "type": "int",
+          "title": "Stays up",
+          "min": 5,
+          "max": 60,
+          "step": 5,
+          "default": 10,
+          "suffix": "s"
+        },
+        "fuzz": {
+          "type": "int",
+          "title": "Fuzz",
+          "min": 0,
+          "max": 100,
+          "step": 5,
+          "default": 30,
+          "suffix": "m"
+        },
+        "hints_enabled": {
+          "type": "bool",
+          "title": "Hints",
+          "default": true,
+          "help": "Fuzzy only. On: hiders get hot/cold with pins. Hot/cold mode always has hints; Precise never does."
+        },
+        "hints_persistence": {
+          "type": "enum",
+          "title": "Hints timing",
+          "values": [
+            "timed",
+            "persistent"
+          ],
+          "default": "persistent",
+          "labels": [
+            "Timed",
+            "Persistent"
+          ]
+        },
+        "hints_interval": {
+          "type": "int",
+          "title": "Hints every",
+          "min": 2,
+          "max": 30,
+          "step": 1,
+          "default": 5,
+          "suffix": "s"
+        }
+      }
+    },
     "tag_policy": {
       "version": 1,
       "title": "Tag",
-      "blurb": "Seekers scan a rotating QR code while GPS pairing is satisfied.",
+      "blurb": "Seekers scan a rotating QR code. The code is the tag; GPS distance is not.",
       "locked": true,
       "hidden": true,
       "field_order": [
@@ -719,6 +824,7 @@
     "roles",
     "head_start",
     "reveal_fuzzy",
+    "reveal_seekers",
     "tag_policy",
     "zone_policy",
     "zone_shrink",

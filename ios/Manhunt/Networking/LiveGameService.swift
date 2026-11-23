@@ -15,7 +15,7 @@ final class LiveGameService: GameService {
     var onTokensRotated: ((AuthOut) -> Void)?
     var onView: ((PlayerViewDTO) -> Void)?
     var onQR: ((String) -> Void)?
-    var onEvent: ((BannerDTO) -> Void)?
+    var onEvent: ((LiveEventDTO) -> Void)?
     var onReconnect: ((Bool) -> Void)?
     /// Fired when the server removes this player (`type: removed` or close 4403).
     var onRemoved: (() -> Void)?
@@ -28,7 +28,7 @@ final class LiveGameService: GameService {
         client = APIClient(baseURL: baseURL)
         socket.onView = { [weak self] view in self?.onView?(view) }
         socket.onQR = { [weak self] token in self?.onQR?(token) }
-        socket.onEvent = { [weak self] banner in self?.onEvent?(banner) }
+        socket.onEvent = { [weak self] event in self?.onEvent?(event) }
         socket.onReconnect = { [weak self] reconnecting in self?.onReconnect?(reconnecting) }
         socket.onRemoved = { [weak self] in self?.onRemoved?() }
         client.refreshAccessToken = { [weak self] in
@@ -214,6 +214,7 @@ final class LiveGameService: GameService {
 
     func connect(gameID: UUID) {
         guard let token = client.token else { return }
+        socket.beginGame(gameID)
         var components = URLComponents(url: client.baseURL, resolvingAgainstBaseURL: false)
         let wsScheme = client.baseURL.scheme == "https" ? "wss" : "ws"
         components?.scheme = wsScheme

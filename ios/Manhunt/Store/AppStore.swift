@@ -107,10 +107,15 @@ final class AppStore {
     var pasteToken = ""
     var tagMessage: String?
     var liveUpdate: LiveUpdate?
+    var tagAnnouncement: TagAnnouncement?
+    private(set) var pendingTagAnnouncements: [TagAnnouncement] = []
     var pingPulse: PingPulse?
     var flashlightOn = false
     var timeline: [TimelineEventDTO] = []
     private var liveUpdateExpiryTask: Task<Void, Never>?
+    private var tagAnnouncementExpiryTask: Task<Void, Never>?
+    private var tagAnnouncementStartedAt: Date?
+    private var seenTagAnnouncementSequences: Set<Int> = []
     private var noteExpiryTask: Task<Void, Never>?
     private var presetReturn: AppScreen = .home
     private var sentLowBattery = false
@@ -186,52 +191,57 @@ final class AppStore {
         location.onAuthorizationChange = { [weak self] accuracy in
             self?.noteLocationAuthorization(accuracy)
         }
-        // Socket callbacks arrive off the main actor. The store is @MainActor,
-        // so a direct call never moves the other phone off the lobby.
         live?.onView = { [weak self] view in
-            Task { @MainActor in
+            Self.deliverLiveCallback {
                 self?.apply(view)
             }
         }
         live?.onQR = { [weak self] token in
-            Task { @MainActor in
+            Self.deliverLiveCallback {
                 self?.match?.qrToken = token
             }
         }
-        live?.onEvent = { [weak self] banner in
-            Task { @MainActor in
+        live?.onEvent = { [weak self] event in
+            Self.deliverLiveCallback {
                 guard let self else { return }
                 // A toast from a hunt that already ended must not land on Home.
                 guard self.match != nil, self.screen == .live || self.screen == .lobby else { return }
-                self.recordLiveEvent(banner)
+                self.recordLiveEvent(event)
             }
         }
         live?.onReconnect = { [weak self] reconnecting in
-            Task { @MainActor in
+            Self.deliverLiveCallback {
                 self?.handleReconnect(reconnecting)
             }
         }
         live?.onRemoved = { [weak self] in
-            Task { @MainActor in
+            Self.deliverLiveCallback {
                 self?.handleRemovedFromLobby()
             }
         }
         live?.onSendFailure = { [weak self] _ in
-            Task { @MainActor in
+            Self.deliverLiveCallback {
                 self?.handleSendFailure()
             }
         }
         live?.onRefreshFailed = { [weak self] in
-            self?.signOut()
-            self?.note = "Session expired. Sign in again."
+            Self.deliverLiveCallback {
+                self?.signOut()
+                self?.note = "Session expired. Sign in again."
+            }
         }
         live?.onTokensRotated = { [weak self] auth in
-            try? self?.keychain.saveToken(auth.accessToken)
-            if let refresh = auth.refreshToken {
-                try? self?.keychain.saveRefreshToken(refresh)
-            }
-            if let session = self?.session {
-                self?.session = Session(displayName: session.displayName, token: auth.accessToken)
+            Self.deliverLiveCallback {
+                try? self?.keychain.saveToken(auth.accessToken)
+                if let refresh = auth.refreshToken {
+                    try? self?.keychain.saveRefreshToken(refresh)
+                }
+                if let session = self?.session {
+                    self?.session = Session(
+                        displayName: session.displayName,
+                        token: auth.accessToken
+                    )
+                }
             }
         }
         // Cold start: restore refresh so a 401 can rotate without forcing sign-in.
@@ -253,6 +263,24 @@ final class AppStore {
             if mapped != .signedOut {
                 session = Session(displayName: Self.previewDisplayName, token: "preview")
             }
+        }
+    }
+
+    /// GameSocket invokes callbacks in receive order. Main queue FIFO preserves
+    /// that order while crossing to AppStore's actor; callbacks already on main
+    /// execute inline so one cannot be deferred behind the next message.
+    private nonisolated static func deliverLiveCallback(
+        _ operation: @escaping @MainActor @Sendable () -> Void
+    ) {
+        let work: @Sendable () -> Void = {
+            MainActor.assumeIsolated {
+                operation()
+            }
+        }
+        if Thread.isMainThread {
+            work()
+        } else {
+            DispatchQueue.main.async(execute: work)
         }
     }
 
@@ -421,7 +449,7 @@ final class AppStore {
                 if let displayName = pin.displayName, !displayName.isEmpty {
                     return displayName
                 }
-                return "Hider"
+                return "Player"
             }()
             return MapReveal(
                 id: pin.revealId.uuidString,
@@ -589,15 +617,22 @@ final class AppStore {
         sendFix(from: fix, isFinal: true)
     }
 
-    func recordLiveEvent(_ banner: BannerDTO, now: Date = Date()) {
-        guard PauseChrome.shouldToast(eventTitle: banner.title) else { return }
+    func recordLiveEvent(_ event: LiveEventDTO, now: Date = Date()) {
+        if screen == .live,
+           let announcement = TagAnnouncement(event: event, blockList: blockList),
+           seenTagAnnouncementSequences.insert(event.seq).inserted
+        {
+            enqueueTagAnnouncement(announcement, now: now)
+        }
+
+        guard PauseChrome.shouldToast(eventTitle: event.type) else { return }
         let ignored: Set<String> = ["started", "player_joined", "location"]
-        let trimmed = banner.detail.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !ignored.contains(banner.title), !trimmed.isEmpty else { return }
+        let trimmed = event.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ignored.contains(event.type), !trimmed.isEmpty else { return }
         let update = LiveUpdate(
-            id: banner.bannerId,
+            id: UUID(),
             text: trimmed,
-            tone: banner.tone,
+            tone: event.tone,
             receivedAt: now
         )
         liveUpdate = update
@@ -609,6 +644,51 @@ final class AppStore {
                 self.liveUpdate = nil
             }
         }
+    }
+
+    private func enqueueTagAnnouncement(_ announcement: TagAnnouncement, now: Date) {
+        guard tagAnnouncement != nil else {
+            tagAnnouncement = announcement
+            tagAnnouncementStartedAt = now
+            scheduleTagAnnouncementExpiry(id: announcement.id)
+            return
+        }
+        pendingTagAnnouncements.append(announcement)
+    }
+
+    func clearExpiredTagAnnouncement(now: Date = Date()) {
+        guard tagAnnouncement != nil,
+              let startedAt = tagAnnouncementStartedAt,
+              now.timeIntervalSince(startedAt) >= 2
+        else { return }
+        tagAnnouncementExpiryTask?.cancel()
+        if pendingTagAnnouncements.isEmpty {
+            tagAnnouncement = nil
+            tagAnnouncementStartedAt = nil
+        } else {
+            let next = pendingTagAnnouncements.removeFirst()
+            tagAnnouncement = next
+            tagAnnouncementStartedAt = now
+            scheduleTagAnnouncementExpiry(id: next.id)
+        }
+    }
+
+    private func scheduleTagAnnouncementExpiry(id: Int) {
+        tagAnnouncementExpiryTask?.cancel()
+        tagAnnouncementExpiryTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, let self, self.tagAnnouncement?.id == id else { return }
+            self.clearExpiredTagAnnouncement()
+        }
+    }
+
+    private func clearTagAnnouncements() {
+        tagAnnouncementExpiryTask?.cancel()
+        tagAnnouncementExpiryTask = nil
+        tagAnnouncement = nil
+        tagAnnouncementStartedAt = nil
+        pendingTagAnnouncements = []
+        seenTagAnnouncementSequences = []
     }
 
     func clearExpiredLiveUpdate(now: Date = Date()) {
@@ -665,6 +745,7 @@ final class AppStore {
         note = nil
         liveUpdate = nil
         liveUpdateExpiryTask?.cancel()
+        clearTagAnnouncements()
         noteExpiryTask?.cancel()
     }
 
@@ -690,6 +771,7 @@ final class AppStore {
         note = nil
         liveUpdate = nil
         liveUpdateExpiryTask?.cancel()
+        clearTagAnnouncements()
         noteExpiryTask?.cancel()
         guard let gameID else { return }
         Task {
@@ -860,6 +942,7 @@ final class AppStore {
     }
 
     func createMatch(arenaID: UUID, presetID: String) {
+        clearTagAnnouncements()
         lastError = nil
         guard let selected = arenas.first(where: { $0.id == arenaID }) else {
             lastError = .missingArena
@@ -903,6 +986,7 @@ final class AppStore {
 
     @discardableResult
     func join(code: String) -> AppError? {
+        clearTagAnnouncements()
         lastError = nil
         let normalized = JoinCode.normalize(code)
         guard JoinCode.isValid(normalized) else {
@@ -1107,12 +1191,14 @@ final class AppStore {
     }
 
     func leaveResults() {
+        clearTagAnnouncements()
         match = nil
         note = nil
         screen = .home
     }
 
     func rematch() {
+        clearTagAnnouncements()
         guard let id = match?.snapshot.gameId else { return }
         lastError = nil
         if let fake {
@@ -2000,6 +2086,7 @@ final class AppStore {
         pingPulse = nil
         liveUpdate = nil
         liveUpdateExpiryTask?.cancel()
+        clearTagAnnouncements()
         withAnimation(.snappy(duration: 0.35)) {
             screen = .home
         }

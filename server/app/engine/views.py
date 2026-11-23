@@ -28,6 +28,9 @@ def build_view(
         for pin in state.reveals
         if viewer.role == "seeker" or pin.player_id == viewer_id
     ]
+    # Seeker pins are for hiders. Seekers keep seeing only hider pins.
+    if viewer.role == "hider":
+        reveals.extend(_reveal_row(state, pin) for pin in state.seeker_reveals)
     you_safe = None
     if viewer.safe_zone_id is not None:
         you_safe = {
@@ -344,6 +347,16 @@ def _spawn_lock(session: GameSession, viewer_id: UUID) -> tuple[str | None, dict
     }
 
 
+def _next_pulse_in_s(state, interval_s: int | None, last_at: int | None) -> int | None:
+    """Seconds until the next pulse. Lobby shows the full interval; ended shows nothing."""
+    if interval_s is None or state.phase == "ended":
+        return None
+    if state.phase == "lobby":
+        return interval_s
+    next_at = interval_s if last_at is None else last_at + interval_s
+    return max(0, next_at - state.game_elapsed_s)
+
+
 def _build_timers(session: GameSession) -> dict:
     state = session.state
     head_start = session.module_settings("head_start")
@@ -354,17 +367,18 @@ def _build_timers(session: GameSession) -> dict:
     reveal = session.module_settings("reveal_fuzzy")
     reveal_enabled = bool(reveal.get("enabled", True))
     reveal_interval_s = int(reveal.get("interval", 60)) if reveal_enabled else None
-    next_reveal_in_s: int | None = None
-    if reveal_interval_s is not None and state.phase != "ended":
-        if state.phase == "lobby":
-            next_reveal_in_s = reveal_interval_s
-        else:
-            next_at = (
-                reveal_interval_s
-                if state.last_reveal_at_s is None
-                else state.last_reveal_at_s + reveal_interval_s
-            )
-            next_reveal_in_s = max(0, next_at - state.game_elapsed_s)
+    next_reveal_in_s = _next_pulse_in_s(state, reveal_interval_s, state.last_reveal_at_s)
+    seeker_reveal = session.module_settings("reveal_seekers")
+    seeker_mode = str(seeker_reveal.get("location_mode", "off"))
+    # Missing module or Off: hiders get no seeker countdown.
+    seeker_reveal_interval_s = (
+        int(seeker_reveal.get("interval", 60))
+        if seeker_reveal and seeker_mode != "off"
+        else None
+    )
+    next_seeker_reveal_in_s = _next_pulse_in_s(
+        state, seeker_reveal_interval_s, state.last_seeker_reveal_at_s
+    )
     zone_timer = None
     if (schedule := zone_shrink_schedule(session)) is not None:
         zone_timer = {
@@ -378,6 +392,8 @@ def _build_timers(session: GameSession) -> dict:
         "time_limit_s": time_limit_s,
         "reveal_interval_s": reveal_interval_s,
         "next_reveal_in_s": next_reveal_in_s,
+        "seeker_reveal_interval_s": seeker_reveal_interval_s,
+        "next_seeker_reveal_in_s": next_seeker_reveal_in_s,
         "zone": zone_timer,
     }
 

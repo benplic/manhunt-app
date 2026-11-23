@@ -468,6 +468,103 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(store.screen, .home)
     }
 
+    @MainActor
+    func testFinalTagEventBridgesEndedViewAndKeepsItsFullQueueDuration() {
+        let store = AppStore.makePreview()
+        store.screen = .live
+        let t0 = Date(timeIntervalSince1970: 2_000)
+        let first = LiveEventDTO(
+            seq: 1, type: "tag", text: "Riley was tagged.", tone: "danger",
+            playerId: UUID(), announcement: "player_tagged", subjectName: "Riley"
+        )
+        let second = LiveEventDTO(
+            seq: 2, type: "tag", text: "Morgan was tagged.", tone: "danger",
+            playerId: UUID(), announcement: "player_tagged", subjectName: "Morgan"
+        )
+        store.recordLiveEvent(first, now: t0)
+        store.recordLiveEvent(second, now: t0.addingTimeInterval(0.1))
+
+        store.apply(Fixtures.liveView(phase: .ended))
+
+        XCTAssertEqual(store.screen, .results)
+        XCTAssertEqual(store.tagAnnouncement?.id, 1)
+        XCTAssertEqual(store.tagAnnouncement?.text, "Riley was tagged!")
+        XCTAssertEqual(store.pendingTagAnnouncements.map(\.id), [2])
+
+        store.clearExpiredTagAnnouncement(now: t0.addingTimeInterval(1.99))
+        XCTAssertEqual(store.tagAnnouncement?.id, 1)
+        store.clearExpiredTagAnnouncement(now: t0.addingTimeInterval(2))
+        XCTAssertEqual(store.tagAnnouncement?.id, 2)
+        store.clearExpiredTagAnnouncement(now: t0.addingTimeInterval(4))
+        XCTAssertNil(store.tagAnnouncement)
+    }
+
+    @MainActor
+    func testTagAnnouncementMasksBlockedSubjectByPlayerID() {
+        let suite = "manhunt.tests.blocklist.announcement.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = AppStore(service: FakeGameService(), defaults: defaults)
+        let playerID = UUID()
+        store.blockPlayer(playerID.uuidString, displayName: "Riley")
+        store.screen = .live
+
+        store.recordLiveEvent(
+            LiveEventDTO(
+                seq: 3, type: "tag", text: "untrusted prose", tone: "danger",
+                playerId: playerID, announcement: "player_tagged", subjectName: "Riley"
+            )
+        )
+
+        XCTAssertEqual(store.tagAnnouncement?.text, "Blocked Player #1 was tagged!")
+    }
+
+    @MainActor
+    func testLiveCallbacksKeepFinalTagBeforeImmediatelyFollowingEndedView() {
+        let live = LiveGameService(baseURL: URL(string: "http://127.0.0.1:1")!)
+        let store = AppStore(service: live)
+        store.match = MatchHandle(snapshot: Fixtures.liveView(phase: .active), qrToken: nil)
+        store.screen = .live
+        let taggedID = UUID()
+        let event = LiveEventDTO(
+            seq: 90,
+            type: "tag",
+            text: "untrusted prose",
+            tone: "danger",
+            playerId: taggedID,
+            announcement: "player_tagged",
+            subjectName: "Riley"
+        )
+        let ended = Fixtures.liveView(phase: .ended)
+
+        XCTAssertNotNil(live.onEvent)
+        XCTAssertNotNil(live.onView)
+        live.onEvent?(event)
+        live.onView?(ended)
+
+        XCTAssertEqual(store.screen, .results)
+        XCTAssertEqual(store.tagAnnouncement?.id, event.seq)
+        XCTAssertEqual(store.tagAnnouncement?.text, "Riley was tagged!")
+    }
+
+    @MainActor
+    func testLeaveResultsClearsAnyQueuedTagAnnouncement() {
+        let store = AppStore.makePreview()
+        store.screen = .live
+        store.recordLiveEvent(
+            LiveEventDTO(
+                seq: 3, type: "tag", text: "Riley was tagged.", tone: "danger",
+                playerId: nil, announcement: "player_tagged", subjectName: "Riley"
+            )
+        )
+        store.screen = .results
+
+        store.leaveResults()
+
+        XCTAssertNil(store.tagAnnouncement)
+        XCTAssertTrue(store.pendingTagAnnouncements.isEmpty)
+    }
+
     // LobbyView / LiveGameView confirm Leave this hunt? before goHome(); that dialog is UI-only.
     @MainActor
     func testRematchOpensANewLobbyWithAFreshGameId() {
@@ -491,6 +588,31 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(store.match?.snapshot.phase, .lobby)
         XCTAssertTrue(store.timeline.isEmpty)
         XCTAssertNotEqual(store.joinCode, "")
+    }
+
+    @MainActor
+    func testRematchClearsAStaleTagAnnouncementBeforeTheNewLobby() {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.randomizeRoles(seekerCount: 1)
+        _ = store.startMatch()
+        store.endMatch()
+        store.screen = .live
+        store.recordLiveEvent(
+            LiveEventDTO(
+                seq: 4, type: "tag", text: "Riley was tagged.", tone: "danger",
+                playerId: nil, announcement: "player_tagged", subjectName: "Riley"
+            )
+        )
+        store.screen = .results
+
+        store.rematch()
+
+        XCTAssertEqual(store.screen, .lobby)
+        XCTAssertNil(store.tagAnnouncement)
+        XCTAssertTrue(store.pendingTagAnnouncements.isEmpty)
     }
 
     @MainActor

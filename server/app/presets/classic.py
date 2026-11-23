@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any
 
 from app.errors import ApiError, ErrorCode
+from app.limits import MAX_GAME_PLAYERS
 
 CLASSIC_ID = "classic"
 
@@ -14,6 +15,16 @@ CLASSIC_MODULES: dict[str, dict[str, Any]] = {
     "head_start": {"enabled": True, "duration": 60, "seeker_lock": "locked_map"},
     "reveal_fuzzy": {
         "location_mode": "fuzzy",
+        "persistence": "timed",
+        "interval": 60,
+        "display": 10,
+        "fuzz": 30,
+        "hints_enabled": True,
+        "hints_persistence": "persistent",
+        "hints_interval": 5,
+    },
+    "reveal_seekers": {
+        "location_mode": "off",
         "persistence": "timed",
         "interval": 60,
         "display": 10,
@@ -93,7 +104,7 @@ CLASSIC_MODULES: dict[str, dict[str, Any]] = {
 }
 
 RANGES: dict[tuple[str, str], tuple[float, float]] = {
-    ("roles", "seeker_count"): (1, 20),
+    ("roles", "seeker_count"): (1, MAX_GAME_PLAYERS),
     ("head_start", "duration"): (15, 600),
     ("reveal_fuzzy", "interval"): (20, 600),
     ("reveal_fuzzy", "display"): (5, 60),
@@ -117,6 +128,10 @@ RANGES: dict[tuple[str, str], tuple[float, float]] = {
     ("win", "time_limit"): (5, 180),
     ("hot_cold", "interval"): (2, 30),
     ("reveal_fuzzy", "hints_interval"): (2, 30),
+    ("reveal_seekers", "interval"): (20, 600),
+    ("reveal_seekers", "display"): (5, 60),
+    ("reveal_seekers", "fuzz"): (0, 100),
+    ("reveal_seekers", "hints_interval"): (2, 30),
     ("points", "taunt_cooldown"): (10, 180),
 }
 

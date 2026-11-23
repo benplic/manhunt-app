@@ -3,6 +3,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from app.engine.arena import arena_to_dict
+from app.limits import MAX_GAME_PLAYERS
 from tests.engine.helpers import square
 
 
@@ -42,6 +43,14 @@ def test_modules_schema_lists_classic_ids(client: TestClient) -> None:
     assert location_mode["values"] == ["fuzzy", "precise", "hot_cold"]
     assert "Hot/cold" in location_mode["help"]
     assert "Precise never" in body["modules"]["reveal_fuzzy"]["fields"]["hints_enabled"]["help"]
+    seeker_reveal = body["modules"]["reveal_seekers"]
+    assert seeker_reveal["locked"] is True
+    assert seeker_reveal["title"] == "Seeker reveal"
+    seeker_mode = seeker_reveal["fields"]["location_mode"]
+    assert seeker_mode["values"] == ["off", "fuzzy", "precise", "hot_cold"]
+    assert seeker_mode["default"] == "off"
+    order = body["order"]
+    assert order.index("reveal_seekers") == order.index("reveal_fuzzy") + 1
     assert "Persistent" in body["modules"]["power_ups"]["fields"]["tracker_enabled"]["help"]
     # The preset editor renders this document. Order and bounds are part of it.
     assert body["order"][0] == "roles"
@@ -51,6 +60,7 @@ def test_modules_schema_lists_classic_ids(client: TestClient) -> None:
         "shrink_to",
         "min_radius_m",
     }
+    assert body["modules"]["roles"]["fields"]["seeker_count"]["max"] == MAX_GAME_PLAYERS
     duration = body["modules"]["head_start"]["fields"]["duration"]
     assert duration["min"] == 15
     assert duration["max"] == 600

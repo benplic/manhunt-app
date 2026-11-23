@@ -161,8 +161,16 @@ def test_qr_tag_broadcasts_eliminated_view_to_hider(client: TestClient) -> None:
         )
         assert tagged.status_code == 200, tagged.text
 
+        tag_event = _next(hider_ws)
+        assert tag_event["type"] == "event"
+        assert tag_event["data"]["announcement"] == "player_tagged"
+        assert tag_event["data"]["subject_name"] == "Hider"
+        assert tag_event["data"]["player_id"] == hider_id
+
         pushed = _next(hider_ws)
-        assert pushed["type"] == "view"
+        while pushed["type"] != "view":
+            pushed = _next(hider_ws)
+        assert pushed["data"]["phase"] == "ended"
         assert pushed["data"]["you"]["status"] == "eliminated"
         assert pushed["data"]["you"]["player_id"] == hider_id
 
@@ -193,7 +201,8 @@ def test_shield_purchase_broadcasts_active_effect_to_seeker(client: TestClient) 
         assert any(row["type"] == "shield" for row in bought.json()["active_effects"])
 
         pushed = _next(seeker_ws)
-        assert pushed["type"] == "view"
+        while pushed["type"] != "view":
+            pushed = _next(seeker_ws)
         shields = [row for row in pushed["data"]["active_effects"] if row["type"] == "shield"]
         assert len(shields) == 1
         assert shields[0]["owner_id"] == hider_id

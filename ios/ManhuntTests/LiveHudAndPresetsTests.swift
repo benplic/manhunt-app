@@ -226,6 +226,83 @@ final class LiveHudAndPresetsTests: XCTestCase {
         XCTAssertNotNil(offline.first { $0.id == "power_ups" }?.rows.first { $0.id == "tracker_enabled" }?.help)
     }
 
+    func testSeekerRevealOffHidesRowsAndFuzzyShowsFuzz() {
+        let modules = ModuleForm.offlineModules()
+        let card = modules.first { $0.id == "reveal_seekers" }
+        XCTAssertEqual(card?.locked, true)
+        XCTAssertEqual(card?.title, "Seeker reveal")
+        XCTAssertTrue(
+            RevealFormVisibility.shows(rowID: "location_mode", moduleID: "reveal_seekers", modules: modules)
+        )
+        XCTAssertFalse(RevealFormVisibility.shows(rowID: "fuzz", moduleID: "reveal_seekers", modules: modules))
+        XCTAssertFalse(RevealFormVisibility.shows(rowID: "interval", moduleID: "reveal_seekers", modules: modules))
+        XCTAssertFalse(
+            RevealFormVisibility.shows(rowID: "hints_enabled", moduleID: "reveal_seekers", modules: modules)
+        )
+        var edited = modules
+        if let mIdx = edited.firstIndex(where: { $0.id == "reveal_seekers" }),
+           let rIdx = edited[mIdx].rows.firstIndex(where: { $0.id == "location_mode" }),
+           case let .options(_, values) = edited[mIdx].rows[rIdx].control,
+           let fuzzy = values.firstIndex(of: "fuzzy") {
+            edited[mIdx].rows[rIdx].choice = fuzzy
+        }
+        XCTAssertTrue(RevealFormVisibility.shows(rowID: "fuzz", moduleID: "reveal_seekers", modules: edited))
+        XCTAssertTrue(RevealFormVisibility.shows(rowID: "interval", moduleID: "reveal_seekers", modules: edited))
+    }
+
+    func testSeekerPingClockIsHiderOnly() {
+        let timers = TimersDTO(
+            headStartS: 60,
+            timeLimitS: 1800,
+            revealIntervalS: 60,
+            nextRevealInS: 40,
+            zone: nil,
+            seekerRevealIntervalS: 120,
+            nextSeekerRevealInS: 90
+        )
+        let hider = PlayerViewDTO(
+            gameId: UUID(),
+            joinCode: "TACO42",
+            phase: .active,
+            phaseRemainingS: nil,
+            gameElapsedS: 30,
+            timeLimitRemainingS: 900,
+            timers: timers,
+            you: YouDTO(
+                playerId: UUID(),
+                role: .hider,
+                status: .active,
+                isHost: false,
+                bounds: BoundsDTO(phase: "inside", remainingS: nil),
+                safeZone: nil,
+                points: 0
+            ),
+            players: [],
+            reveals: [],
+            banners: [],
+            result: nil
+        )
+        let hiderClock = PhaseClock(snapshot: hider, paused: false)
+        XCTAssertEqual(hiderClock.pingClock, "0:40")
+        XCTAssertEqual(hiderClock.seekerPingClock, "1:30")
+
+        var seeker = hider
+        seeker.you.role = .seeker
+        let seekerClock = PhaseClock(snapshot: seeker, paused: false)
+        XCTAssertEqual(seekerClock.pingClock, "0:40")
+        XCTAssertNil(seekerClock.seekerPingClock)
+
+        var off = hider
+        off.timers = TimersDTO(
+            headStartS: 60,
+            timeLimitS: 1800,
+            revealIntervalS: 60,
+            nextRevealInS: 40,
+            zone: nil
+        )
+        XCTAssertNil(PhaseClock(snapshot: off, paused: false).seekerPingClock)
+    }
+
     func testPresetOverridesGatesZoneShrinkToCircleArenas() {
         var modules = ModuleForm.offlineModules()
         if let idx = modules.firstIndex(where: { $0.id == "zone_shrink" }) {
@@ -408,17 +485,36 @@ final class LiveHudAndPresetsTests: XCTestCase {
         let store = AppStore.makePreview()
         let t0 = Date(timeIntervalSince1970: 1_000)
 
-        store.recordLiveEvent(BannerDTO(bannerId: UUID(), tone: "info", title: "started", detail: "The hunt is on.", playerId: nil), now: t0)
-        store.recordLiveEvent(BannerDTO(bannerId: UUID(), tone: "info", title: "player_joined", detail: "Riley joined.", playerId: nil), now: t0)
-        store.recordLiveEvent(BannerDTO(bannerId: UUID(), tone: "info", title: "location", detail: "", playerId: nil), now: t0)
-        XCTAssertNil(store.liveUpdate)
-
-        let warnID = UUID()
         store.recordLiveEvent(
-            BannerDTO(bannerId: warnID, tone: "warning", title: "zone_warning", detail: "Zone shrinks to 250 m in 1 min.", playerId: nil),
+            LiveEventDTO(
+                seq: 1, type: "started", text: "The hunt is on.", tone: "info",
+                playerId: nil, announcement: nil, subjectName: nil
+            ),
             now: t0
         )
-        XCTAssertEqual(store.liveUpdate?.id, warnID)
+        store.recordLiveEvent(
+            LiveEventDTO(
+                seq: 2, type: "player_joined", text: "Riley joined.", tone: "info",
+                playerId: nil, announcement: nil, subjectName: nil
+            ),
+            now: t0
+        )
+        store.recordLiveEvent(
+            LiveEventDTO(
+                seq: 3, type: "location", text: "", tone: "info",
+                playerId: nil, announcement: nil, subjectName: nil
+            ),
+            now: t0
+        )
+        XCTAssertNil(store.liveUpdate)
+
+        store.recordLiveEvent(
+            LiveEventDTO(
+                seq: 4, type: "zone_warning", text: "Zone shrinks to 250 m in 1 min.", tone: "warning",
+                playerId: nil, announcement: nil, subjectName: nil
+            ),
+            now: t0
+        )
         XCTAssertEqual(store.liveUpdate?.text, "Zone shrinks to 250 m in 1 min.")
         XCTAssertEqual(store.liveUpdate?.tone, "warning")
 
@@ -427,6 +523,95 @@ final class LiveHudAndPresetsTests: XCTestCase {
 
         store.clearExpiredLiveUpdate(now: t0.addingTimeInterval(12.5))
         XCTAssertNil(store.liveUpdate)
+    }
+
+    @MainActor
+    func testTagAnnouncementsFilterCopyAndQueueFIFOForTwoSeconds() {
+        let store = AppStore.makePreview()
+        store.screen = .live
+        let t0 = Date(timeIntervalSince1970: 2_000)
+
+        store.recordLiveEvent(
+            LiveEventDTO(
+                seq: 50,
+                type: "zone_warning",
+                text: "Return to the play area.",
+                tone: "warning",
+                playerId: nil,
+                announcement: nil,
+                subjectName: nil
+            ),
+            now: t0
+        )
+        XCTAssertNil(store.tagAnnouncement)
+        XCTAssertEqual(store.liveUpdate?.text, "Return to the play area.")
+
+        store.recordLiveEvent(
+            LiveEventDTO(
+                seq: 51,
+                type: "tag",
+                text: "Existing event prose remains unchanged.",
+                tone: "danger",
+                playerId: nil,
+                announcement: "player_tagged",
+                subjectName: "Riley"
+            ),
+            now: t0
+        )
+        store.recordLiveEvent(
+            LiveEventDTO(
+                seq: 52,
+                type: "out_of_bounds",
+                text: "Existing OOB prose remains unchanged.",
+                tone: "danger",
+                playerId: nil,
+                announcement: "player_tagged_out_of_bounds",
+                subjectName: "Morgan"
+            ),
+            now: t0.addingTimeInterval(0.1)
+        )
+
+        XCTAssertEqual(store.tagAnnouncement?.id, 51)
+        XCTAssertEqual(store.tagAnnouncement?.text, "Riley was tagged!")
+
+        store.clearExpiredTagAnnouncement(now: t0.addingTimeInterval(1.99))
+        XCTAssertEqual(store.tagAnnouncement?.id, 51)
+        store.clearExpiredTagAnnouncement(now: t0.addingTimeInterval(2))
+        XCTAssertEqual(store.tagAnnouncement?.id, 52)
+        XCTAssertEqual(store.tagAnnouncement?.text, "Morgan was tagged out of bounds!")
+
+        store.clearExpiredTagAnnouncement(now: t0.addingTimeInterval(3.99))
+        XCTAssertEqual(store.tagAnnouncement?.id, 52)
+        store.clearExpiredTagAnnouncement(now: t0.addingTimeInterval(4))
+        XCTAssertNil(store.tagAnnouncement)
+    }
+
+    @MainActor
+    func testTagAnnouncementDoesNotQueueOutsideLiveScreenOrTwiceForASequence() {
+        let store = AppStore.makePreview()
+        let event = LiveEventDTO(
+            seq: 60,
+            type: "tag",
+            text: "Riley was tagged.",
+            tone: "danger",
+            playerId: nil,
+            announcement: "player_tagged",
+            subjectName: "Riley"
+        )
+
+        store.screen = .lobby
+        store.recordLiveEvent(event)
+        XCTAssertNil(store.tagAnnouncement)
+
+        store.screen = .results
+        store.recordLiveEvent(event)
+        XCTAssertNil(store.tagAnnouncement)
+
+        store.screen = .live
+        store.recordLiveEvent(event)
+        store.recordLiveEvent(event)
+        XCTAssertEqual(store.tagAnnouncement?.id, 60)
+        XCTAssertTrue(store.pendingTagAnnouncements.isEmpty)
     }
 
     func testDockChromeShowsWaitingCardDuringHeadStartEvenWhenOutOfBounds() {
@@ -627,12 +812,14 @@ final class LiveHudAndPresetsTests: XCTestCase {
 
         let store = AppStore.makePreview()
         store.recordLiveEvent(
-            BannerDTO(
-                bannerId: UUID(),
+            LiveEventDTO(
+                seq: 70,
+                type: "paused",
+                text: "The host stopped the clock.",
                 tone: "info",
-                title: "paused",
-                detail: "The host stopped the clock.",
-                playerId: nil
+                playerId: nil,
+                announcement: nil,
+                subjectName: nil
             ),
             now: Date(timeIntervalSince1970: 2_000)
         )

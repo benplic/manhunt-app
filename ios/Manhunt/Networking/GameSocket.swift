@@ -6,7 +6,7 @@ import Foundation
 final class GameSocket: @unchecked Sendable {
     var onView: ((PlayerViewDTO) -> Void)?
     var onQR: ((String) -> Void)?
-    var onEvent: ((BannerDTO) -> Void)?
+    var onEvent: ((LiveEventDTO) -> Void)?
     var onReconnect: ((Bool) -> Void)?
     var onSendFailure: ((String) -> Void)?
     /// Host kicked this phone. Stops reconnect; the store routes home.
@@ -18,10 +18,17 @@ final class GameSocket: @unchecked Sendable {
     private var task: URLSessionWebSocketTask?
     private var pingTask: Task<Void, Never>?
     private var runTask: Task<Void, Never>?
+    private var gameID: UUID?
     private let session: URLSession
 
     init(session: URLSession = .shared) {
         self.session = session
+    }
+
+    func beginGame(_ gameID: UUID) {
+        guard self.gameID != gameID else { return }
+        self.gameID = gameID
+        lastSeq = nil
     }
 
     func connect(url: URL, token: String) {
@@ -146,16 +153,12 @@ final class GameSocket: @unchecked Sendable {
                 onQR?(token)
             }
         case "event":
-            if let dict = payload as? [String: Any] {
-                let banner = BannerDTO(
-                    bannerId: UUID(),
-                    tone: dict["tone"] as? String ?? "info",
-                    title: dict["type"] as? String ?? "event",
-                    detail: dict["text"] as? String ?? "",
-                    playerId: (dict["player_id"] as? String).flatMap(UUID.init)
-                )
-                if let seq = dict["seq"] as? Int { lastSeq = seq }
-                onEvent?(banner)
+            if let payloadData,
+               let event = try? JSONDecoder().decode(LiveEventDTO.self, from: payloadData),
+               lastSeq.map({ event.seq > $0 }) ?? true
+            {
+                lastSeq = event.seq
+                onEvent?(event)
             }
         case "removed":
             markRemoved()

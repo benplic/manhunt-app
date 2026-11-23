@@ -99,15 +99,24 @@ struct PresetEditorView: View {
 
     @ViewBuilder
     private func revealRow(module: VisualModule, row: Binding<VisualRow>) -> some View {
-        if module.id != "reveal_fuzzy"
-            || RevealFormVisibility.shows(rowID: row.wrappedValue.id, modules: store.modules) {
-            rowControl(row: row)
+        let gated = module.id == "reveal_fuzzy" || module.id == "reveal_seekers"
+        if !gated
+            || RevealFormVisibility.shows(
+                rowID: row.wrappedValue.id,
+                moduleID: module.id,
+                modules: store.modules
+            ) {
+            rowControl(row: row, moduleID: gated ? module.id : nil)
         }
     }
 
     @ViewBuilder
-    private func rowControl(row: Binding<VisualRow>) -> some View {
-        let help = RevealFormVisibility.help(rowID: row.wrappedValue.id, modules: store.modules)
+    private func rowControl(row: Binding<VisualRow>, moduleID: String? = nil) -> some View {
+        let help = RevealFormVisibility.help(
+            rowID: row.wrappedValue.id,
+            moduleID: moduleID,
+            modules: store.modules
+        )
         let trackerLocked = row.wrappedValue.id == "tracker_enabled"
             && !TrackerAvailability.isAllowed(modules: store.modules)
         VStack(alignment: .leading, spacing: 4) {

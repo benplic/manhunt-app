@@ -72,6 +72,7 @@ def test_rejected_teleport_still_refreshes_presence() -> None:
 
 def test_qr_tag_eliminates_a_nearby_hider() -> None:
     session, clock, hider, seeker = two_player_hunt()
+    session.drain_events()
     session.record_location(seeker, reading(meters(100, 100), clock))
     session.record_location(hider, reading(meters(100, 101), clock))
     token = make_qr_token(
@@ -86,3 +87,20 @@ def test_qr_tag_eliminates_a_nearby_hider() -> None:
     assert session.state.players[seeker].points_earned == 25
     assert session.state.phase == "ended"
     assert session.state.result.winner == "seekers"
+    event = next(event for event in session.drain_events() if event.type == "tag")
+    assert event.payload["announcement"] == "player_tagged"
+    assert event.payload["subject_name"] == "Riley"
+
+
+def test_qr_tag_conversion_emits_the_tagged_hider_name() -> None:
+    session, clock, hider, seeker = two_player_hunt(
+        overrides={"tag_policy": {"result": "convert"}}
+    )
+    session.drain_events()
+
+    session.claim_tag(TagClaim(seeker, hider, qr_token=_token(session, clock, hider)))
+
+    assert session.state.players[hider].role == "seeker"
+    event = next(event for event in session.drain_events() if event.type == "tag")
+    assert event.payload["announcement"] == "player_tagged"
+    assert event.payload["subject_name"] == "Riley"

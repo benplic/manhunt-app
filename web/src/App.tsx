@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useReducer, useRef, useState } from 'react'
 import { apiBaseUrl } from './api/config'
 import { fetchGameView, leaveGame } from './api/games'
 import { SessionExpiredError, withAuthRetry } from './api/session'
@@ -6,8 +6,13 @@ import type { PlayerView } from './api/types'
 import { GameSocket, wsUrlForGame } from './api/ws'
 import { clearSession, loadSession } from './auth/storage'
 import { HuntErrorBoundary } from './game/HuntErrorBoundary'
+import { TagAnnouncementOverlay } from './game/TagAnnouncementOverlay'
 import { closedGameMessage, isClosedGameError } from './game/rejoin'
 import { clearActiveGame, loadActiveGameId, rememberActiveGame } from './game/resume'
+import {
+  initialTagAnnouncementQueue,
+  tagAnnouncementQueueReducer,
+} from './game/tagAnnouncements'
 import {
   ackSafetyDisclaimer,
   needsSafetyDisclaimer,
@@ -36,7 +41,12 @@ function App() {
   const [homeNote, setHomeNote] = useState<string | null>(null)
   const [socketReady, setSocketReady] = useState(false)
   const [resuming, setResuming] = useState(false)
+  const [tagAnnouncements, dispatchTagAnnouncement] = useReducer(
+    tagAnnouncementQueueReducer,
+    initialTagAnnouncementQueue,
+  )
   const socketRef = useRef<GameSocket | null>(null)
+  const gameViewRef = useRef<PlayerView | null>(null)
   /** Bumps when the player cancels rejoin so an in-flight fetch cannot land. */
   const rejoinEpochRef = useRef(0)
   const [safetyGateOpen, setSafetyGateOpen] = useState(false)
@@ -61,12 +71,15 @@ function App() {
     if (next.phase === 'ended') {
       tearDownSocket()
     }
+    gameViewRef.current = next
     setGameView(next)
   }
 
   function clearGame() {
     tearDownSocket()
     clearActiveGame()
+    dispatchTagAnnouncement({ type: 'clear' })
+    gameViewRef.current = null
     setGameView(null)
   }
 
@@ -78,6 +91,8 @@ function App() {
     setSocketNote(null)
     setHomeNote(null)
     setResuming(false)
+    dispatchTagAnnouncement({ type: 'clear' })
+    gameViewRef.current = null
     setGameView(null)
     setSignedIn(false)
   }
@@ -150,6 +165,17 @@ function App() {
     socketRef.current = socket
     socket.onView = (next) => applyView(next)
     socket.onQr = (token) => setQrToken(token)
+    socket.onEvent = (event) => {
+      const current = gameViewRef.current
+      if (!current || current.game_id !== gameView.game_id || !isLive(current.phase)) {
+        return
+      }
+      dispatchTagAnnouncement({
+        type: 'event',
+        gameId: current.game_id,
+        event,
+      })
+    }
     socket.onError = (err) => {
       // Too-fast GPS jumps are expected on the web; do not spam the banner.
       if (err.message.toLowerCase().includes('too fast')) {
@@ -160,6 +186,8 @@ function App() {
     socket.onRemoved = () => {
       tearDownSocket()
       clearActiveGame()
+      dispatchTagAnnouncement({ type: 'clear' })
+      gameViewRef.current = null
       setGameView(null)
       setHomeNote('You were removed from this hunt.')
     }
@@ -171,6 +199,26 @@ function App() {
     setSocketReady(true)
   }, [gameView?.game_id])
 
+  useEffect(() => {
+    if (gameView) {
+      gameViewRef.current = gameView
+      dispatchTagAnnouncement({ type: 'switchGame', gameId: gameView.game_id })
+    }
+  }, [gameView?.game_id])
+
+  const currentTagAnnouncement = tagAnnouncements.items[0] ?? null
+  const currentTagAnnouncementSeq = currentTagAnnouncement?.seq
+  const currentGameId = gameView?.game_id
+  useEffect(() => {
+    if (currentTagAnnouncementSeq === undefined) {
+      return
+    }
+    const timer = window.setTimeout(() => {
+      dispatchTagAnnouncement({ type: 'expire', seq: currentTagAnnouncementSeq })
+    }, 2_000)
+    return () => window.clearTimeout(timer)
+  }, [currentTagAnnouncementSeq, currentGameId])
+
   async function leaveCurrentGame() {
     if (!gameView) {
       return
@@ -178,6 +226,8 @@ function App() {
     const gameId = gameView.game_id
     tearDownSocket()
     clearActiveGame()
+    dispatchTagAnnouncement({ type: 'clear' })
+    gameViewRef.current = null
     try {
       await withAuthRetry((token) => leaveGame({ token, gameId }))
     } catch (err) {
@@ -219,17 +269,21 @@ function App() {
 
   if (gameView && gameView.phase === 'ended') {
     return (
-      <Result
-        view={gameView}
-        onDone={() => {
-          clearGame()
-        }}
-        onRematch={(next) => {
-          tearDownSocket()
-          applyView(next)
-        }}
-        onSignedOut={signOut}
-      />
+      <>
+        <Result
+          view={gameView}
+          onDone={() => {
+            clearGame()
+          }}
+          onRematch={(next) => {
+            tearDownSocket()
+            dispatchTagAnnouncement({ type: 'clear' })
+            applyView(next)
+          }}
+          onSignedOut={signOut}
+        />
+        <TagAnnouncementOverlay announcement={currentTagAnnouncement} />
+      </>
     )
   }
 
@@ -244,37 +298,40 @@ function App() {
     // Keep LiveMap mounted under the safety gate. Replacing it with a full-page
     // gate then remounting Leaflet after Continue left a black map on phones.
     return (
-      <HuntErrorBoundary key={gameView.game_id} onLeave={() => void leaveCurrentGame()}>
-        <LiveMap
-          view={gameView}
-          socket={socketRef.current}
-          qrToken={qrToken}
-          note={socketNote}
-          onView={applyView}
-          onLeave={() => void leaveCurrentGame()}
-          onSignedOut={signOut}
-          holdPresence={safetyGateOpen}
-        />
-        {safetyGateOpen ? (
-          <div className="safety-gate" role="dialog" aria-modal="true" aria-labelledby="safety-gate-title">
-            <div className="safety-gate__card">
-              <h1 id="safety-gate-title">Play safely</h1>
-              <p>{SAFETY_DISCLAIMER_COPY}</p>
-              <button
-                type="button"
-                onClick={() => {
-                  ackSafetyDisclaimer()
-                  setSafetyGateOpen(false)
-                  // Leaflet may have initialized under a covered frame; refresh size.
-                  window.setTimeout(() => window.dispatchEvent(new Event('resize')), 0)
-                }}
-              >
-                Continue
-              </button>
+      <>
+        <HuntErrorBoundary key={gameView.game_id} onLeave={() => void leaveCurrentGame()}>
+          <LiveMap
+            view={gameView}
+            socket={socketRef.current}
+            qrToken={qrToken}
+            note={socketNote}
+            onView={applyView}
+            onLeave={() => void leaveCurrentGame()}
+            onSignedOut={signOut}
+            holdPresence={safetyGateOpen}
+          />
+          {safetyGateOpen ? (
+            <div className="safety-gate" role="dialog" aria-modal="true" aria-labelledby="safety-gate-title">
+              <div className="safety-gate__card">
+                <h1 id="safety-gate-title">Play safely</h1>
+                <p>{SAFETY_DISCLAIMER_COPY}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    ackSafetyDisclaimer()
+                    setSafetyGateOpen(false)
+                    // Leaflet may have initialized under a covered frame; refresh size.
+                    window.setTimeout(() => window.dispatchEvent(new Event('resize')), 0)
+                  }}
+                >
+                  Continue
+                </button>
+              </div>
             </div>
-          </div>
-        ) : null}
-      </HuntErrorBoundary>
+          ) : null}
+        </HuntErrorBoundary>
+        <TagAnnouncementOverlay announcement={currentTagAnnouncement} />
+      </>
     )
   }
 

@@ -16,10 +16,12 @@ from fastapi import WebSocket
 from app.demo.bots import BotDriver
 from app.engine.arena import arena_from_dict
 from app.engine.clock import Clock
+from app.engine.events import GameEvent
 from app.engine.qr import make_qr_token, token_ttl
 from app.engine.session import GameSession
 from app.engine.views import build_view
 from app.errors import GameRuleError
+from app.playtest_log import get_playtest_log
 from app.realtime.clock import WallClock
 
 LIVE_PHASES = frozenset({"lobby", "head_start", "active", "paused"})
@@ -146,6 +148,12 @@ class SessionManager:
         if session is None:
             return
         events = session.drain_events()
+        # One JSONL write batch per tick for the drained engine timeline.
+        get_playtest_log().record_engine_events(
+            game_id,
+            events,
+            join_code=session.state.join_code,
+        )
         for player_id, ws in list(self.sockets.get(game_id, {}).items()):
             view = build_view(
                 session,
@@ -153,23 +161,16 @@ class SessionManager:
                 demo_controls_enabled=self.demo_controls_enabled,
             )
             try:
-                await ws.send_json(envelope("view", view))
                 for event in events:
                     if event.sensitive:
                         continue
                     await ws.send_json(
                         envelope(
                             "event",
-                            {
-                                "seq": event.seq,
-                                "type": event.type,
-                                "text": event.text,
-                                "tone": event.tone,
-                                "at": event.created_at.isoformat() if event.created_at else None,
-                                "player_id": str(event.player_id) if event.player_id else None,
-                            },
+                            serialize_event(event),
                         )
                     )
+                await ws.send_json(envelope("view", view))
                 qr = session.state.qr_by_hider.get(player_id)
                 player = session.state.players[player_id]
                 if qr and player.role == "hider":
@@ -181,7 +182,19 @@ class SessionManager:
                     )
             except Exception:
                 log.exception("ws_send_failed game_id=%s player_id=%s", game_id, player_id)
+                get_playtest_log().emit(
+                    "ws_send_failed",
+                    game_id=game_id,
+                    player_id=player_id,
+                    join_code=session.state.join_code,
+                )
                 self.detach(game_id, player_id)
+                get_playtest_log().ws_disconnected(
+                    game_id,
+                    player_id,
+                    join_code=session.state.join_code,
+                    reason="send_failed",
+                )
 
     async def tick_loop(
         self,
@@ -211,6 +224,19 @@ class SessionManager:
 
 def envelope(type: str, data: dict[str, Any]) -> dict[str, Any]:
     return {"type": type, "data": data}
+
+
+def serialize_event(event: GameEvent) -> dict[str, Any]:
+    return {
+        "seq": event.seq,
+        "type": event.type,
+        "text": event.text,
+        "tone": event.tone,
+        "at": event.created_at.isoformat() if event.created_at else None,
+        "player_id": str(event.player_id) if event.player_id else None,
+        "announcement": event.payload.get("announcement"),
+        "subject_name": event.payload.get("subject_name"),
+    }
 
 
 # Silence unused import; token TTL is 30s as specified.

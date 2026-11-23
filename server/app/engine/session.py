@@ -16,6 +16,7 @@ from app.engine.modules.base import TagClaim
 from app.engine.modules.tag_policy import TagPolicyModule, require_tag_ok
 from app.engine.state import GameState, LocationReading, PlayerState, WinResult
 from app.errors import ErrorCode, GameRuleError
+from app.limits import MAX_GAME_PLAYERS
 
 
 class GameSession:
@@ -60,7 +61,7 @@ class GameSession:
         return self.state.preset.get("modules", {}).get(module_id, {})
 
     def add_player(self, player_id: UUID, display_name: str, is_host: bool) -> PlayerState:
-        if len(self.state.players) >= 20:
+        if len(self.state.players) >= MAX_GAME_PLAYERS:
             raise GameRuleError(ErrorCode.GAME_FULL)
         if self.state.phase != "lobby":
             raise GameRuleError(ErrorCode.WRONG_PHASE)

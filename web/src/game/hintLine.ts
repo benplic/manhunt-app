@@ -14,6 +14,10 @@ export function cardinal(degrees: number): string {
  * Rendering that dict as a React child unmounts the whole app (black screen).
  */
 export function hintLine(role: string, hint: unknown): string | null {
+  // Classic Seeker reveal is Off, so a hider with no payload keeps the old line.
+  if (role === 'hider' && (hint == null || hint === '')) {
+    return 'Warmth is hidden from you.'
+  }
   if (hint == null || hint === '') {
     return null
   }
@@ -23,14 +27,14 @@ export function hintLine(role: string, hint: unknown): string | null {
   if (typeof hint !== 'object') {
     return null
   }
-  if (role !== 'seeker') {
+  if (role !== 'seeker' && role !== 'hider') {
     return 'Warmth is hidden from you.'
   }
   const payload = hint as HintObject
   if (!payload.band) {
-    return 'No hint yet.'
+    return role === 'hider' ? 'Warmth is hidden from you.' : 'No hint yet.'
   }
-  const name = payload.name || 'A hider'
+  const name = payload.name || (role === 'hider' ? 'A seeker' : 'A hider')
   const meters = payload.meters == null || Number.isNaN(Number(payload.meters)) ? '?' : String(payload.meters)
   if (payload.bearing_deg == null || Number.isNaN(Number(payload.bearing_deg))) {
     return `${name} is ${payload.band}, ${meters} m`

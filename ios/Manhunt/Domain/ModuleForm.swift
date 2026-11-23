@@ -251,8 +251,13 @@ enum ModuleForm {
 }
 
 enum RevealFormVisibility {
-    static func shows(rowID: String, modules: [VisualModule]) -> Bool {
-        guard let reveal = modules.first(where: { $0.id == "reveal_fuzzy" }) else { return true }
+    /// `moduleID` picks Reveal or Seeker reveal. Other cards keep the old reveal_fuzzy rules.
+    static func shows(
+        rowID: String,
+        moduleID: String = "reveal_fuzzy",
+        modules: [VisualModule]
+    ) -> Bool {
+        guard let reveal = modules.first(where: { $0.id == moduleID }) else { return true }
         func choice(_ id: String) -> String? {
             guard let row = reveal.rows.first(where: { $0.id == id }),
                   case let .options(_, values) = row.control,
@@ -263,6 +268,10 @@ enum RevealFormVisibility {
             reveal.rows.first(where: { $0.id == id })?.flag ?? true
         }
         let mode = choice("location_mode") ?? "fuzzy"
+        // Off is Seeker reveal's default. The other rows have nothing to configure.
+        if mode == "off" {
+            return rowID == "location_mode"
+        }
         let hintsActive = mode == "hot_cold" || (mode == "fuzzy" && flag("hints_enabled"))
         switch rowID {
         case "persistence", "interval":
@@ -284,33 +293,51 @@ enum RevealFormVisibility {
     }
 
     /// Live help under a reveal or power-up row. Prefers schema help; falls back to HintCopy.
-    static func help(rowID: String, modules: [VisualModule]) -> String? {
-        if let row = modules.flatMap(\.rows).first(where: { $0.id == rowID }),
-           let schemaHelp = row.help,
-           !schemaHelp.isEmpty {
+    static func help(
+        rowID: String,
+        moduleID: String? = nil,
+        modules: [VisualModule]
+    ) -> String? {
+        let row = rowIn(moduleID: moduleID, rowID: rowID, modules: modules)
+        if let row, let schemaHelp = row.help, !schemaHelp.isEmpty {
             if rowID == "hints_enabled" {
-                let mode = revealChoice("location_mode", in: modules) ?? "fuzzy"
-                let enabled = modules
-                    .first(where: { $0.id == "reveal_fuzzy" })?
-                    .rows.first(where: { $0.id == "hints_enabled" })?
-                    .flag ?? true
-                return HintCopy.hintsHelp(locationMode: mode, hintsEnabled: enabled)
+                return hintsHelp(moduleID: moduleID, modules: modules)
             }
             return schemaHelp
         }
         if rowID == "hints_enabled" {
-            let mode = revealChoice("location_mode", in: modules) ?? "fuzzy"
-            let enabled = modules
-                .first(where: { $0.id == "reveal_fuzzy" })?
-                .rows.first(where: { $0.id == "hints_enabled" })?
-                .flag ?? true
-            return HintCopy.hintsHelp(locationMode: mode, hintsEnabled: enabled)
+            return hintsHelp(moduleID: moduleID, modules: modules)
         }
         return nil
     }
 
-    private static func revealChoice(_ id: String, in modules: [VisualModule]) -> String? {
-        guard let reveal = modules.first(where: { $0.id == "reveal_fuzzy" }),
+    private static func hintsHelp(moduleID: String?, modules: [VisualModule]) -> String {
+        let owner = moduleID ?? "reveal_fuzzy"
+        let mode = revealChoice("location_mode", moduleID: owner, in: modules) ?? "fuzzy"
+        let enabled = modules
+            .first(where: { $0.id == owner })?
+            .rows.first(where: { $0.id == "hints_enabled" })?
+            .flag ?? true
+        return HintCopy.hintsHelp(locationMode: mode, hintsEnabled: enabled)
+    }
+
+    private static func rowIn(
+        moduleID: String?,
+        rowID: String,
+        modules: [VisualModule]
+    ) -> VisualRow? {
+        if let moduleID, let module = modules.first(where: { $0.id == moduleID }) {
+            return module.rows.first(where: { $0.id == rowID })
+        }
+        return modules.flatMap(\.rows).first(where: { $0.id == rowID })
+    }
+
+    private static func revealChoice(
+        _ id: String,
+        moduleID: String,
+        in modules: [VisualModule]
+    ) -> String? {
+        guard let reveal = modules.first(where: { $0.id == moduleID }),
               let row = reveal.rows.first(where: { $0.id == id }),
               case let .options(_, values) = row.control,
               values.indices.contains(row.choice)

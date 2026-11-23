@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { GameSocket, wsUrlForGame } from './ws'
+import { GameSocket, type WsEvent, wsUrlForGame } from './ws'
 
 class FakeWebSocket {
   static OPEN = 1
@@ -111,6 +111,65 @@ describe('GameSocket', () => {
     expect(onError).toHaveBeenCalledWith(
       expect.objectContaining({ code: 'VALIDATION_FAILED', message: 'too fast' }),
     )
+    socket.disconnect()
+  })
+
+  it('delivers every structured event field without parsing its prose', async () => {
+    const socket = new GameSocket()
+    const received: WsEvent[] = []
+    socket.onEvent = (event) => received.push(event)
+    const ws = await openSocket(socket)
+
+    ws.emit({
+      type: 'event',
+      data: {
+        seq: 14,
+        type: 'out_of_bounds',
+        text: 'timeline prose that clients must ignore',
+        tone: 'danger',
+        player_id: 'hider-1',
+        announcement: 'player_tagged_out_of_bounds',
+        subject_name: 'Riley',
+      },
+    })
+
+    expect(received).toEqual([
+      {
+        seq: 14,
+        type: 'out_of_bounds',
+        text: 'timeline prose that clients must ignore',
+        tone: 'danger',
+        player_id: 'hider-1',
+        announcement: 'player_tagged_out_of_bounds',
+        subject_name: 'Riley',
+      },
+    ])
+    socket.disconnect()
+  })
+
+  it('delivers a sequence only once while keeping it for reconnect', async () => {
+    const socket = new GameSocket()
+    const onEvent = vi.fn()
+    socket.onEvent = onEvent
+    const ws = await openSocket(socket)
+    const payload = {
+      type: 'event',
+      data: {
+        seq: 12,
+        type: 'tag',
+        text: 'tagged',
+        tone: 'danger',
+        player_id: 'hider-1',
+        announcement: 'player_tagged',
+        subject_name: 'Riley',
+      },
+    }
+
+    ws.emit(payload)
+    ws.emit(payload)
+
+    expect(onEvent).toHaveBeenCalledTimes(1)
+    expect(socket.lastSeq).toBe(12)
     socket.disconnect()
   })
 
