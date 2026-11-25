@@ -24,6 +24,10 @@ class QrIn(BaseModel):
     token: str
 
 
+class LobbyRulesIn(BaseModel):
+    overrides: dict[str, dict[str, Any]]
+
+
 class LobbyCircleIn(BaseModel):
     radius_m: float = Field(ge=PLAY_CIRCLE_MIN_M, le=PLAY_CIRCLE_MAX_M)
     center: dict[str, float] | None = None
@@ -99,6 +103,16 @@ def bind_game_routes(get_session, current_user, service: GameService):
             radius_m=body.radius_m,
             center=body.center,
         )
+        return _view(service, game, user.id)
+
+    @router.post("/games/{game_id}/rules")
+    async def lobby_rules(
+        game_id: UUID,
+        body: LobbyRulesIn,
+        session: AsyncSession = Depends(get_session),
+        user=Depends(current_user),
+    ) -> dict:
+        game = await service.set_lobby_rules(session, user, game_id, body.overrides)
         return _view(service, game, user.id)
 
     @router.post("/games/{game_id}/start")

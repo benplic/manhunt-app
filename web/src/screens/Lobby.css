@@ -164,3 +164,12 @@
 .lobby .error {
   color: #ffb4b4;
 }
+
+.lobby li > div:first-child {
+  align-items: center;
+}
+
+.lobby .lobby-player-name {
+  flex: 1;
+  min-width: 0;
+}

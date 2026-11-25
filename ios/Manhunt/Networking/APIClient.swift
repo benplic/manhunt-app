@@ -154,6 +154,17 @@ struct RoleManualBody: Encodable {
     var assignments: [String: String]
 }
 
+struct LobbyRulesBody: Encodable {
+    var overrides: [String: [String: RuleValue]]
+}
+
+struct LobbyRadiusBody: Encodable {
+    var radiusM: Double
+    enum CodingKeys: String, CodingKey {
+        case radiusM = "radius_m"
+    }
+}
+
 struct QRBody: Encodable {
     var token: String
 }

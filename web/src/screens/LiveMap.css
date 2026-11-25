@@ -417,3 +417,47 @@
 .live-map .board .chip-row {
   min-width: 9.5rem;
 }
+
+.live-map .board .leaderboard section {
+  margin: 0;
+}
+
+.live-map .board .leaderboard ul {
+  padding: 0.25rem 1rem 0.75rem;
+}
+
+.live-map .board .roster-section-title {
+  padding: 0.75rem 1rem 0;
+}
+
+.live-map .board li .leaderboard__who {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.live-map .board li .leaderboard__text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.live-map .board li .leaderboard__rank {
+  color: #9aa0ad;
+  font-size: inherit;
+  text-transform: none;
+}
+
+.live-map .board li .player-avatar {
+  text-transform: none;
+}
+
+.live-map .board li .roster-tagged {
+  color: #f0c75e;
+}
+
+.live-map .board li .fix-bars {
+  margin-left: auto;
+}

@@ -146,6 +146,14 @@ final class LiveGameService: GameService {
         )
     }
 
+    func updateRules(gameID: UUID, overrides: [String: [String: RuleValue]]) async throws -> PlayerViewDTO {
+        try await client.post("/v1/games/\(gameID.uuidString)/rules", body: LobbyRulesBody(overrides: overrides))
+    }
+
+    func setLobbyRadius(gameID: UUID, radiusM: Double) async throws -> PlayerViewDTO {
+        try await client.post("/v1/games/\(gameID.uuidString)/arena", body: LobbyRadiusBody(radiusM: radiusM))
+    }
+
     func start(gameID: UUID) async throws -> PlayerViewDTO {
         try await client.postEmpty("/v1/games/\(gameID.uuidString)/start")
     }

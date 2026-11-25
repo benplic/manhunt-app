@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import unicodedata
 from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any
@@ -11,6 +12,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.db.models import (
     ArenaRow,
@@ -47,7 +49,7 @@ from app.games.join_code import SAMPLE_CODE, generate, is_valid, normalize
 from app.games.join_limit import JoinRateLimiter
 from app.limits import MAX_GAME_PLAYERS
 from app.playtest_log import get_playtest_log
-from app.presets.classic import CLASSIC_ID, classic_preset
+from app.presets.classic import CLASSIC_ID, classic_preset, validate_rule_edits
 from app.realtime.manager import SessionManager, envelope
 
 log = logging.getLogger("manhunt.games")
@@ -62,11 +64,33 @@ _SAMPLE_BOTS = (
 
 
 def _norm_name(name: str) -> str:
-    return " ".join(name.strip().lower().split())
+    # NFC first so a legacy decomposed name still matches its composed twin.
+    return " ".join(unicodedata.normalize("NFC", name).strip().lower().split())
 
 
 def _name_taken_message(name: str) -> str:
     return f'"{name.strip()}" is already in this lobby. Pick a different display name.'
+
+
+def _check_zone_shrink(arena: Arena, zone_shrink: dict[str, Any]) -> None:
+    """Zone shrink only makes sense on a circle that is bigger than the shrink floor."""
+    if not bool(zone_shrink.get("enabled", False)):
+        return
+    if arena.boundary_circle is None:
+        raise ApiError(
+            ErrorCode.VALIDATION_FAILED,
+            "Zone shrink requires a circle play area.",
+            status_code=422,
+            details={"field": "zone_shrink.enabled"},
+        )
+    min_r = float(zone_shrink.get("min_radius_m", 50))
+    if arena.boundary_circle.radius_m <= min_r:
+        raise ApiError(
+            ErrorCode.VALIDATION_FAILED,
+            "Play area radius must exceed the shrink minimum radius.",
+            status_code=422,
+            details={"field": "zone_shrink.min_radius_m"},
+        )
 
 
 def _sample_arena() -> dict:
@@ -167,23 +191,7 @@ class GameService:
                 status_code=422,
                 details={"issues": [i.code for i in issues]},
             )
-        zone_shrink = preset["modules"].get("zone_shrink", {})
-        if bool(zone_shrink.get("enabled", False)):
-            if arena.boundary_circle is None:
-                raise ApiError(
-                    ErrorCode.VALIDATION_FAILED,
-                    "Zone shrink requires a circle play area.",
-                    status_code=422,
-                    details={"field": "zone_shrink.enabled"},
-                )
-            min_r = float(zone_shrink.get("min_radius_m", 50))
-            if arena.boundary_circle.radius_m <= min_r:
-                raise ApiError(
-                    ErrorCode.VALIDATION_FAILED,
-                    "Play area radius must exceed the shrink minimum radius.",
-                    status_code=422,
-                    details={"field": "zone_shrink.min_radius_m"},
-                )
+        _check_zone_shrink(arena, preset["modules"].get("zone_shrink", {}))
         join_code = await self._unique_code(session)
         seed = random.SystemRandom().randint(1, 2**31 - 1)
         row = GameRow(
@@ -409,12 +417,12 @@ class GameService:
             mid = GeoPoint(lat=float(center["lat"]), lon=float(center["lon"]))
         elif current.boundary_circle is not None:
             mid = current.boundary_circle.center
-        elif current.boundary:
-            mid = current.boundary[0]
         else:
+            # A polygon arena would be silently replaced by a circle and lose its shape.
+            # Only convert it when the host names a center on purpose.
             raise ApiError(
                 ErrorCode.ARENA_INVALID,
-                "Lobby has no play circle to resize.",
+                "This play area is not a circle. Pick a center to replace it with one.",
                 status_code=422,
             )
         arena = Arena(
@@ -432,12 +440,68 @@ class GameService:
                 status_code=422,
                 details={"issues": [i.code for i in issues]},
             )
+        # Shrinking the circle must not undercut a zone shrink the host already enabled.
+        _check_zone_shrink(arena, row.preset_snapshot["modules"].get("zone_shrink", {}))
         packed = arena_to_dict(arena)
         row.arena_snapshot = packed
         game = self._live(row)
         game.state.arena = arena
         await self.persist_inputs(session, game)
         await session.commit()
+        await self.manager.broadcast(game_id)
+        return game
+
+    async def set_lobby_rules(
+        self,
+        session: AsyncSession,
+        user: User,
+        game_id: UUID,
+        overrides: dict[str, dict[str, Any]],
+    ) -> GameSession:
+        """Host changes preset values while the game is still in the lobby.
+
+        The preset snapshot is what a crash rebuild and a rematch both read, so the row is
+        updated together with the live session. Roles and players are never touched.
+        """
+        row = await self.require_host(session, game_id, user)
+        if row.status != "lobby":
+            raise ApiError(
+                ErrorCode.WRONG_PHASE,
+                "Rules can only change in the lobby.",
+                status_code=409,
+            )
+        validate_rule_edits(overrides)
+        game = self._live(row)
+        if game.state.phase != "lobby":
+            raise ApiError(
+                ErrorCode.WRONG_PHASE,
+                "Rules can only change in the lobby.",
+                status_code=409,
+            )
+        # The live preset is the source of truth for what the players see, so the saved copy
+        # is derived from it. Two quick edits then cannot overwrite each other in the row.
+        candidate = deepcopy(game.state.preset)
+        for module_id, fields in overrides.items():
+            candidate["modules"].setdefault(module_id, {}).update(fields)
+        _check_zone_shrink(game.state.arena, candidate["modules"].get("zone_shrink", {}))
+        # Modules hold a reference to their settings dict, so mutate in place instead of
+        # swapping the preset.
+        for module_id, fields in overrides.items():
+            game.state.preset["modules"].setdefault(module_id, {}).update(fields)
+        # `_live` may have handed the session the row's own dict, in which case the in-place
+        # update above already changed the row's value and SQLAlchemy would see no change.
+        # Assign a copy and flag it so the UPDATE is always emitted.
+        row.preset_snapshot = deepcopy(game.state.preset)
+        flag_modified(row, "preset_snapshot")
+        await self.persist_inputs(session, game)
+        await session.commit()
+        get_playtest_log().emit(
+            "rules_edited",
+            game_id=game_id,
+            player_id=user.id,
+            join_code=row.join_code,
+            modules=sorted(overrides),
+        )
         await self.manager.broadcast(game_id)
         return game
 

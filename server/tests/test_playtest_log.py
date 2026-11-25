@@ -85,3 +85,14 @@ def test_engine_events_skip_sensitive_and_land_in_errors_file(tmp_path: Path) ->
     # Restore a disabled logger so other tests do not inherit this tmp dir.
     configure_playtest_log("")
     assert get_playtest_log().enabled is False
+
+
+def test_lone_surrogate_name_does_not_break_the_sink(tmp_path: Path) -> None:
+    logger = PlaytestLogger(tmp_path)
+    game_id = uuid4()
+    logger.emit("player_joined", game_id=game_id, display_name="Bad\ud800Name")
+    logger.emit("player_joined", game_id=game_id, display_name="Ryan O\u2019Donnell")
+    lines = (tmp_path / "games" / f"{game_id}.jsonl").read_bytes().decode("utf-8").splitlines()
+    assert len(lines) == 2
+    assert json.loads(lines[0])["display_name"] == "Bad\ud800Name"
+    assert json.loads(lines[1])["display_name"] == "Ryan O\u2019Donnell"

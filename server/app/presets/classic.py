@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from copy import deepcopy
 from typing import Any
 
@@ -156,6 +157,80 @@ def classic_preset(
     return {"id": CLASSIC_ID, "name": "Classic Manhunt", "modules": modules}
 
 
+def validate_rule_edits(overrides: dict[str, dict[str, Any]]) -> None:
+    """Stricter than `validate_overrides`, for edits to a game that already exists.
+
+    Creation tolerates unknown keys; a lobby edit does not, so a typo cannot silently
+    persist into the replay snapshot. Every key must exist in the Classic defaults. Values
+    are then checked against the module schema (type, range, enum values) that the preset
+    editor renders from, and finally against the numeric RANGES the engine relies on.
+    """
+    from app.schemas.modules import SCHEMAS
+
+    if not overrides:
+        raise ApiError(ErrorCode.VALIDATION_FAILED, "No rule changes given.", status_code=422)
+    for module_id, fields in overrides.items():
+        defaults = CLASSIC_MODULES.get(module_id)
+        if defaults is None or not isinstance(fields, dict):
+            raise ApiError(
+                ErrorCode.VALIDATION_FAILED,
+                f"Unknown module {module_id}.",
+                status_code=422,
+            )
+        schema_fields = SCHEMAS.get(module_id, {}).get("fields", {})
+        for key, value in fields.items():
+            if key not in defaults:
+                raise ApiError(
+                    ErrorCode.VALIDATION_FAILED,
+                    f"Unknown rule {module_id}.{key}.",
+                    status_code=422,
+                    details={"field": f"{module_id}.{key}"},
+                )
+            if not _value_allowed(defaults[key], schema_fields.get(key), value):
+                raise ApiError(
+                    ErrorCode.VALIDATION_FAILED,
+                    f"{module_id}.{key} has an invalid value.",
+                    status_code=422,
+                    details={"field": f"{module_id}.{key}"},
+                )
+    validate_overrides(overrides)
+
+
+def _is_number(value: Any) -> bool:
+    # bool is an int subclass in Python, so it must never pass as a number. NaN and
+    # Infinity parse from JSON and slip past every range comparison, so reject them here.
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except OverflowError:
+        # An int too large for a float.
+        return False
+
+
+def _value_allowed(default: Any, field: dict[str, Any] | None, value: Any) -> bool:
+    """True when `value` fits the schema field, or the default's JSON type when no schema."""
+    kind = field.get("type") if field else None
+    if kind == "enum":
+        return isinstance(value, str) and value in field["values"]
+    if kind == "bool" or (kind is None and isinstance(default, bool)):
+        return isinstance(value, bool)
+    if kind in {"int", "number"} or (
+        kind is None and isinstance(default, (int, float)) and not isinstance(default, bool)
+    ):
+        if not _is_number(value):
+            return False
+        if (kind == "int" or isinstance(default, int)) and float(value) != int(value):
+            return False
+        if field and "min" in field and "max" in field:
+            return field["min"] <= float(value) <= field["max"]
+        # No schema range: numbers are still bounded so a cost or duration cannot go negative
+        # or absurdly large.
+        return 0 <= float(value) <= 100_000
+    if isinstance(default, str):
+        return isinstance(value, str)
+    return True
+
 def validate_overrides(overrides: dict[str, dict[str, Any]]) -> None:
     for module_id, fields in overrides.items():
         for key, value in fields.items():
@@ -164,14 +239,14 @@ def validate_overrides(overrides: dict[str, dict[str, Any]]) -> None:
                 continue
             try:
                 number = float(value)
-            except (TypeError, ValueError) as exc:
+            except (TypeError, ValueError, OverflowError) as exc:
                 raise ApiError(
                     ErrorCode.VALIDATION_FAILED,
                     f"{module_id}.{key} must be a number.",
                     status_code=422,
                 ) from exc
             lo, hi = bounds
-            if number < lo or number > hi:
+            if not math.isfinite(number) or number < lo or number > hi:
                 raise ApiError(
                     ErrorCode.VALIDATION_FAILED,
                     f"{module_id}.{key} must be between {lo} and {hi}.",

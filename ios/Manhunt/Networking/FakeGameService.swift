@@ -338,6 +338,33 @@ final class FakeGameService: GameService {
         games[gameID] = game
     }
 
+    func updateRules(gameID: UUID, overrides: [String: [String: RuleValue]]) async throws -> PlayerViewDTO {
+        guard let game = games[gameID] else { throw ServiceError(code: .gameNotFound, message: "") }
+        guard game.youAreHost else { throw ServiceError(code: .notHost, message: "") }
+        guard game.phase == .lobby else { throw ServiceError(code: .wrongPhase, message: "") }
+        return try mutate(gameID) { game in
+            func number(_ value: RuleValue?) -> Int? {
+                switch value {
+                case let .int(whole): whole
+                case let .double(real): Int(real)
+                default: nil
+                }
+            }
+            if let seconds = number(overrides["head_start"]?["duration"]) { game.headStartS = seconds }
+            if let minutes = number(overrides["win"]?["time_limit"]) { game.timeLimitS = minutes * 60 }
+            if let seconds = number(overrides["reveal_fuzzy"]?["interval"]) { game.revealIntervalS = seconds }
+        }
+    }
+
+    func setLobbyRadius(gameID: UUID, radiusM: Double) async throws -> PlayerViewDTO {
+        guard let game = games[gameID] else { throw ServiceError(code: .gameNotFound, message: "") }
+        guard game.youAreHost else { throw ServiceError(code: .notHost, message: "") }
+        guard game.phase == .lobby else { throw ServiceError(code: .wrongPhase, message: "") }
+        // The fake snapshot carries no arena, so there is nothing to resize; accepting the call is enough.
+        _ = radiusM
+        return try mutate(gameID) { _ in }
+    }
+
     func removePlayer(gameID: UUID, playerID: UUID) async throws -> PlayerViewDTO {
         try mutate(gameID) { game in
             game.players.removeAll { $0.id == playerID }
@@ -674,6 +701,9 @@ private struct FakeGame {
     var lobbyStartsInS: Int? = nil
     var gameElapsedS = 0
     var timeLimitRemainingS = 1800
+    var headStartS = 60
+    var timeLimitS = 1800
+    var revealIntervalS = 60
     var zoneRadiusM = 210.0
     var virtualLocation: DemoPointDTO? = DemoPointDTO(lat: 40.6617, lon: -73.9690)
     var botModes: [UUID: String] = [:]
@@ -709,10 +739,10 @@ private struct FakeGame {
             gameElapsedS: gameElapsedS,
             timeLimitRemainingS: timeLimitRemainingS,
             timers: TimersDTO(
-                headStartS: 60,
-                timeLimitS: 1800,
-                revealIntervalS: 60,
-                nextRevealInS: 60,
+                headStartS: headStartS,
+                timeLimitS: timeLimitS,
+                revealIntervalS: revealIntervalS,
+                nextRevealInS: revealIntervalS,
                 zone: demoEnabled
                     ? ZoneTimerDTO(
                         radiusM: zoneRadiusM,

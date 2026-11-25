@@ -8,7 +8,12 @@ import {
   setLobbyCircle,
   setManualRoles,
   startGame,
+  updateLobbyRules,
 } from '../api/games'
+import { LobbyRules } from '../components/LobbyRules'
+import { PlayerAvatar } from '../components/PlayerAvatar'
+import { assignAvatarStyles } from '../game/avatarStyle'
+import type { RuleOverrides } from '../game/lobbyRules'
 import { rulesSummaryLine } from '../game/rulesSummary'
 import { joinUrlForCode } from '../api/joinCode'
 import { SUPPORT_EMAIL } from '../api/legal'
@@ -50,6 +55,10 @@ export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props)
   const canStart = rolesReady(view) && view.players.length >= 2
 
   const joinLink = useMemo(() => joinUrlForCode(view.join_code), [view.join_code])
+  // Not memoized: block-list masking lives in localStorage and must stay in step with initials.
+  const avatarStyles = assignAvatarStyles(
+    view.players.map((p) => ({ id: p.player_id, name: displayNameFor(p.player_id, p.display_name) })),
+  )
 
   useEffect(() => {
     setRadiusDraft(radiusNow)
@@ -201,6 +210,25 @@ export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props)
     }
   }
 
+  async function onApplyRules(overrides: RuleOverrides) {
+    setError(null)
+    setBusy(true)
+    try {
+      const next = await withAuthRetry((token) =>
+        updateLobbyRules({ token, gameId: view.game_id, overrides }),
+      )
+      onView(next)
+      setNote('Rules updated.')
+    } catch (err) {
+      if (handleAuth(err)) {
+        return
+      }
+      setError(err instanceof ApiError ? err.message : (err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function onStart() {
     setError(null)
     setBusy(true)
@@ -253,7 +281,14 @@ export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props)
           {view.players.map((player) => (
             <li key={player.player_id}>
               <div>
-                <span>{displayNameFor(player.player_id, player.display_name)}</span>
+                <PlayerAvatar
+                  name={displayNameFor(player.player_id, player.display_name)}
+                  style={avatarStyles.get(player.player_id)}
+                  size={28}
+                />
+                <span className="lobby-player-name">
+                  {displayNameFor(player.player_id, player.display_name)}
+                </span>
                 <span className="meta">
                   {player.role}
                   {player.is_host ? ' · host' : ''}
@@ -327,6 +362,8 @@ export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props)
           </button>
         ) : null}
       </section>
+
+      {isHost ? <LobbyRules timers={view.timers} busy={busy} onApply={onApplyRules} /> : null}
 
       {isHost ? (
         <section>

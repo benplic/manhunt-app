@@ -9,6 +9,7 @@ const startGame = vi.fn()
 const setManualRoles = vi.fn()
 const setLobbyCircle = vi.fn()
 const removeLobbyPlayer = vi.fn()
+const updateLobbyRules = vi.fn()
 
 vi.mock('qrcode', () => ({
   default: {
@@ -23,6 +24,7 @@ vi.mock('../api/games', () => ({
   setManualRoles: (...args: unknown[]) => setManualRoles(...args),
   setLobbyCircle: (...args: unknown[]) => setLobbyCircle(...args),
   removeLobbyPlayer: (...args: unknown[]) => removeLobbyPlayer(...args),
+  updateLobbyRules: (...args: unknown[]) => updateLobbyRules(...args),
 }))
 
 vi.mock('../api/session', () => ({
@@ -64,6 +66,7 @@ describe('Lobby screen', () => {
     setManualRoles.mockReset()
     setLobbyCircle.mockReset()
     removeLobbyPlayer.mockReset()
+    updateLobbyRules.mockReset()
     window.localStorage.clear()
   })
 
@@ -112,6 +115,81 @@ describe('Lobby screen', () => {
         expect.objectContaining({ gameId: 'game-1', radiusM: 3000 }),
       )
     })
+  })
+
+  it('lets the host change the timers through the rules API and sends only what changed', async () => {
+    const user = userEvent.setup()
+    const next = lobbyView({ timers: { head_start_s: 90, time_limit_s: 1800, reveal_interval_s: 60 } })
+    updateLobbyRules.mockResolvedValue(next)
+    const onView = vi.fn()
+    render(
+      <Lobby
+        view={lobbyView({ timers: { head_start_s: 60, time_limit_s: 1800, reveal_interval_s: 60 } })}
+        onView={onView}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+      />,
+    )
+    const headStart = screen.getByLabelText(/head start/i)
+    const apply = screen.getByRole('button', { name: /apply rules/i })
+    expect(apply).toBeDisabled()
+    await user.clear(headStart)
+    await user.type(headStart, '90')
+    await user.click(apply)
+    await waitFor(() => {
+      expect(updateLobbyRules).toHaveBeenCalledWith({
+        token: 'tok',
+        gameId: 'game-1',
+        overrides: { head_start: { duration: 90 } },
+      })
+    })
+    expect(onView).toHaveBeenCalledWith(next)
+  })
+
+  it('blocks out-of-range rules before calling the server', async () => {
+    const user = userEvent.setup()
+    render(
+      <Lobby
+        view={lobbyView({ timers: { head_start_s: 60, time_limit_s: 1800, reveal_interval_s: 60 } })}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+      />,
+    )
+    const headStart = screen.getByLabelText(/head start/i)
+    await user.clear(headStart)
+    await user.type(headStart, '5')
+    expect(screen.getByRole('button', { name: /apply rules/i })).toBeDisabled()
+    expect(screen.getByText(/head start must be between 15 and 600/i)).toBeInTheDocument()
+    expect(updateLobbyRules).not.toHaveBeenCalled()
+  })
+
+  it('shows guests a read-only summary instead of rule inputs', () => {
+    render(
+      <Lobby
+        view={lobbyView({
+          you: { player_id: 'u2', role: 'hider', status: 'active', is_host: false },
+        })}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: /apply rules/i })).toBeNull()
+    expect(screen.queryByLabelText(/head start/i)).toBeNull()
+  })
+
+  it('draws an avatar with initials for every player', () => {
+    render(
+      <Lobby
+        view={lobbyView()}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+      />,
+    )
+    expect(screen.getByText('C')).toBeInTheDocument()
+    expect(screen.getByText('R')).toBeInTheDocument()
   })
 
   it('asks before leaving', async () => {
