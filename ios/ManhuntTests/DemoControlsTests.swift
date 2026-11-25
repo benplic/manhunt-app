@@ -80,6 +80,7 @@ final class DemoControlsTests: XCTestCase {
         XCTAssertEqual(decoded.demo?.bots.first?.displayName, "Riley Chen")
     }
 
+    @MainActor
     func testFakeGameServiceDemoActionsUpdateState() async throws {
         let fake = FakeGameService()
         _ = try await fake.signIn(displayName: "Casey Lee", installationId: "test-install", age: 18)
