@@ -26,6 +26,8 @@ struct HuntMap: View {
     var zoneShrink: ZoneShrinkClock? = nil
     /// When true, safe zones fade so lockdown reads on the map.
     var lockdownActive: Bool = false
+    /// Reveal/ping interval for stale pin dimming (same clock as fix bars).
+    var pingIntervalS: Int = PinStaleness.defaultPingIntervalS
 
     @State private var position: MapCameraPosition = .automatic
     @State private var crosshair = VisualPoint(latitude: 40.6616, longitude: -73.9688)
@@ -35,9 +37,11 @@ struct HuntMap: View {
     @State private var settleTask: Task<Void, Never>?
 
     private var animates: Bool { glideAnimating || zoneShrink != nil || safeDim > 0 || lockdownActive }
+    /// Keep the timeline running while people are on the map so stale pins dim over time.
+    private var needsClock: Bool { animates || !people.isEmpty }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !animates)) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !needsClock)) { timeline in
             mapContent(now: timeline.date)
         }
         .onAppear {
@@ -147,8 +151,13 @@ struct HuntMap: View {
                     if shouldShow(person) {
                         // Empty title: PlayerPin owns the visual; MapKit titles would double the name.
                         Annotation("", coordinate: displayPoint(for: person, now: now).coordinate, anchor: .bottom) {
-                            PlayerPin(person: person, fuzzy: fuzzyHiders && person.role == .hider && !person.isYou)
-                                .accessibilityLabel(person.name)
+                            PlayerPin(
+                                person: person,
+                                fuzzy: fuzzyHiders && person.role == .hider && !person.isYou,
+                                pingIntervalS: pingIntervalS,
+                                now: now
+                            )
+                            .accessibilityLabel(person.name)
                         }
                     }
                 }
@@ -345,8 +354,17 @@ struct RevealPin: View {
 struct PlayerPin: View {
     var person: VisualPlayer
     var fuzzy: Bool
+    var pingIntervalS: Int
+    var now: Date
 
     var body: some View {
+        let dim = PinStaleness.pinOpacity(
+            fixAt: person.fixAt,
+            fixKind: person.fixKind,
+            status: person.status,
+            pingIntervalS: pingIntervalS,
+            now: now
+        )
         VStack(spacing: 2) {
             if !fuzzy {
                 PlayerAvatar(name: person.name, playerID: person.id, size: 24)
@@ -363,5 +381,6 @@ struct PlayerPin: View {
                 }
             }
         }
+        .opacity(dim)
     }
 }

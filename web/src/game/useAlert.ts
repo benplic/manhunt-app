@@ -56,35 +56,36 @@ export function useAlert(
     [queue, sync],
   )
 
-  useEffect(() => {
-    if (paused) {
+  // The clock runs only while the surface is open AND the tab is visible. Nothing is
+  // dropped while it is stopped: alerts queue, and the showing one restarts on return.
+  const pausedRef = useRef(paused)
+  const applyHold = useCallback(() => {
+    const unseen = pausedRef.current || document.visibilityState === 'hidden'
+    if (unseen) {
       queue.hold(nowRef.current())
     } else {
       queue.release(nowRef.current())
     }
     sync()
-  }, [paused, queue, sync])
+  }, [queue, sync])
 
   useEffect(() => {
-    function onVisibility() {
-      if (document.visibilityState === 'visible') {
-        // Timers are throttled while hidden. Show the few most important queued alerts,
-        // not the whole backlog.
-        queue.resumeFromBackground(nowRef.current())
-        sync()
-      }
-    }
-    document.addEventListener('visibilitychange', onVisibility)
+    pausedRef.current = paused
+    applyHold()
+  }, [paused, applyHold])
+
+  useEffect(() => {
+    document.addEventListener('visibilitychange', applyHold)
     // Re-arm after a StrictMode unmount/mount, whose cleanup cleared the timer.
     sync()
     return () => {
-      document.removeEventListener('visibilitychange', onVisibility)
+      document.removeEventListener('visibilitychange', applyHold)
       if (timerRef.current != null) {
         window.clearTimeout(timerRef.current)
         timerRef.current = null
       }
     }
-  }, [queue, sync])
+  }, [applyHold, sync])
 
   return { shown, enqueue }
 }

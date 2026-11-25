@@ -23,11 +23,14 @@ export type FixLocation = {
   kind?: string
 }
 
-/**
- * Used when the match has no ping interval (reveals off).
- * TODO: share one constant with the map-pin staleness plan once that helper lands.
- */
-export const DEFAULT_PING_INTERVAL_S = 60
+import {
+  DEFAULT_PING_INTERVAL_S as PIN_DEFAULT_INTERVAL_S,
+  barsForAge,
+  effectiveIntervalS,
+} from '../map/pinStaleness'
+
+/** Used when the match has no ping interval (reveals off). Shared with map pin staleness. */
+export const DEFAULT_PING_INTERVAL_S = PIN_DEFAULT_INTERVAL_S
 
 export type FixFreshnessInput = {
   location: FixLocation | null | undefined
@@ -85,8 +88,6 @@ export function viewerExpectsFix(args: {
   if (args.playerId === args.viewerId) {
     return true
   }
-  // TODO: the map-pin plan stops showing teammates to out players. Until it lands this
-  // mirrors the server today; an eliminated viewer only expects their own fix.
   if (args.viewerStatus === 'eliminated') {
     return false
   }
@@ -117,14 +118,11 @@ export function fixFreshness(input: FixFreshnessInput): FixReading | null {
   if (status === 'signal_lost' || location.kind === 'last_known') {
     return { bars: 1, label: `Signal lost, last fix ${age} ago`, ageS }
   }
-  const interval = pingIntervalS > 0 ? pingIntervalS : DEFAULT_PING_INTERVAL_S
+  const interval = effectiveIntervalS(pingIntervalS)
   const label = `Last fix ${age} ago`
-  // Boundaries are inclusive: exactly 1 interval is still 4 bars, exactly 2 is still 3.
-  if (ageS <= interval) {
-    return { bars: 4, label, ageS }
+  const bars = barsForAge(ageS, interval, false)
+  if (bars === 2) {
+    return { bars: 2, label: `Stale fix, ${age} old`, ageS }
   }
-  if (ageS <= interval * 2) {
-    return { bars: 3, label, ageS }
-  }
-  return { bars: 2, label: `Stale fix, ${age} old`, ageS }
+  return { bars, label, ageS }
 }

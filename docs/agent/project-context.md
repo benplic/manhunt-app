@@ -215,6 +215,14 @@ Scott's answer, America/New_York, about 7:34 AM: leave features alone. The next 
 
 The same morning he asked for these two agent files. That process is in `docs/agent/agent-learnings.md`. It is not a product requirement.
 
+### 2026-11-25 — Live alerts are never dropped unseen
+
+Scott, about 4:32 PM America/New_York: do not drop unseen alerts. Queue them, and let a higher-priority alert jump ahead of lower ones in the queue. So the live-alert queue has no cap, no expiry, and no trim after the app returns from the background. This replaces the 8-alert cap, the 30 s expiry, and the "show at most 3 after background" rules in `docs/superpowers/plans/2026-11-24-alert-noise.md`. One alert is still visible at a time, for 4 seconds.
+
+### 2026-11-25 — Alert queue rules
+
+Scott's answers, America/New_York, about 6:16 PM. Repeats of the same news for one player (for example many "went dark" events) show as one alert entry. A tag takes priority: it interrupts a ping flash instead of waiting for its 4 seconds. Both match the current queue code on iOS and web.
+
 ## Not settled
 
 Nothing from that question remains open. Ask again only when he states a new goal.

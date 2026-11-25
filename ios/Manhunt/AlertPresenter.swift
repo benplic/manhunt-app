@@ -38,17 +38,15 @@ struct LiveAlert: Equatable, Identifiable, Sendable {
 ///
 /// - One alert shows at a time, for `showDuration`.
 /// - An alert of equal or lower priority than the one showing WAITS. It is never skipped.
-/// - A higher-priority alert takes the slot at once. The interrupted alert returns to the
-///   front of its own tier and later shows again for its full time.
+/// - A higher-priority alert takes the slot at once, and jumps ahead of every lower-priority
+///   alert in the queue. The interrupted alert returns to the front of its own tier and
+///   later shows again for its full time.
 /// - First in, first out within one priority.
-/// - Bounded: `capacity`, `expiry` for alerts that waited too long, and de-duplication by
-///   `subjectKey`.
+/// - An alert nobody has seen is NEVER dropped (decided by the user, 2026-11-25). There is
+///   no cap, no expiry, and no trim after the app was in the background. The only merge is
+///   de-duplication by `subjectKey`: the same subject and type is one entry.
 struct AlertQueue {
     static let showDuration: TimeInterval = 4
-    static let capacity = 8
-    // TODO: confirm the 30 s expiry with the user (open question in the plan).
-    static let expiry: TimeInterval = 30
-    static let backgroundKeep = 3
 
     struct Showing: Equatable {
         var alert: LiveAlert
@@ -57,19 +55,14 @@ struct AlertQueue {
         var showID: Int
     }
 
-    private struct Waiting {
-        var alert: LiveAlert
-        var queuedAt: Date
-    }
-
     private(set) var current: Showing?
-    private var waiting: [Waiting] = []
+    private var waiting: [LiveAlert] = []
     private var showSeq = 0
     /// Set while the alert surface cannot be seen. Nothing times out or expires then.
     private var heldAt: Date?
 
     /// Alerts waiting for the slot, in the order they will be shown.
-    var queued: [LiveAlert] { waiting.map(\.alert) }
+    var queued: [LiveAlert] { waiting }
 
     var isHeld: Bool { heldAt != nil }
 
@@ -79,22 +72,19 @@ struct AlertQueue {
         return current.map { $0.shownAt.addingTimeInterval(Self.showDuration) }
     }
 
-    /// The surface is hidden (a map pick, the full-map lock). Alerts still arrive and
-    /// queue, but the clock stops so nobody loses one they never saw.
+    /// Nobody can see the alert surface (a map pick, the full-map lock, the app in the
+    /// background). Alerts still arrive and queue, but the clock stops so none is used up
+    /// unseen.
     mutating func hold(now: Date) {
         if heldAt == nil { heldAt = now }
     }
 
     /// The surface is visible again. The showing alert starts its 4 s over, with a new
-    /// `showID` so VoiceOver announces it, and waiting time does not count the hold.
+    /// `showID` so VoiceOver announces it, because nobody saw it while it was held.
     @discardableResult
     mutating func release(now: Date) -> LiveAlert? {
-        guard let held = heldAt else { return nil }
+        guard heldAt != nil else { return nil }
         heldAt = nil
-        let heldFor = now.timeIntervalSince(held)
-        for index in waiting.indices {
-            waiting[index].queuedAt = waiting[index].queuedAt.addingTimeInterval(heldFor)
-        }
         guard var showing = current else { return nil }
         showSeq += 1
         showing.shownAt = now
@@ -114,10 +104,10 @@ struct AlertQueue {
             return nil
         }
 
-        if let index = waiting.firstIndex(where: { $0.alert.subjectKey == alert.subjectKey }) {
-            if waiting[index].alert.priority == alert.priority {
-                waiting[index].alert.text = alert.text
-                waiting[index].alert.tone = alert.tone
+        if let index = waiting.firstIndex(where: { $0.subjectKey == alert.subjectKey }) {
+            if waiting[index].priority == alert.priority {
+                waiting[index].text = alert.text
+                waiting[index].tone = alert.tone
                 return nil
             }
             waiting.remove(at: index)
@@ -128,13 +118,11 @@ struct AlertQueue {
         }
 
         if alert.priority < showing.alert.priority {
-            requeueFront(showing.alert, now: now)
-            enforceCapacity()
+            requeueFront(showing.alert)
             return show(alert, now: now)
         }
 
-        insertBack(Waiting(alert: alert, queuedAt: now))
-        enforceCapacity()
+        insertBack(alert)
         return nil
     }
 
@@ -146,19 +134,8 @@ struct AlertQueue {
             return nil
         }
         current = nil
-        waiting.removeAll { now.timeIntervalSince($0.queuedAt) > Self.expiry }
         guard !waiting.isEmpty else { return nil }
-        return show(waiting.removeFirst().alert, now: now)
-    }
-
-    /// After the app was in the background: forget stale news, keep the few best alerts.
-    @discardableResult
-    mutating func resumeFromBackground(now: Date) -> LiveAlert? {
-        waiting.removeAll { now.timeIntervalSince($0.queuedAt) > Self.expiry }
-        if waiting.count > Self.backgroundKeep {
-            waiting.removeLast(waiting.count - Self.backgroundKeep)
-        }
-        return advance(now: now)
+        return show(waiting.removeFirst(), now: now)
     }
 
     mutating func reset() {
@@ -173,29 +150,33 @@ struct AlertQueue {
         return alert
     }
 
-    /// Back to the front of its own tier. It waits from now, with a full 4 s ahead.
-    private mutating func requeueFront(_ alert: LiveAlert, now: Date) {
-        let entry = Waiting(alert: alert, queuedAt: now)
-        let index = waiting.firstIndex { $0.alert.priority >= alert.priority } ?? waiting.count
-        waiting.insert(entry, at: index)
+    /// Back to the front of its own tier, so it shows again before later arrivals.
+    private mutating func requeueFront(_ alert: LiveAlert) {
+        let index = waiting.firstIndex { $0.priority >= alert.priority } ?? waiting.count
+        waiting.insert(alert, at: index)
     }
 
-    private mutating func insertBack(_ entry: Waiting) {
+    /// Behind everything of the same or higher priority, ahead of anything lower.
+    private mutating func insertBack(_ alert: LiveAlert) {
         var index = waiting.count
-        while index > 0, waiting[index - 1].alert.priority > entry.alert.priority {
+        while index > 0, waiting[index - 1].priority > alert.priority {
             index -= 1
         }
-        waiting.insert(entry, at: index)
+        waiting.insert(alert, at: index)
     }
+}
 
-    /// Over capacity: drop the oldest entry of the lowest priority.
-    private mutating func enforceCapacity() {
-        while waiting.count > Self.capacity {
-            guard let lowest = waiting.map(\.alert.priority).max(),
-                  let victim = waiting.firstIndex(where: { $0.alert.priority == lowest })
-            else { return }
-            waiting.remove(at: victim)
-        }
+/// When can the player actually see the alert pill? The presenter's clock runs only then,
+/// so an alert is never used up unseen.
+enum AlertSurface {
+    /// - Parameters:
+    ///   - floatingNoticeShown: the head-start chrome shows floating notices at all.
+    ///   - mapPicking: a decoy or demo map pick replaces the pill with its own banner.
+    ///   - coveredByModal: a full-page sheet (the tag scanner) or a blocking alert (leave
+    ///     the hunt, "Play safely") sits over the pill. The medium-detent sheets leave the
+    ///     top of the map visible, so they do not count.
+    static func isVisible(floatingNoticeShown: Bool, mapPicking: Bool, coveredByModal: Bool) -> Bool {
+        floatingNoticeShown && !mapPicking && !coveredByModal
     }
 }
 
@@ -214,11 +195,18 @@ final class AlertPresenter {
 
     @ObservationIgnored private var queue = AlertQueue()
     @ObservationIgnored private var timer: Task<Void, Never>?
+    /// The wake time the live timer was armed for. Re-arming for the same wake time would
+    /// restart the 4 s, so an unrelated enqueue could keep one alert on screen forever.
+    @ObservationIgnored private var armedWake: Date?
+    /// How many times a timer was armed. Tests use it to prove an enqueue does not re-arm.
+    @ObservationIgnored private(set) var timerArmCount = 0
     private let schedulesTimer: Bool
+    @ObservationIgnored private var surfaceSuspended = false
+    @ObservationIgnored private var appBackgrounded = false
 
     var queued: [LiveAlert] { queue.queued }
 
-    /// `schedulesTimer: false` leaves expiry to explicit `advance(now:)` calls (tests).
+    /// `schedulesTimer: false` leaves timing to explicit `advance(now:)` calls (tests).
     init(schedulesTimer: Bool = true) {
         self.schedulesTimer = schedulesTimer
     }
@@ -233,15 +221,24 @@ final class AlertPresenter {
         publish(now: now)
     }
 
-    func resumeFromBackground(now: Date = Date()) {
-        queue.resumeFromBackground(now: now)
-        publish(now: now)
+    /// True while the alert surface cannot be seen (a map pick, the full-map lock). The
+    /// clock stops, alerts keep queueing, and the showing alert gets its full 4 s once the
+    /// surface is visible again.
+    func setSuspended(_ suspended: Bool, now: Date = Date()) {
+        surfaceSuspended = suspended
+        applyHold(now: now)
     }
 
-    /// True while the alert surface cannot be seen. The clock stops, alerts keep queueing,
-    /// and the showing alert gets its full 4 s once the surface is visible again.
-    func setSuspended(_ suspended: Bool, now: Date = Date()) {
-        if suspended {
+    /// True while the app is in the background. Same effect as a hidden surface: nothing is
+    /// used up or dropped while nobody can look.
+    func setBackgrounded(_ backgrounded: Bool, now: Date = Date()) {
+        appBackgrounded = backgrounded
+        applyHold(now: now)
+    }
+
+    /// The clock runs only when the surface is visible AND the app is in the foreground.
+    private func applyHold(now: Date) {
+        if surfaceSuspended || appBackgrounded {
             queue.hold(now: now)
         } else {
             queue.release(now: now)
@@ -252,6 +249,9 @@ final class AlertPresenter {
     func reset() {
         timer?.cancel()
         timer = nil
+        armedWake = nil
+        surfaceSuspended = false
+        appBackgrounded = false
         queue.reset()
         current = nil
     }
@@ -260,18 +260,27 @@ final class AlertPresenter {
         let previousShowID = showID
         current = queue.current?.alert
         showID = queue.current?.showID ?? previousShowID
-        if let alert = current, showID != previousShowID {
+        // While the surface is hidden nothing is on screen, so nothing flashes. `release`
+        // gives the showing alert a new showID, which fires `onShow` once, when it is seen.
+        if let alert = current, showID != previousShowID, !queue.isHeld {
             onShow?(alert)
         }
         schedule()
     }
 
     private func schedule() {
-        timer?.cancel()
-        timer = nil
         guard schedulesTimer, let wake = queue.nextWakeAt, let shownAt = queue.current?.shownAt else {
+            timer?.cancel()
+            timer = nil
+            armedWake = nil
             return
         }
+        // Already armed for this exact wake time: leave it running. Re-arming would restart
+        // the full 4 s from now, so a trickle of new events would starve the queue.
+        if timer != nil, armedWake == wake { return }
+        timer?.cancel()
+        armedWake = wake
+        timerArmCount += 1
         // The delay is always one show duration from when this alert took the slot, so a
         // synthetic `now` (previews, tests) schedules the same as a real one. On waking,
         // never advance to a time before the real clock: Task.sleep also counts time the
@@ -280,7 +289,14 @@ final class AlertPresenter {
         timer = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
-            self?.advance(now: max(wake, Date()))
+            self?.timerFired(wake: wake)
         }
+    }
+
+    /// The armed timer ran out. Clear it first so `advance` can arm the next alert's timer.
+    private func timerFired(wake: Date) {
+        timer = nil
+        armedWake = nil
+        advance(now: max(wake, Date()))
     }
 }

@@ -1,6 +1,35 @@
 import XCTest
 @testable import Manhunt
 
+// MARK: - Pin staleness
+
+final class PinStalenessTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    func testStaleAfterTwoPingIntervals() {
+        let interval = 60.0
+        XCTAssertEqual(PinStaleness.barsForAge(120, intervalS: interval, signalLost: false), 3)
+        XCTAssertEqual(PinStaleness.barsForAge(121, intervalS: interval, signalLost: false), 2)
+    }
+
+    func testPinOpacityTracksFixBars() {
+        XCTAssertEqual(PinStaleness.pinOpacity(forBars: 4), 1)
+        XCTAssertEqual(PinStaleness.pinOpacity(forBars: 2), 0.5)
+    }
+
+    func testDimsStaleFixOnTheMap() {
+        let fixAt = now.addingTimeInterval(-150)
+        let opacity = PinStaleness.pinOpacity(
+            fixAt: fixAt,
+            fixKind: "exact",
+            status: .active,
+            pingIntervalS: 60,
+            now: now
+        )
+        XCTAssertEqual(opacity, 0.5)
+    }
+}
+
 // MARK: - Fix freshness
 
 final class FixFreshnessTests: XCTestCase {

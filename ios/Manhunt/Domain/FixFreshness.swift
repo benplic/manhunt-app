@@ -16,9 +16,8 @@ enum FixFreshness {
         var ageSeconds: Double?
     }
 
-    /// Used when the match has no ping interval (reveals off).
-    /// TODO: share one constant with the map-pin staleness plan once that helper lands.
-    static let defaultPingIntervalS = 60
+    /// Used when the match has no ping interval (reveals off). Shared with map pin staleness.
+    static let defaultPingIntervalS = PinStaleness.defaultPingIntervalS
 
     static func pingInterval(timers: TimersDTO?) -> Int {
         for candidate in [timers?.revealIntervalS, timers?.seekerRevealIntervalS] {
@@ -47,8 +46,6 @@ enum FixFreshness {
     ) -> Bool {
         if phase == .lobby { return false }
         if playerID == viewerID { return true }
-        // TODO: the map-pin plan stops showing teammates to out players. Until it lands this
-        // mirrors the server today; an eliminated viewer only expects their own fix.
         if viewerStatus == .eliminated { return false }
         return playerRole != .unassigned && playerRole == viewerRole
     }
@@ -89,11 +86,12 @@ enum FixFreshness {
         if status == .signalLost || location.kind == "last_known" {
             return Reading(bars: 1, label: "Signal lost, last fix \(described) ago", ageSeconds: age)
         }
-        let interval = Double(pingIntervalS > 0 ? pingIntervalS : defaultPingIntervalS)
+        let interval = PinStaleness.effectiveIntervalS(pingIntervalS)
         let label = "Last fix \(described) ago"
-        // Inclusive boundaries: exactly 1 interval is still 4 bars, exactly 2 is still 3.
-        if age <= interval { return Reading(bars: 4, label: label, ageSeconds: age) }
-        if age <= interval * 2 { return Reading(bars: 3, label: label, ageSeconds: age) }
-        return Reading(bars: 2, label: "Stale fix, \(described) old", ageSeconds: age)
+        let bars = PinStaleness.barsForAge(age, intervalS: interval, signalLost: false)
+        if bars == 2 {
+            return Reading(bars: 2, label: "Stale fix, \(described) old", ageSeconds: age)
+        }
+        return Reading(bars: bars, label: label, ageSeconds: age)
     }
 }

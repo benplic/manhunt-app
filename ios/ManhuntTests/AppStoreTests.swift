@@ -413,6 +413,42 @@ final class AppStoreTests: XCTestCase {
         XCTAssertEqual(fake.lastLocationFlag, "final")
     }
 
+    /// Plan 2026-11-24-alert-noise, Task 4: the last fix goes out when the app leaves the
+    /// foreground, not when it comes back, and never from a screen that is not the hunt.
+    @MainActor
+    func testFinalPingFiresOncePerBackgroundStayNotOnReturn() {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.randomizeRoles(seekerCount: 1)
+        _ = store.startMatch()
+        store.sendFix(from: CLLocation(latitude: 40.66, longitude: -73.97), isFinal: false, battery: 0.9)
+        XCTAssertEqual(fake.finalFlagCount, 0)
+
+        // `.inactive` (Control Center, a call banner) maps to isBackground == false.
+        store.handleScenePhase(isBackground: false)
+        XCTAssertEqual(fake.finalFlagCount, 0, "inactive/active must not send a last fix")
+
+        store.handleScenePhase(isBackground: true)
+        XCTAssertEqual(fake.finalFlagCount, 1)
+
+        // Opening the app again, even several times, sends nothing.
+        store.handleScenePhase(isBackground: false)
+        store.handleScenePhase(isBackground: false)
+        XCTAssertEqual(fake.finalFlagCount, 1, "returning to the app must not repeat the last fix")
+
+        // A second real background stay is a second, deliberate last fix.
+        store.handleScenePhase(isBackground: true)
+        XCTAssertEqual(fake.finalFlagCount, 2)
+
+        // Ending the hunt sends its own final fix, then the results screen sends no more.
+        store.endMatch()
+        XCTAssertEqual(fake.finalFlagCount, 3)
+        store.handleScenePhase(isBackground: true)
+        XCTAssertEqual(fake.finalFlagCount, 3, "no last fix once the hunt is over")
+    }
+
     @MainActor
     func testSignInWithAppleHitsTheFake() async throws {
         let fake = FakeGameService()
@@ -1056,6 +1092,42 @@ final class AppStoreTests: XCTestCase {
         store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
         XCTAssertEqual(store.note, AppStore.nameBlockedNote)
         XCTAssertEqual(store.session?.displayName, AppStore.previewDisplayName)
+    }
+
+    @MainActor
+    func testLivePeopleShowsOnlyYouWhenEliminated() {
+        let store = AppStore(service: FakeGameService())
+        let you = UUID(uuidString: "00000000-0000-0000-0000-0000000000BB")!
+        let pal = UUID(uuidString: "00000000-0000-0000-0000-0000000000CC")!
+        let fix = LocationDTO(lat: 40.66, lon: -73.96, accuracyM: 5, at: "2026-11-24T20:00:00Z", kind: "exact")
+        var view = Fixtures.liveView(phase: .active, role: .hider)
+        view.you.status = .eliminated
+        view.players = [
+            PlayerDTO(playerId: you, displayName: "You", role: .hider, status: .eliminated, isHost: true, location: fix),
+            PlayerDTO(playerId: pal, displayName: "Pal", role: .hider, status: .active, isHost: false, location: fix),
+        ]
+        store.match = MatchHandle(snapshot: view, qrToken: nil)
+        XCTAssertEqual(store.livePeople.count, 1)
+        XCTAssertTrue(store.livePeople[0].isYou)
+    }
+
+    @MainActor
+    func testEliminatedAlertEnqueuesOnceNotEverySnapshot() {
+        let store = AppStore(service: FakeGameService())
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let active = Fixtures.liveView(phase: .active, role: .hider)
+        store.match = MatchHandle(snapshot: active, qrToken: nil, clockAnchorAt: now)
+        var eliminated = active
+        eliminated.you.status = .eliminated
+        store.apply(eliminated, now: now)
+        XCTAssertEqual(store.alerts.current?.subjectKey, "out:self")
+        store.alerts.advance(now: now.addingTimeInterval(5))
+        XCTAssertNil(store.alerts.current)
+        var later = eliminated
+        later.gameElapsedS = eliminated.gameElapsedS + 3
+        store.apply(later, now: now.addingTimeInterval(5))
+        XCTAssertNil(store.alerts.current)
+        XCTAssertFalse(store.alerts.queued.contains { $0.subjectKey == "out:self" })
     }
 }
 

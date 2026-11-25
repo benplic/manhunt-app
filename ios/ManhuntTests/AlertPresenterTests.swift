@@ -145,57 +145,84 @@ final class AlertPresenterTests: XCTestCase {
         XCTAssertEqual(queue.queued.first?.text, "dark 52")
     }
 
-    func testTheQueueIsCappedAtEightAndDropsTheOldestLowestPriority() {
+    // Product rule (2026-11-25): never drop an alert the player has not seen.
+    func testThereIsNoCapEveryQueuedAlertIsShownEventually() {
         var queue = AlertQueue()
         queue.enqueue(alert("showing", .tagOrBounds), now: at(0))
-        queue.enqueue(alert("pill-old", .update), now: at(1))
-        queue.enqueue(alert("pill-new", .update), now: at(2))
-        for index in 0..<(AlertQueue.capacity - 2) {
-            queue.enqueue(alert("ping-\(index)", .ping), now: at(3 + Double(index)))
+        for index in 0..<40 {
+            queue.enqueue(alert("pill-\(index)", .update), now: at(1 + Double(index)))
         }
-        XCTAssertEqual(queue.queued.count, AlertQueue.capacity)
-
         queue.enqueue(alert("dark", .safety), now: at(100))
 
-        XCTAssertEqual(queue.queued.count, AlertQueue.capacity)
-        let keys = queue.queued.map(\.subjectKey)
-        XCTAssertFalse(keys.contains("pill-old"))
-        XCTAssertTrue(keys.contains("pill-new"))
-        XCTAssertEqual(keys.first, "dark")
+        XCTAssertEqual(queue.queued.count, 41)
+        let order = drain(&queue, from: 100)
+        XCTAssertEqual(order.count, 42)
+        XCTAssertEqual(Array(order.prefix(2)), ["showing", "dark"], "higher priority jumps the queue")
+        XCTAssertEqual(order.last, "pill-39")
     }
 
-    func testAnAlertThatWaitedOverThirtySecondsIsDropped() {
+    func testAnAlertThatWaitsForTenMinutesIsStillShown() {
         var queue = AlertQueue()
         queue.enqueue(alert("long", .tagOrBounds), now: at(0))
-        queue.enqueue(alert("stale", .ping), now: at(1))
-        queue.enqueue(alert("fresh", .ping), now: at(25))
-
-        queue.advance(now: at(31.5))
-        XCTAssertEqual(queue.current?.alert.subjectKey, "fresh")
+        queue.enqueue(alert("old", .ping), now: at(1))
+        queue.advance(now: at(600))
+        XCTAssertEqual(queue.current?.alert.subjectKey, "old")
     }
 
-    func testAnAlertThatWaitedExactlyThirtySecondsIsKept() {
+    func testAHigherPriorityAlertJumpsAheadOfEverythingLowerInTheQueue() {
         var queue = AlertQueue()
-        queue.enqueue(alert("long", .tagOrBounds), now: at(0))
-        queue.enqueue(alert("edge", .ping), now: at(0))
-        queue.advance(now: at(30))
-        XCTAssertEqual(queue.current?.alert.subjectKey, "edge")
-    }
-
-    func testBackgroundReturnKeepsOnlyTheThreeHighestPriority() {
-        var queue = AlertQueue()
-        queue.enqueue(alert("now", .tagOrBounds), now: at(0))
+        queue.enqueue(alert("showing", .safety), now: at(0))
         queue.enqueue(alert("pill", .update), now: at(1))
         queue.enqueue(alert("ping", .ping), now: at(2))
-        queue.enqueue(alert("dark", .safety), now: at(3))
+        queue.enqueue(alert("dark-2", .safety), now: at(3))
         queue.enqueue(alert("oob", .tagOrBounds), now: at(4))
-        queue.enqueue(alert("ping-2", .ping), now: at(5))
-
-        queue.resumeFromBackground(now: at(10))
-
+        // The out-of-bounds alert takes the slot and the safety alert it interrupted
+        // goes back to the front of its own tier, ahead of the second safety alert.
         XCTAssertEqual(queue.current?.alert.subjectKey, "oob")
-        XCTAssertEqual(queue.queued.map(\.subjectKey), ["dark", "ping"])
-        XCTAssertEqual(drain(&queue, from: 10), ["oob", "dark", "ping"])
+        XCTAssertEqual(queue.queued.map(\.subjectKey), ["showing", "dark-2", "ping", "pill"])
+    }
+
+    // The app was in the background: nothing was seen, so nothing is used up or dropped.
+    @MainActor
+    func testBackgroundingStopsTheClockAndNothingIsLostOnReturn() {
+        let presenter = AlertPresenter(schedulesTimer: false)
+        presenter.enqueue(alert("now", .tagOrBounds), now: at(0))
+        presenter.enqueue(alert("pill", .update), now: at(1))
+        presenter.enqueue(alert("ping", .ping), now: at(2))
+        presenter.enqueue(alert("dark", .safety), now: at(3))
+        let before = presenter.showID
+
+        presenter.setBackgrounded(true, now: at(5))
+        presenter.advance(now: at(500))
+        XCTAssertEqual(presenter.current?.subjectKey, "now")
+
+        presenter.setBackgrounded(false, now: at(500))
+        XCTAssertNotEqual(presenter.showID, before, "the alert nobody saw is announced again")
+        var seen: [String] = []
+        var clock = 500.0
+        while let showing = presenter.current {
+            seen.append(showing.subjectKey)
+            clock += AlertQueue.showDuration
+            presenter.advance(now: at(clock))
+        }
+        XCTAssertEqual(seen, ["now", "dark", "ping", "pill"])
+    }
+
+    // A hidden surface and a backgrounded app are independent reasons to stop the clock.
+    @MainActor
+    func testTheClockStaysStoppedUntilBothSurfaceAndAppAreVisible() {
+        let presenter = AlertPresenter(schedulesTimer: false)
+        presenter.enqueue(alert("a", .safety), now: at(0))
+        presenter.setSuspended(true, now: at(1))
+        presenter.setBackgrounded(true, now: at(2))
+
+        presenter.setBackgrounded(false, now: at(10))
+        presenter.advance(now: at(100))
+        XCTAssertEqual(presenter.current?.subjectKey, "a", "surface is still hidden")
+
+        presenter.setSuspended(false, now: at(100))
+        presenter.advance(now: at(104))
+        XCTAssertNil(presenter.current)
     }
 
     func testTenEventsInOneSecondAreShownOneAtATimeInPriorityOrder() {
@@ -235,7 +262,7 @@ final class AlertPresenterTests: XCTestCase {
         XCTAssertNotEqual(queue.current?.showID, firstShowID)
 
         queue.advance(now: at(64))
-        // The ping waited about 1 s of visible time, not 60 s, so it did not expire.
+        // The ping was never dropped while the surface was hidden.
         XCTAssertEqual(queue.current?.alert.subjectKey, "ping")
     }
 
@@ -288,6 +315,46 @@ final class AlertPresenterTests: XCTestCase {
         let first = AppStore.alertSubjectKey(forEventType: "zone_warning", playerID: nil, seq: 1)
         let second = AppStore.alertSubjectKey(forEventType: "zone_warning", playerID: nil, seq: 2)
         XCTAssertNotEqual(first, second)
+    }
+
+    // Review finding: `schedule()` re-armed the 4 s timer on every enqueue, so a steady
+    // trickle of events kept the visible alert on screen and starved the queue.
+    @MainActor
+    func testAnEnqueueMidSlotDoesNotRestartTheVisibleAlertsTimer() {
+        let presenter = AlertPresenter(schedulesTimer: true)
+        presenter.enqueue(alert("a", .safety), now: Date())
+        XCTAssertEqual(presenter.timerArmCount, 1)
+
+        presenter.enqueue(alert("b", .safety), now: Date())
+        presenter.enqueue(alert("c", .ping), now: Date())
+        presenter.enqueue(alert("a", .safety, text: "again"), now: Date())
+        XCTAssertEqual(presenter.timerArmCount, 1, "the showing alert keeps its original timer")
+        presenter.reset()
+    }
+
+    // Review finding: `onShow` (the ping flash and haptic) fired while the surface was
+    // suspended, then fired again when `release` gave the alert a fresh showing.
+    @MainActor
+    func testOnShowWaitsForTheSurfaceAndFiresOnceNotTwice() {
+        let presenter = AlertPresenter(schedulesTimer: false)
+        var shown = 0
+        presenter.onShow = { _ in shown += 1 }
+
+        presenter.setSuspended(true, now: at(0))
+        presenter.enqueue(alert("ping", .ping, kind: .ping(.hider)), now: at(1))
+        XCTAssertEqual(shown, 0, "nothing flashes while the alert surface is hidden")
+
+        presenter.setSuspended(false, now: at(5))
+        XCTAssertEqual(shown, 1)
+    }
+
+    // A full-page sheet or a blocking alert hides the pill. Unseen alerts are never dropped,
+    // so the clock stops there, as it already does for a map pick.
+    func testTheAlertSurfaceIsHiddenByAMapPickAFullPageSheetOrABlockingAlert() {
+        XCTAssertTrue(AlertSurface.isVisible(floatingNoticeShown: true, mapPicking: false, coveredByModal: false))
+        XCTAssertFalse(AlertSurface.isVisible(floatingNoticeShown: false, mapPicking: false, coveredByModal: false))
+        XCTAssertFalse(AlertSurface.isVisible(floatingNoticeShown: true, mapPicking: true, coveredByModal: false))
+        XCTAssertFalse(AlertSurface.isVisible(floatingNoticeShown: true, mapPicking: false, coveredByModal: true))
     }
 
     func testAnEmptyQueueAdvancesCleanly() {

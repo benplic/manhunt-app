@@ -7,9 +7,11 @@
  *   queue. It is never skipped or overwritten.
  * - A higher-priority alert takes the slot at once. The one it interrupted goes back to
  *   the front of its own tier and later shows again for its full time.
+ * - A higher-priority alert also jumps ahead of every lower-priority alert in the queue.
  * - Within one priority the order is first in, first out.
- * - The queue is bounded so it cannot turn into a wall of stale news: a cap, an expiry
- *   for alerts that waited too long, and de-duplication by `key`.
+ * - An alert the player has not seen is NEVER dropped (decided by the user, 2026-11-25).
+ *   There is no cap, no expiry, and no trim after the page was hidden. The only merge is
+ *   de-duplication by `key`: the same subject and type is one entry, with its latest words.
  *
  * Pure and clock-free: every method takes `now` in milliseconds, so tests never sleep.
  * The caller owns the timer and calls `advance` at `nextWakeAt()`.
@@ -34,19 +36,16 @@ export type ShownAlert = LiveAlert & {
   showId: number
 }
 
-type Waiting = LiveAlert & { queuedAt: number }
-
 export const ALERT_SHOW_MS = 4000
-export const ALERT_QUEUE_CAP = 8
-// TODO: confirm the 30 s expiry with the user (open question in the plan).
-export const ALERT_EXPIRY_MS = 30_000
-export const ALERT_BACKGROUND_KEEP = 3
 
 export class AlertQueue {
   current: ShownAlert | null = null
-  private waiting: Waiting[] = []
+  private waiting: LiveAlert[] = []
   private showSeq = 0
-  /** Set while the alert surface cannot be seen. Nothing times out or expires then. */
+  /**
+   * Set while nobody can see the alert surface (a panel is open, the tab is hidden).
+   * Alerts keep queueing, but the clock stops, so nothing is used up unseen.
+   */
   private heldAt: number | null = null
 
   /** Alerts waiting for the slot, in the order they will be shown. */
@@ -78,14 +77,12 @@ export class AlertQueue {
     }
 
     if (alert.priority < current.priority) {
-      this.requeueFront(current, now)
-      this.enforceCap()
+      this.requeueFront(current)
       this.show(alert, now)
       return
     }
 
-    this.insertBack({ ...alert, queuedAt: now })
-    this.enforceCap()
+    this.insertBack(alert)
   }
 
   /**
@@ -101,7 +98,6 @@ export class AlertQueue {
     }
     const hadCurrent = this.current !== null
     this.current = null
-    this.waiting = this.waiting.filter((entry) => now - entry.queuedAt <= ALERT_EXPIRY_MS)
     const next = this.waiting.shift()
     if (next) {
       this.show(next, now)
@@ -118,10 +114,7 @@ export class AlertQueue {
     return this.current ? this.current.shownAt + ALERT_SHOW_MS : null
   }
 
-  /**
-   * The alert surface is not visible (a panel is open, the map is hidden). Alerts keep
-   * arriving and queueing, but the clock stops, so nobody loses one they never saw.
-   */
+  /** The alert surface is not visible. Alerts keep queueing, but the clock stops. */
   hold(now: number): void {
     if (this.heldAt === null) {
       this.heldAt = now
@@ -130,15 +123,13 @@ export class AlertQueue {
 
   /**
    * The surface is visible again. The showing alert starts its 4 s over (with a new
-   * showId so a screen reader announces it) and waiting time does not count the hold.
+   * showId so a screen reader announces it), because nobody saw it while it was held.
    */
   release(now: number): void {
     if (this.heldAt === null) {
       return
     }
-    const heldFor = now - this.heldAt
     this.heldAt = null
-    this.waiting = this.waiting.map((entry) => ({ ...entry, queuedAt: entry.queuedAt + heldFor }))
     if (this.current) {
       this.showSeq += 1
       this.current = { ...this.current, shownAt: now, showId: this.showSeq }
@@ -147,17 +138,6 @@ export class AlertQueue {
 
   get isHeld(): boolean {
     return this.heldAt !== null
-  }
-
-  /**
-   * After the page was hidden: forget stale news, keep the few highest-priority alerts.
-   * Returns true if what is on screen changed.
-   */
-  resumeFromBackground(now: number): boolean {
-    this.waiting = this.waiting
-      .filter((entry) => now - entry.queuedAt <= ALERT_EXPIRY_MS)
-      .slice(0, ALERT_BACKGROUND_KEEP)
-    return this.advance(now)
   }
 
   private show(alert: LiveAlert, now: number): void {
@@ -172,33 +152,24 @@ export class AlertQueue {
     }
   }
 
-  /** Back to the front of its own tier. It waits from now, with a fresh 4 s ahead. */
-  private requeueFront(alert: LiveAlert, now: number): void {
-    const entry: Waiting = {
+  /** Back to the front of its own tier, so it shows again before later arrivals. */
+  private requeueFront(alert: LiveAlert): void {
+    const entry: LiveAlert = {
       key: alert.key,
       text: alert.text,
       tone: alert.tone,
       priority: alert.priority,
-      queuedAt: now,
     }
     const at = this.waiting.findIndex((other) => other.priority >= entry.priority)
     this.waiting.splice(at === -1 ? this.waiting.length : at, 0, entry)
   }
 
-  private insertBack(entry: Waiting): void {
+  /** Behind everything of the same or higher priority, ahead of anything lower. */
+  private insertBack(entry: LiveAlert): void {
     let at = this.waiting.length
     while (at > 0 && this.waiting[at - 1].priority > entry.priority) {
       at -= 1
     }
     this.waiting.splice(at, 0, entry)
-  }
-
-  /** Full queue: drop the oldest entry of the lowest priority. */
-  private enforceCap(): void {
-    while (this.waiting.length > ALERT_QUEUE_CAP) {
-      const lowest = Math.max(...this.waiting.map((entry) => entry.priority))
-      const victim = this.waiting.findIndex((entry) => entry.priority === lowest)
-      this.waiting.splice(victim, 1)
-    }
   }
 }

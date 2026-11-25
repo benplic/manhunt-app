@@ -24,6 +24,7 @@ vi.mock('leaflet', () => {
   const marker = {
     addTo: vi.fn().mockReturnThis(),
     setLatLng: vi.fn().mockReturnThis(),
+    setOpacity: vi.fn().mockReturnThis(),
     getLatLng: vi.fn(() => ({ lat: 40.1, lng: -73.1 })),
     bindPopup: vi.fn().mockReturnThis(),
     setPopupContent: vi.fn().mockReturnThis(),
@@ -800,6 +801,41 @@ describe('LiveMap', () => {
       vi.advanceTimersByTime(4000)
     })
     expect(document.querySelectorAll('.banners .banner')).toHaveLength(0)
+    vi.useRealTimers()
+  })
+
+  // The "Play safely" gate is a modal over a mounted LiveMap. Nobody can read an alert
+  // behind it, and unseen alerts are never dropped, so the clock must stop there too.
+  it('does not use up an alert while the safety gate covers the map', () => {
+    vi.useFakeTimers()
+    const props = {
+      socket: { sendLocation: vi.fn() } as never,
+      qrToken: null,
+      note: null,
+      onView: () => undefined,
+      onLeave: () => undefined,
+      onSignedOut: () => undefined,
+      watchLocation: () => () => undefined,
+    }
+    const dark: PlayerView = {
+      ...view,
+      banners: [
+        { banner_id: 'b1', tone: 'safety', title: 'Riley went dark', detail: '', player_id: 'p-riley' },
+        { banner_id: 'b2', tone: 'safety', title: 'Jordan went dark', detail: '', player_id: 'p-jordan' },
+      ],
+    }
+    const { rerender } = render(<LiveMap view={dark} holdPresence {...props} />)
+    act(() => {
+      vi.advanceTimersByTime(60_000)
+    })
+    expect(screen.getByText('Riley went dark')).toBeInTheDocument()
+
+    rerender(<LiveMap view={dark} holdPresence={false} {...props} />)
+    expect(screen.getByText('Riley went dark')).toBeInTheDocument()
+    act(() => {
+      vi.advanceTimersByTime(4000)
+    })
+    expect(screen.getByText('Jordan went dark')).toBeInTheDocument()
     vi.useRealTimers()
   })
 

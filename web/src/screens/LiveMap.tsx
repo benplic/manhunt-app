@@ -228,7 +228,11 @@ export function LiveMap({
   const [busyDock, setBusyDock] = useState(false)
   const [powerPick, setPowerPick] = useState<PowerPick>(null)
   // The slot's clock stops while Scores or Log covers the map, so nothing is used up unseen.
-  const { shown: shownAlert, enqueue: enqueueAlert } = useAlert({ paused: panel !== 'map' })
+  // Stop the alert clock whenever the map is covered: a panel is open, or the "Play safely"
+  // gate (`holdPresence`) sits over it. An alert nobody could read is never used up.
+  const { shown: shownAlert, enqueue: enqueueAlert } = useAlert({
+    paused: panel !== 'map' || holdPresence,
+  })
   /** Banner ids already queued, so a banner that stays in the view alerts only once. */
   const seenBannerIdsRef = useRef<Set<string>>(new Set())
   const [pendingLeave, setPendingLeave] = useState(false)
@@ -236,7 +240,12 @@ export function LiveMap({
   /** Bumped when the local block list changes so leaderboard names re-mask. */
   const [blockRevision, setBlockRevision] = useState(0)
 
-  const pins = useMemo(() => pinsFromView(view), [view, blockRevision])
+  const [pinNowMs, setPinNowMs] = useState(() => Date.now())
+  useEffect(() => {
+    const id = window.setInterval(() => setPinNowMs(Date.now()), 1000)
+    return () => window.clearInterval(id)
+  }, [])
+  const pins = useMemo(() => pinsFromView(view, pinNowMs), [view, blockRevision, pinNowMs])
   const reveals = useMemo(() => revealsFromView(view), [view])
   const playBoundary = useMemo(() => resolvePlayBoundary(view.arena ?? null), [view.arena])
   const arenaKey = arenaIdentityKey(playBoundary)
@@ -655,6 +664,7 @@ export function LiveMap({
       }`
       if (!marker) {
         marker = L.marker([pin.lat, pin.lon]).addTo(map)
+        marker.setOpacity(pin.opacity)
         marker.bindPopup(textPopup(label))
         markersRef.current.set(pin.playerId, marker)
         pinAnimRef.current.set(pin.playerId, {
@@ -681,6 +691,7 @@ export function LiveMap({
           marker.setLatLng([glide.lat, glide.lon])
         }
         marker.setPopupContent(textPopup(label))
+        marker.setOpacity(pin.opacity)
       }
     }
     for (const [id, marker] of markersRef.current) {
