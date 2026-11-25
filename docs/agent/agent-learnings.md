@@ -149,3 +149,6 @@ Vitest has no layout engine, so `LiveMapCss.test.ts` can only pin the CSS text (
 
 ### 2026-11-25 — `test_thirty_player_stress` fails only inside the Cursor sandbox
 `tests/load/test_thirty_player_stress.py::test_full_lobby_ws_stress_passes` failed with `PermissionError: Operation not permitted: 'ps'` (`join_not_clean`, `sockets_open=0<40`). The harness shells out to `ps`, which the agent sandbox blocks. It passed when the same suite ran unsandboxed, so it is not a code or timing flake. It only looked random because a `pytest`-only command ran unsandboxed while a command chained after `npm` ran sandboxed. Run the server suite on its own, or request `all` permissions, before treating that failure as a regression.
+
+### 2026-11-25 — Fixed `settle()` sleeps fail on the CI runner
+`GameSocketHealthTests.testFailuresAccumulateWhileFlappingAndResetAfterAStableConnection` slept 0.4 s and expected one refused connect to have been counted. It passed on a Mac and on one CI run, then failed on the next (`XCTAssertGreaterThanOrEqual failed: ("0") is less than ("1")`, iOS job on `afeadf7`). Poll for the condition with a timeout (`waitUntil` in that file) instead of sleeping a fixed time. Other tests in that file still use `settle()` for "nothing should happen" checks, which is fine; only waits for something to happen need polling.

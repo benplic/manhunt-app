@@ -30,6 +30,14 @@ final class GameSocketHealthTests: XCTestCase {
         try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
     }
 
+    /// Polls instead of sleeping a fixed time: a refused connect takes longer on a loaded CI runner.
+    private func waitUntil(timeout: TimeInterval = 5, _ condition: () -> Bool) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition(), Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+    }
+
     // MARK: hello
 
     func testHelloCarriesTheClientBlockAndKeepsLastSeq() {
@@ -130,11 +138,11 @@ final class GameSocketHealthTests: XCTestCase {
         let socket = makeSocket(FakePathObserver())
         socket.stableAfter = 0.05
         socket.connect(url: unreachable, token: "tok")
-        await settle(0.4)
+        await waitUntil { socket.health().failureStreak >= 1 }
         XCTAssertGreaterThanOrEqual(socket.health().failureStreak, 1)
 
         socket.handle(Data(#"{"type":"welcome","data":{}}"#.utf8))
-        await settle(0.2)
+        await waitUntil { socket.health().failureStreak == 0 }
 
         XCTAssertEqual(socket.health().failureStreak, 0)
         socket.disconnect()
