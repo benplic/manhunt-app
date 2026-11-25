@@ -439,7 +439,8 @@ async def test_27_sockets_with_one_stalled_keep_game_time_at_one_second() -> Non
     assert average_gap == pytest.approx(1.0)
     assert fake.sleeps == pytest.approx([1.0] * 60)
     assert sockets[0].sent > 0
-    # Known limitation, pinned on purpose: broadcast still sends one socket at a time, so
-    # the stalled socket also starves the sockets after it. Game time is unaffected.
-    # TODO: remove this assertion when the connection-health plan makes broadcast concurrent.
-    assert sockets[6].sent == 0
+    # Each socket has its own sender, so the stalled one no longer starves the sockets
+    # after it (see test_broadcast_slow_client.py for the full guarantees).
+    assert sockets[6].sent > 0
+    assert sockets[5].sent == 0
+    await manager.drain_io()

@@ -87,6 +87,7 @@ async def test_broadcast_skips_the_sender_but_not_everyone_else() -> None:
 
     _final_fix(session, sender)
     await manager.broadcast(session.state.game_id)
+    await manager.settle(session.state.game_id)
 
     def types(sock: _RecordingSocket) -> list[str]:
         return [m["data"]["type"] for m in sock.messages if m["type"] == "event"]

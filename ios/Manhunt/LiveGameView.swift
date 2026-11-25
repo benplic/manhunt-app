@@ -263,6 +263,7 @@ struct LiveGameView: View {
                 }
                 RolePill(role: store.viewingRole)
                 Spacer(minLength: 0)
+                SignalBarsView(health: { store.socketHealth() }, onTap: { store.explainConnection() })
                 if store.demoControlsEnabled {
                     mapChip("Demo") { showDemo = true }
                         .accessibilityIdentifier("demo-controls-chip")

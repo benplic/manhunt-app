@@ -105,6 +105,9 @@ final class AppStore {
     /// Snapshot banner ids already alerted, so a banner that stays in the view alerts once.
     private var seenBannerIDs: Set<UUID> = []
     private var sceneWasBackground = false
+    /// When the foreground check last had to restart a silent location stream. For the
+    /// background-location manual test and diagnostics.
+    private(set) var lastLocationRestartAt: Date?
     var tagAnnouncement: TagAnnouncement?
     private(set) var pendingTagAnnouncements: [TagAnnouncement] = []
     var pingPulse: PingPulse?
@@ -566,6 +569,13 @@ final class AppStore {
         if !isBackground, sceneWasBackground {
             // Back from the background: show the few best queued alerts, not the backlog.
             alerts.resumeFromBackground()
+            // A locked phone can leave the location stream silent. Restart it once, here.
+            if screen == .live, location.restartIfStale() {
+                lastLocationRestartAt = Date()
+            }
+            if screen == .live {
+                live?.reconnectIfSilent()
+            }
         }
         sceneWasBackground = isBackground
         if isBackground {
@@ -2132,6 +2142,28 @@ final class AppStore {
         if consecutiveSendFailures >= 2 {
             presentHiccupNote()
         }
+    }
+
+    /// Health of this phone's own socket for the meter. Nil without a live socket
+    /// (previews and the fake service), which hides the meter.
+    func socketHealth() -> SocketHealth? {
+        live?.socketHealth()
+    }
+
+    /// Tap on the meter: a short explanation through the shared alert queue, never a
+    /// separate banner. One subject key, so repeated taps refresh a single entry.
+    func explainConnection(now: Date = Date()) {
+        guard let health = socketHealth() else { return }
+        alerts.enqueue(
+            LiveAlert(
+                text: SocketMeter.explanation(for: health, now: now),
+                tone: "info",
+                priority: .update,
+                subjectKey: "socket:meter",
+                createdAt: now
+            ),
+            now: now
+        )
     }
 
     func handleReconnect(_ reconnecting: Bool) {

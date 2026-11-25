@@ -692,6 +692,50 @@ describe('LiveMap', () => {
     vi.useRealTimers()
   })
 
+  it('shows the socket meter beside the role and routes its tap through the alert queue', async () => {
+    const socket = {
+      sendLocation: vi.fn(),
+      health: () => ({ connected: true, failureStreak: 0, lastMessageAt: Date.now() }),
+    } as never
+    render(
+      <LiveMap
+        view={view}
+        socket={socket}
+        qrToken={null}
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    const meter = screen.getByRole('button', { name: 'Connection: good' })
+    expect(meter.closest('.top-bar')).not.toBeNull()
+    expect(document.querySelector('.banners .banner')).toBeNull()
+
+    await userEvent.click(meter)
+
+    const alert = document.querySelector('.banners .banner')
+    expect(alert).not.toBeNull()
+    expect(alert?.textContent).toMatch(/connected\. updates are arriving\. last update \d+s ago\./i)
+  })
+
+  it('hides the socket meter when the socket cannot report health', () => {
+    render(
+      <LiveMap
+        view={view}
+        socket={{ sendLocation: vi.fn() } as never}
+        qrToken={null}
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: /^connection:/i })).not.toBeInTheDocument()
+  })
+
   it('keeps the alert out of the layout flow so the map never shrinks', () => {
     const props = {
       socket: { sendLocation: vi.fn() } as never,

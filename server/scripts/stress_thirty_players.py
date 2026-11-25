@@ -431,6 +431,10 @@ async def run_stress(
                 while not stop.is_set():
                     t0 = time.monotonic()
                     await manager.broadcast(game_uuid)
+                    # broadcast only queues now; settle waits for delivery so the number
+                    # still measures how long a tick's frames take to reach every socket.
+                    # TODO: not run on this change (needs POSIX `resource`); verify on the host.
+                    await manager.settle(game_uuid)
                     last_broadcast_mono[0] = time.monotonic()
                     broadcast_ms.append((last_broadcast_mono[0] - t0) * 1000.0)
                     rss_samples.append(_sample_rss_mb(os.getpid()))

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -45,12 +46,61 @@ _FORBIDDEN = frozenset(
 )
 
 
+# Client platforms the analysis groups by. Anything else is bucketed so a typo or a future
+# build cannot create unbounded label values in the log.
+KNOWN_PLATFORMS = frozenset({"ios", "web"})
+_CLIENT_FIELD_MAX = 32
+EXC_MESSAGE_MAX = 200
+# Long decimals look like coordinates; long unbroken runs look like tokens or keys.
+_DECIMAL_RE = re.compile(r"-?\d+\.\d{4,}")
+_SECRETISH_RE = re.compile(r"[A-Za-z0-9_\-+/=.]{32,}")
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
 def _iso_now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _day_stamp() -> str:
     return datetime.now(_ET).strftime("%Y-%m-%d")
+
+
+def sanitize_client(raw: Any) -> dict[str, str] | None:
+    """Validate the optional `hello.data.client` block.
+
+    Old app builds send nothing, and future builds may send more. Anything that is not the
+    expected shape is ignored rather than rejected, so it can never break a connection.
+    """
+    if not isinstance(raw, dict):
+        return None
+
+    def clean(value: Any) -> str:
+        text = _CONTROL_RE.sub("", str(value if value is not None else "")).strip()
+        return text[:_CLIENT_FIELD_MAX]
+
+    platform = clean(raw.get("platform")).lower()
+    return {
+        "platform": platform if platform in KNOWN_PLATFORMS else "other",
+        "app_version": clean(raw.get("app_version")),
+        "os_version": clean(raw.get("os_version")),
+    }
+
+
+def client_fields(client: dict[str, str] | None) -> dict[str, str]:
+    """Flat log fields so disconnects group by `platform` with one jq/pandas call."""
+    if not client:
+        return {}
+    return {key: value for key, value in client.items() if value}
+
+
+def safe_exc_message(exc: BaseException | str | None) -> str | None:
+    """Truncated exception text with coordinate-like numbers and token-like strings removed."""
+    if exc is None:
+        return None
+    text = _CONTROL_RE.sub(" ", str(exc))
+    text = _DECIMAL_RE.sub("<num>", text)
+    text = _SECRETISH_RE.sub("<redacted>", text)
+    return text[:EXC_MESSAGE_MAX]
 
 
 def _scrub(value: Any) -> Any:
@@ -132,6 +182,7 @@ class PlaytestLogger:
         player_id: UUID,
         *,
         join_code: str | None = None,
+        client: dict[str, str] | None = None,
     ) -> None:
         gid = str(game_id)
         pid = str(player_id)
@@ -144,6 +195,7 @@ class PlaytestLogger:
             game_id=game_id,
             player_id=player_id,
             join_code=join_code,
+            **client_fields(client),
         )
 
     def ws_disconnected(
@@ -153,13 +205,23 @@ class PlaytestLogger:
         *,
         join_code: str | None = None,
         reason: str | None = None,
+        client: dict[str, str] | None = None,
+        exc: BaseException | None = None,
+        close_code: int | None = None,
+        send_ms: float | None = None,
     ) -> None:
+        """One line per disconnect: why, the exception (if any), close code, and platform."""
         self.emit(
             "ws_disconnect",
             game_id=game_id,
             player_id=player_id,
             join_code=join_code,
             reason=reason,
+            exc_type=type(exc).__name__ if exc is not None else None,
+            exc_message=safe_exc_message(exc),
+            close_code=close_code,
+            send_ms=round(send_ms) if send_ms is not None else None,
+            **client_fields(client),
         )
 
     def record_engine_events(

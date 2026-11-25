@@ -12,7 +12,8 @@ import {
 } from '../api/games'
 import { SUPPORT_EMAIL } from '../api/legal'
 import { SessionExpiredError, withAuthRetry } from '../api/session'
-import type { GameSocket } from '../api/ws'
+import type { GameSocket, SocketHealth } from '../api/ws'
+import { SignalBars } from '../components/SignalBars'
 import { startLivePresence } from '../geo/presence'
 import { requestHuntWakeLock } from '../geo/wakeLock'
 import { watchVisibleLocation } from '../geo/watchVisible'
@@ -878,6 +879,18 @@ export function LiveMap({
     })
   }
 
+  // Test doubles and a socket that is not built yet may lack `health`; hide the meter then.
+  const readSocketHealth = useCallback(
+    (): SocketHealth | null => socket.health?.() ?? null,
+    [socket],
+  )
+  // The tap explanation goes through the alert queue like every other message. One key, so
+  // tapping repeatedly refreshes a single entry instead of stacking.
+  const explainSocket = useCallback(
+    (text: string) => enqueueAlert({ key: 'socket:meter', text, tone: 'info', priority: 4 }),
+    [enqueueAlert],
+  )
+
   // Filter socket "too fast" noise out of the HUD.
   const socketNote =
     note && note.toLowerCase().includes('too fast') ? null : note
@@ -898,7 +911,10 @@ export function LiveMap({
           <p className="eyebrow">
             {phaseLabel(view.phase)} · {view.join_code}
           </p>
-          <p className="role-pill">{view.you.role}</p>
+          <div className="identity-row">
+            <p className="role-pill">{view.you.role}</p>
+            <SignalBars getHealth={readSocketHealth} onExplain={explainSocket} />
+          </div>
         </div>
         <div className="actions chip-row">
           <button type="button" className="chip" onClick={recenter}>
