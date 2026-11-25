@@ -1,6 +1,7 @@
 import Foundation
 
 /// In-memory server for UI tests and screenshots. Join code PARK42 is the sample lobby.
+@MainActor
 final class FakeGameService: GameService {
     private(set) var joinCalls = 0
     private(set) var leaveCalls = 0
@@ -36,7 +37,7 @@ final class FakeGameService: GameService {
         )
     }
 
-    static func seedArenas() -> [Arena] {
+    nonisolated static func seedArenas() -> [Arena] {
         [Arena.sampleSquare(), Arena.riversideSample(), Arena.schoolyardSample()]
     }
 

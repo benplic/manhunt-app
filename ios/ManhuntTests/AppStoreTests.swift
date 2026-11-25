@@ -931,6 +931,7 @@ final class AppStoreTests: XCTestCase {
         XCTAssertNotNil(store.moveSafeZoneId)
     }
 
+    @MainActor
     func testAgeUnder13SetsTooYoungNote() async {
         let fake = FakeGameService()
         do {
