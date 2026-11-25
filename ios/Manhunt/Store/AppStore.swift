@@ -407,7 +407,10 @@ final class AppStore {
                 isHost: player.isHost,
                 point: point,
                 points: spendable,
-                earned: earned
+                earned: earned,
+                status: player.status,
+                fixAt: player.location.flatMap { FixFreshness.parse($0.at) },
+                fixKind: player.location?.kind
             )
         }
     }
@@ -476,9 +479,14 @@ final class AppStore {
     }
 
     var livePeople: [VisualPlayer] {
-        players.filter { player in
-            player.isYou || match?.snapshot.players.first(where: { $0.playerId.uuidString == player.id })?.location != nil
+        guard let match else { return [] }
+        let base = players.filter { player in
+            player.isYou || match.snapshot.players.first(where: { $0.playerId.uuidString == player.id })?.location != nil
         }
+        if match.snapshot.you.status == .eliminated {
+            return base.filter(\.isYou)
+        }
+        return base
     }
 
     var zoneShrinkClock: ZoneShrinkClock? {
@@ -571,10 +579,11 @@ final class AppStore {
     /// Best-effort last ping when the hunt is backgrounded or the host ends it.
     func handleScenePhase(isBackground: Bool) {
         // .inactive -> .active (Control Center, a call banner) is not a return from the
-        // background, so only trim the queue after a real background stay.
+        // background, so only restart the alert clock after a real background stay.
         if !isBackground, sceneWasBackground {
-            // Back from the background: show the few best queued alerts, not the backlog.
-            alerts.resumeFromBackground()
+            // Back from the background: nothing was seen, so nothing was dropped. The
+            // showing alert restarts its 4 s and the queue carries on in priority order.
+            alerts.setBackgrounded(false)
             // A locked phone can leave the location stream silent. Restart it once, here.
             if screen == .live, location.restartIfStale() {
                 lastLocationRestartAt = Date()
@@ -585,6 +594,8 @@ final class AppStore {
         }
         sceneWasBackground = isBackground
         if isBackground {
+            // The alert clock stops while nobody can look. Alerts keep queueing.
+            alerts.setBackgrounded(true)
             turnOffFlashlight()
             if screen == .live {
                 sendFinalPing()
@@ -1988,6 +1999,19 @@ final class AppStore {
             )
         }
         enqueueNewSafetyBanners(in: view, now: now)
+        // Once per elimination, not every snapshot, like web's youStatus effect.
+        if view.you.status == .eliminated, match?.snapshot.you.status != .eliminated {
+            alerts.enqueue(
+                LiveAlert(
+                    text: "You're out — A seeker tagged you. Stay safe and wait for the hunt to end.",
+                    tone: "danger",
+                    priority: .tagOrBounds,
+                    subjectKey: "out:self",
+                    createdAt: now
+                ),
+                now: now
+            )
+        }
         let anchor = ClockLead.anchor(
             previous: match?.snapshot,
             previousAnchor: match?.clockAnchorAt,

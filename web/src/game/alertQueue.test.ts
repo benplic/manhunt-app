@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ALERT_EXPIRY_MS,
-  ALERT_QUEUE_CAP,
   ALERT_SHOW_MS,
   AlertQueue,
   type LiveAlert,
@@ -138,65 +136,47 @@ describe('AlertQueue', () => {
     expect(queue.queued[0].text).toBe('Riley went dark (52).')
   })
 
-  it('caps the queue at 8 and drops the oldest lowest-priority entry', () => {
+  // Product rule (2026-11-25): never drop an alert the player has not seen.
+  it('has no cap: every queued alert is shown eventually', () => {
     const queue = new AlertQueue()
     queue.enqueue(alert('showing', 1), 0)
-    queue.enqueue(alert('pill-old', 4), 1)
-    queue.enqueue(alert('pill-new', 4), 2)
-    for (let i = 0; i < ALERT_QUEUE_CAP - 2; i += 1) {
-      queue.enqueue(alert(`ping-${i}`, 3), 3 + i)
+    for (let i = 0; i < 40; i += 1) {
+      queue.enqueue(alert(`pill-${i}`, 4), 1 + i)
     }
-    expect(queue.queued).toHaveLength(ALERT_QUEUE_CAP)
-
     queue.enqueue(alert('dark', 2), 100)
 
-    expect(queue.queued).toHaveLength(ALERT_QUEUE_CAP)
-    const keys = queue.queued.map((q) => q.key)
-    expect(keys).not.toContain('pill-old')
-    expect(keys).toContain('pill-new')
-    expect(keys[0]).toBe('dark')
+    expect(queue.queued).toHaveLength(41)
+    const { order } = drain(queue, 100)
+    expect(order).toHaveLength(42)
+    expect(order.slice(0, 2)).toEqual(['showing', 'dark'])
+    expect(order[order.length - 1]).toBe('pill-39')
   })
 
-  it('drops an alert that waited more than 30 s without being shown', () => {
+  it('still shows an alert that waited ten minutes', () => {
     const queue = new AlertQueue()
     queue.enqueue(alert('long', 1), 0)
-    queue.enqueue(alert('stale', 3), 1000)
-    queue.enqueue(alert('fresh', 3), 25_000)
-
-    queue.advance(ALERT_EXPIRY_MS + 1001)
-    expect(queue.current?.key).toBe('fresh')
+    queue.enqueue(alert('old', 3), 1000)
+    queue.advance(600_000)
+    expect(queue.current?.key).toBe('old')
   })
 
-  it('keeps an alert that has waited exactly 30 s', () => {
+  it('lets a higher-priority alert jump ahead of everything lower in the queue', () => {
     const queue = new AlertQueue()
-    queue.enqueue(alert('long', 1), 0)
-    queue.enqueue(alert('edge', 3), 0)
-    queue.advance(ALERT_EXPIRY_MS)
-    expect(queue.current?.key).toBe('edge')
+    queue.enqueue(alert('showing', 2), 0)
+    queue.enqueue(alert('pill', 4), 1)
+    queue.enqueue(alert('ping', 3), 2)
+    queue.enqueue(alert('dark-2', 2), 3)
+    queue.enqueue(alert('oob', 1), 4)
+    expect(queue.current?.key).toBe('oob')
+    expect(queue.queued.map((q) => q.key)).toEqual(['showing', 'dark-2', 'ping', 'pill'])
   })
 
-  it('counts an interrupted alert as waiting from the moment it was interrupted', () => {
+  it('shows an interrupted alert again after the one that interrupted it', () => {
     const queue = new AlertQueue()
     queue.enqueue(alert('ping', 3), 0)
     queue.enqueue(alert('tag', 1), 3000)
     queue.advance(3000 + ALERT_SHOW_MS)
     expect(queue.current?.key).toBe('ping')
-  })
-
-  it('after the app returns from the background keeps only the 3 highest-priority', () => {
-    const queue = new AlertQueue()
-    queue.enqueue(alert('now', 1), 0)
-    queue.enqueue(alert('pill', 4), 1)
-    queue.enqueue(alert('ping', 3), 2)
-    queue.enqueue(alert('dark', 2), 3)
-    queue.enqueue(alert('oob', 1), 4)
-    queue.enqueue(alert('ping-2', 3), 5)
-
-    queue.resumeFromBackground(10_000)
-
-    expect(queue.current?.key).toBe('oob')
-    expect(queue.queued.map((q) => q.key)).toEqual(['dark', 'ping'])
-    expect(drain(queue, 10_000).order).toEqual(['oob', 'dark', 'ping'])
   })
 
   it('ten events in one second are all shown, one at a time, in priority order', () => {
@@ -267,7 +247,7 @@ describe('AlertQueue', () => {
     expect(showId).toBeGreaterThan(1)
 
     queue.advance(60_000 + ALERT_SHOW_MS)
-    // The ping waited about 1 s of visible time, not 60 s, so it has not expired.
+    // The ping was never dropped while the surface was hidden.
     expect(queue.current?.key).toBe('ping')
   })
 

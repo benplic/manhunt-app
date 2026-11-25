@@ -89,6 +89,10 @@ struct VisualPlayer: Identifiable, Hashable {
     var point: VisualPoint
     var points: Int
     var earned: Int
+    /// For map pin dimming. Nil when the server sent no location timestamp.
+    var status: PlayerStatus = .active
+    var fixAt: Date?
+    var fixKind: String?
 }
 
 enum ArenaTool: String, CaseIterable, Identifiable {

@@ -126,4 +126,11 @@ def test_reconnect_replay_and_timeline_also_hide_it_from_the_sender(client: Test
     sender_timeline = client.get(f"/v1/games/{gid}/events", headers=_hdr(hider["access_token"]))
     other_timeline = client.get(f"/v1/games/{gid}/events", headers=_hdr(seeker["access_token"]))
     assert "final_ping" not in [e["type"] for e in sender_timeline.json()["events"]]
-    assert "final_ping" in [e["type"] for e in other_timeline.json()["events"]]
+    other_events = other_timeline.json()["events"]
+    assert "final_ping" in [e["type"] for e in other_events]
+    # The storage markers that hide it from the sender are internal. They never go on the wire.
+    ping = next(e for e in other_events if e["type"] == "final_ping")
+    assert "hide_from_actor" not in ping.get("payload", {})
+    assert "actor_id" not in ping.get("payload", {})
+    assert "hide_from_actor" not in ping
+    assert "actor_id" not in ping

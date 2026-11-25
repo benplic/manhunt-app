@@ -8,6 +8,14 @@ function alert(key: string, priority: LiveAlert['priority']): LiveAlert {
   return { key, text: key, priority, tone: 'info' }
 }
 
+/** jsdom has no tab switching, so set `document.visibilityState` and fire the event. */
+function setVisibility(state: 'visible' | 'hidden') {
+  Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state })
+  act(() => {
+    document.dispatchEvent(new Event('visibilitychange'))
+  })
+}
+
 describe('useAlert', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -15,6 +23,8 @@ describe('useAlert', () => {
   })
   afterEach(() => {
     vi.useRealTimers()
+    // Drop the per-test override so the jsdom default ('visible') applies again.
+    Reflect.deleteProperty(document, 'visibilityState')
   })
 
   it('shows one alert for 4 seconds, then the next queued one, then nothing', () => {
@@ -86,9 +96,8 @@ describe('useAlert', () => {
     expect(result.current.shown).toBeNull()
   })
 
-  it('trims the backlog to the 3 best alerts when the tab becomes visible again', () => {
+  it('stops the clock while the tab is hidden and loses nothing when it returns', () => {
     const { result } = renderHook(() => useAlert())
-
     act(() => {
       result.current.enqueue(alert('now', 1))
       for (const key of ['p1', 'p2', 'p3', 'p4', 'p5']) {
@@ -96,21 +105,22 @@ describe('useAlert', () => {
       }
     })
 
-    // The tab sat in the background; timers never fired.
-    vi.setSystemTime(10_000)
+    setVisibility('hidden')
     act(() => {
-      document.dispatchEvent(new Event('visibilitychange'))
+      vi.advanceTimersByTime(60_000)
     })
+    expect(result.current.shown?.key).toBe('now')
 
-    expect(result.current.shown?.key).toBe('p1')
+    setVisibility('visible')
+    expect(result.current.shown?.key).toBe('now')
     const seen = [result.current.shown?.key]
-    for (let i = 0; i < 4; i += 1) {
+    for (let i = 0; i < 6; i += 1) {
       act(() => {
         vi.advanceTimersByTime(ALERT_SHOW_MS)
       })
       seen.push(result.current.shown?.key)
     }
-    expect(seen).toEqual(['p1', 'p2', 'p3', undefined, undefined])
+    expect(seen).toEqual(['now', 'p1', 'p2', 'p3', 'p4', 'p5', undefined])
   })
 
   it('gives a new showId to a resumed alert', () => {

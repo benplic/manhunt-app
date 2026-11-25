@@ -47,7 +47,8 @@ struct LiveGameView: View {
                 emphasizeSpawn: emphasizeSpawn,
                 glidePeople: true,
                 zoneShrink: store.zoneShrinkClock,
-                lockdownActive: lockdownActive
+                lockdownActive: lockdownActive,
+                pingIntervalS: FixFreshness.pingInterval(timers: snapshot?.timers)
             )
             .ignoresSafeArea()
 
@@ -87,15 +88,6 @@ struct LiveGameView: View {
                         title: remaining.map { "Out of bounds · \(clock($0))" } ?? "Out of bounds",
                         detail: "Get back inside the yellow line before the penalty.",
                         tint: HuntColor.warning
-                    )
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .allowsHitTesting(false)
-                }
-                if store.match?.snapshot.you.status == .eliminated {
-                    banner(
-                        title: "You're out",
-                        detail: "A seeker tagged you. Stay safe and wait for the hunt to end.",
-                        tint: HuntColor.danger
                     )
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .allowsHitTesting(false)
@@ -244,12 +236,18 @@ struct LiveGameView: View {
         .onAppear {
             store.alerts.setSuspended(!alertSurfaceVisible(chrome))
         }
-
-        PingFlashOverlay(pulse: store.pingPulse)
+        // An overlay, not a sibling after `return`: a statement after `return` never runs
+        // (the compiler warns "code after 'return' will never be executed"), so the ping
+        // flash and its haptic were never mounted. `AlertPresenter.onShow` sets the pulse.
+        .overlay { PingFlashOverlay(pulse: store.pingPulse) }
     }
 
     private func alertSurfaceVisible(_ chrome: HeadStartChrome.Kind) -> Bool {
-        HeadStartChrome.showsFloatingNotice(chrome) && !store.decoyPicking && !store.demoPicking
+        AlertSurface.isVisible(
+            floatingNoticeShown: HeadStartChrome.showsFloatingNotice(chrome),
+            mapPicking: store.decoyPicking || store.demoPicking,
+            coveredByModal: showScanner || confirmLeave || store.showSafetyModal
+        )
     }
 
     private var topBar: some View {

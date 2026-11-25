@@ -6,6 +6,8 @@ final class FakeGameService: GameService {
     private(set) var joinCalls = 0
     private(set) var leaveCalls = 0
     private(set) var lastLocationFlag: String?
+    /// How many `final` fixes were sent. Tests use it to prove the last fix is not repeated.
+    private(set) var finalFlagCount = 0
     private(set) var lastDeviceToken: String?
     private(set) var appleSignIns = 0
     private(set) var refreshCalls = 0
@@ -68,6 +70,7 @@ final class FakeGameService: GameService {
 
     func recordLocationFlag(_ flag: String) {
         lastLocationFlag = flag
+        if flag == "final" { finalFlagCount += 1 }
     }
 
     @discardableResult
