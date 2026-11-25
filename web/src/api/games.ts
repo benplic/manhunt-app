@@ -124,6 +124,21 @@ export async function setLobbyCircle(input: SetLobbyCircleInput): Promise<Player
   })
 }
 
+export type UpdateLobbyRulesInput = {
+  token: string
+  gameId: string
+  overrides: Record<string, Record<string, number | boolean | string>>
+}
+
+/** Host changes timers before Start. Server returns NOT_HOST or WRONG_PHASE otherwise. */
+export async function updateLobbyRules(input: UpdateLobbyRulesInput): Promise<PlayerView> {
+  return apiRequest<PlayerView>(`/v1/games/${input.gameId}/rules`, {
+    method: 'POST',
+    token: input.token,
+    body: { overrides: input.overrides },
+  })
+}
+
 export type StartGameInput = {
   token: string
   gameId: string

@@ -162,3 +162,30 @@ def test_view_timers_match_phase_reveal_and_pause_for_both_roles() -> None:
     assert at_reveal["timers"]["next_reveal_in_s"] == 30
     assert "decoy" not in str(at_reveal["timers"]).lower()
 
+
+def test_roster_rows_expose_roles_but_nothing_private_to_either_team() -> None:
+    """The team-sectioned leaderboard reads these rows, so they must not widen silently.
+
+    Roles and the converted marker already reach every viewer (Rescue targeting needs the
+    marker). Anything else added to a row should be a deliberate, reviewed change.
+    """
+    session, clock, hider, seeker = two_player_hunt()
+    session.record_location(hider, reading(meters(40, 40), clock))
+    allowed = {
+        "player_id",
+        "display_name",
+        "avatar_url",
+        "role",
+        "status",
+        "is_host",
+        "points",
+        "points_earned",
+        "converted_from_hider",
+        "location",
+    }
+    for viewer in (hider, seeker):
+        view = build_view(session, viewer)
+        roles = {row["player_id"]: row["role"] for row in view["players"]}
+        assert roles == {str(hider): "hider", str(seeker): "seeker"}
+        for row in view["players"]:
+            assert set(row) <= allowed

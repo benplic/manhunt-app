@@ -121,6 +121,22 @@ def _scrub(value: Any) -> Any:
     return str(value)
 
 
+def _dump_line(record: dict[str, Any]) -> str:
+    """One JSON line that keeps real characters (O’Donnell, José, emoji) readable.
+
+    The default `ensure_ascii=True` writes `\\u2019` and emoji as surrogate-pair escapes,
+    which is valid JSON but looks corrupted in `less`, Excel, and most log viewers.
+    """
+    line = json.dumps(record, separators=(",", ":"), default=str, ensure_ascii=False)
+    try:
+        line.encode("utf-8")
+    except UnicodeEncodeError:
+        # A lone surrogate (client sent "\ud800" in JSON) cannot be written as UTF-8.
+        # Escaping that one line keeps the sink alive and the data intact.
+        line = json.dumps(record, separators=(",", ":"), default=str, ensure_ascii=True)
+    return line
+
+
 class PlaytestLogger:
     """Process-wide playtest file sink. Cheap enough for a 30-player lobby."""
 
@@ -158,11 +174,7 @@ class PlaytestLogger:
         }
         record.update(_scrub(fields))
         # Drop null tops so files stay skimable.
-        line = json.dumps(
-            {key: value for key, value in record.items() if value is not None},
-            separators=(",", ":"),
-            default=str,
-        )
+        line = _dump_line({key: value for key, value in record.items() if value is not None})
         paths = [self.root / "daily" / f"{_day_stamp()}.jsonl"]
         if game_id is not None:
             paths.append(self.root / "games" / f"{game_id}.jsonl")

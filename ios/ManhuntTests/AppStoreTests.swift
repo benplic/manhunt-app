@@ -1102,6 +1102,8 @@ private final class CapturingLiveGameService: GameService {
     func join(code: String) async throws -> PlayerViewDTO { throw stub }
     func randomizeRoles(gameID: UUID, seekerCount: Int) async throws -> PlayerViewDTO { throw stub }
     func setRole(gameID: UUID, playerID: UUID, role: PlayerRole) async throws -> PlayerViewDTO { throw stub }
+    func updateRules(gameID: UUID, overrides: [String: [String: RuleValue]]) async throws -> PlayerViewDTO { throw stub }
+    func setLobbyRadius(gameID: UUID, radiusM: Double) async throws -> PlayerViewDTO { throw stub }
     func start(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
     func pause(gameID: UUID) async throws -> PlayerViewDTO { throw stub }
     func resume(gameID: UUID) async throws -> PlayerViewDTO { throw stub }

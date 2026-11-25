@@ -379,6 +379,12 @@ final class AppStore {
         return blockList.displayName(for: host.playerId.uuidString, fallback: host.displayName)
     }
 
+    /// Avatar colors for the whole roster. Same-initial players never share a color while the
+    /// palette has one left. See `AvatarStyle` for the exact rule.
+    var avatarStyles: [String: AvatarStyle.Style] {
+        AvatarStyle.assign(players: players.map { (id: $0.id, name: $0.name) })
+    }
+
     var players: [VisualPlayer] {
         guard let match else { return SamplePark.players }
         let list = blockList
@@ -1220,6 +1226,55 @@ final class AppStore {
             } catch {
                 note = "Could not acknowledge the safety alert."
             }
+        }
+    }
+
+    /// Host edits the timers from the lobby. Returns true when the server accepted the change.
+    /// Roles and players are never touched. Everyone else sees the new rules on the next view.
+    @discardableResult
+    func updateLobbyRules(_ overrides: [String: [String: RuleValue]]) async -> Bool {
+        guard isHost, let gameID = match?.snapshot.gameId else { return false }
+        do {
+            let view = try await service.updateRules(gameID: gameID, overrides: overrides)
+            apply(view)
+            note = "Rules updated."
+            return true
+        } catch let error as ServiceError {
+            note = Self.lobbyEditCopy(for: error)
+        } catch {
+            // TODO: tell the player whether this was offline or a server fault once the
+            // connection-health work exposes that distinction here.
+            note = "Could not update the rules."
+        }
+        return false
+    }
+
+    /// Host resizes the play circle from the lobby. Same contract as `updateLobbyRules`.
+    @discardableResult
+    func setLobbyRadius(_ radiusM: Double) async -> Bool {
+        guard isHost, let gameID = match?.snapshot.gameId else { return false }
+        guard ArenaValidator.isValidPlayRadius(radiusM) else {
+            note = ArenaValidator.radiusRangeMessage
+            return false
+        }
+        do {
+            let view = try await service.setLobbyRadius(gameID: gameID, radiusM: radiusM)
+            apply(view)
+            note = "Play area updated."
+            return true
+        } catch let error as ServiceError {
+            note = Self.lobbyEditCopy(for: error)
+        } catch {
+            note = "Could not update the play area."
+        }
+        return false
+    }
+
+    private static func lobbyEditCopy(for error: ServiceError) -> String {
+        switch error.code {
+        case .notHost: return "Only the host can change the rules."
+        case .wrongPhase: return "Rules can only change in the lobby."
+        default: return error.message.isEmpty ? "The change did not go through." : error.message
         }
     }
 

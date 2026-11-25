@@ -5,6 +5,7 @@ struct LobbyView: View {
     @Environment(\.openURL) private var openURL
     @State private var confirmLeave = false
     @State private var pendingBlock: PendingBlock?
+    @State private var editing: LobbyEditKind?
 
     var body: some View {
         @Bindable var store = store
@@ -46,6 +47,36 @@ struct LobbyView: View {
                     Text(RulesSummary.line(timers: timers))
                         .font(.footnote)
                         .foregroundStyle(HuntColor.muted)
+                }
+
+                // Everyone sees the live play-area size. Only the host gets the edit buttons.
+                if let radius = store.match?.snapshot.arena?.boundaryCircle?.radiusMeters {
+                    Text("Play area: \(Int(radius.rounded())) m radius")
+                        .font(.footnote)
+                        .foregroundStyle(HuntColor.muted)
+                        .accessibilityIdentifier("lobby-radius-summary")
+                }
+
+                if store.isHost {
+                    HStack(spacing: 8) {
+                        HuntButton(
+                            title: "Edit rules",
+                            systemImage: "slider.horizontal.3",
+                            tint: HuntColor.paper,
+                            haptic: .light
+                        ) { editing = .rules }
+                            .accessibilityIdentifier("lobby-edit-rules")
+                        // A polygon arena has no radius to edit, and the server would replace it.
+                        if store.match?.snapshot.arena?.boundaryCircle != nil {
+                        HuntButton(
+                            title: "Edit map",
+                            systemImage: "map",
+                            tint: HuntColor.paper,
+                            haptic: .light
+                        ) { editing = .map }
+                            .accessibilityIdentifier("lobby-edit-map")
+                        }
+                    }
                 }
 
                 VStack(spacing: 10) {
@@ -229,6 +260,14 @@ struct LobbyView: View {
             .padding(20)
         }
         .background(HuntColor.ink)
+        .sheet(item: $editing) { kind in
+            LobbyEditSheet(
+                kind: kind,
+                timers: store.match?.snapshot.timers,
+                radiusM: store.match?.snapshot.arena?.boundaryCircle?.radiusMeters
+            ) { editing = nil }
+                .presentationDetents([.medium])
+        }
         .alert("Leave this hunt?", isPresented: $confirmLeave) {
             Button("Leave", role: .destructive, action: store.goHome)
             Button("Cancel", role: .cancel) {}

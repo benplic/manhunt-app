@@ -180,6 +180,8 @@ export type PlayerView = {
     is_host: boolean
     points?: number
     points_earned?: number
+    /** True for a tagged hider who now hunts. Roles are already visible to every viewer. */
+    converted_from_hider?: boolean
     location?: {
       lat: number
       lon: number

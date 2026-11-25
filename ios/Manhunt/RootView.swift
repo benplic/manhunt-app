@@ -40,6 +40,7 @@ struct RootView: View {
                 TagAnnouncementOverlay(announcement: store.tagAnnouncement)
             }
         }
+        .environment(\.avatarStyles, store.avatarStyles)
         .animation(.snappy(duration: 0.35), value: store.screen)
         .preferredColorScheme(.dark)
         .onChange(of: scenePhase) { _, phase in

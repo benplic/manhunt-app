@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 from app.errors import ApiError, ErrorCode
 
@@ -20,7 +21,9 @@ _SPACE = re.compile(r"\s+")
 
 
 def normalize_display_name(name: str) -> str:
-    return _SPACE.sub(" ", name.strip())
+    # NFC so "e" + combining accent and the single "é" code point are the same name for
+    # duplicate checks. Nothing is stripped: apostrophes, accents, and emoji stay intact.
+    return _SPACE.sub(" ", unicodedata.normalize("NFC", name).strip())
 
 
 def assert_display_name_allowed(name: str) -> None:

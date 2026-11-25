@@ -51,6 +51,7 @@ import {
   zoneStyle,
 } from '../map/zones'
 import { ConfirmDialog } from '../game/ConfirmDialog'
+import { Leaderboard } from '../components/Leaderboard'
 import { blockPlayer, displayNameFor, reportMailto } from '../social/blockList'
 import type { ActiveEffect, ArenaZone, Banner, PlayerView } from '../api/types'
 import { EventLog } from './EventLog'
@@ -900,10 +901,6 @@ export function LiveMap({
   // Ongoing-state banners (spawn lock, safe time up) stay visible; only news is an alert.
   const stateBanners = (view.banners ?? []).filter((banner) => !isAlertBanner(banner))
 
-  const ranked = [...(view.players ?? [])].sort(
-    (a, b) => (b.points_earned ?? b.points ?? 0) - (a.points_earned ?? a.points ?? 0),
-  )
-
   return (
     <main className={`live-map live-map--stacked${overlayOpen ? ' live-map--overlay' : ''}`}>
       <header className="top-bar">
@@ -1240,46 +1237,7 @@ export function LiveMap({
               Close
             </button>
           </header>
-          <ul>
-            {ranked.map((player) => {
-              const shownName = displayNameFor(player.player_id, player.display_name)
-              const statusBit =
-                player.status === 'eliminated'
-                  ? ' · out'
-                  : player.status === 'signal_lost'
-                    ? ' · dark'
-                    : ''
-              return (
-                <li key={player.player_id}>
-                  <div>
-                    <strong>{shownName}</strong>
-                    <span>
-                      {player.role}
-                      {statusBit} · {player.points_earned ?? player.points ?? 0} pts
-                    </span>
-                  </div>
-                  {player.player_id !== view.you.player_id ? (
-                    <div className="chip-row">
-                      <button
-                        type="button"
-                        className="chip"
-                        onClick={() => onBlock(player.player_id, player.display_name)}
-                      >
-                        Block
-                      </button>
-                      <button
-                        type="button"
-                        className="chip"
-                        onClick={() => onReport(player.player_id, player.display_name)}
-                      >
-                        Report
-                      </button>
-                    </div>
-                  ) : null}
-                </li>
-              )
-            })}
-          </ul>
+          <Leaderboard view={view} onBlock={onBlock} onReport={onReport} />
         </div>
       ) : null}
     </main>

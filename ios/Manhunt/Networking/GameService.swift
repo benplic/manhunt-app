@@ -18,6 +18,10 @@ protocol GameService: AnyObject {
     func join(code: String) async throws -> PlayerViewDTO
     func randomizeRoles(gameID: UUID, seekerCount: Int) async throws -> PlayerViewDTO
     func setRole(gameID: UUID, playerID: UUID, role: PlayerRole) async throws -> PlayerViewDTO
+    /// Host-only, lobby-only. Server answers NOT_HOST or WRONG_PHASE otherwise.
+    func updateRules(gameID: UUID, overrides: [String: [String: RuleValue]]) async throws -> PlayerViewDTO
+    /// Host-only, lobby-only. Resizes the play circle (the server caps it at 3,000 m).
+    func setLobbyRadius(gameID: UUID, radiusM: Double) async throws -> PlayerViewDTO
     func start(gameID: UUID) async throws -> PlayerViewDTO
     func pause(gameID: UUID) async throws -> PlayerViewDTO
     func resume(gameID: UUID) async throws -> PlayerViewDTO

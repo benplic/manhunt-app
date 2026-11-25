@@ -184,7 +184,7 @@ struct LiveGameView: View {
             }
         }
         .sheet(isPresented: $showBoard) {
-            LeaderboardSheet(players: store.players.sorted { $0.earned > $1.earned }) {
+            LeaderboardSheet {
                 showBoard = false
             }
             .presentationDetents([.medium, .large])
@@ -531,58 +531,14 @@ struct LiveGameView: View {
 private struct LeaderboardSheet: View {
     @Environment(AppStore.self) private var store
     @Environment(\.openURL) private var openURL
-    var players: [VisualPlayer]
     var dismiss: () -> Void
     @State private var pendingBlock: PendingBlock?
 
     var body: some View {
         NavigationStack {
-            List {
-                if players.isEmpty {
-                    Text("No scores yet.")
-                        .foregroundStyle(HuntColor.muted)
-                }
-                ForEach(Array(players.enumerated()), id: \.element.id) { index, player in
-                    HStack {
-                        Text("\(index + 1)")
-                            .font(.headline.monospacedDigit())
-                            .frame(width: 24, alignment: .leading)
-                            .foregroundStyle(HuntColor.signal)
-                        PlayerAvatar(name: player.name, playerID: player.id, size: 24)
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 4) {
-                                Text(player.isYou ? "\(player.name) (you)" : player.name)
-                                if player.isHost {
-                                    Image(systemName: "crown.fill")
-                                        .font(.caption2.weight(.bold))
-                                        .foregroundStyle(HuntColor.signal)
-                                        .accessibilityLabel("Host")
-                                }
-                            }
-                            if let status = store.match?.snapshot.players
-                                .first(where: { $0.playerId.uuidString == player.id })?.status,
-                               status == .eliminated || status == .signalLost
-                            {
-                                Text(status == .eliminated ? "Out" : "Dark")
-                                    .font(.caption2.weight(.semibold))
-                                    .foregroundStyle(HuntColor.muted)
-                            }
-                        }
-                        Spacer()
-                        Text("\(player.earned)")
-                            .font(.headline.monospacedDigit())
-                    }
-                    .contextMenu {
-                        if !player.isYou {
-                            if let url = store.reportMailURL(playerID: player.id, displayName: player.name) {
-                                Button("Report") { openURL(url) }
-                            }
-                            Button("Block", role: .destructive) {
-                                pendingBlock = PendingBlock(id: player.id, name: player.name)
-                            }
-                        }
-                    }
-                }
+            // Bars age in real time. Re-read the clock every few seconds, not on every frame.
+            TimelineView(.periodic(from: .now, by: 5)) { timeline in
+                content(now: timeline.date)
             }
             .navigationTitle("Leaderboard")
             .navigationBarTitleDisplayMode(.inline)
@@ -610,8 +566,101 @@ private struct LeaderboardSheet: View {
             }
         }
     }
-}
+    @ViewBuilder
+    private func content(now: Date) -> some View {
+        let snapshot = store.match?.snapshot
+        let sections = RosterGrouping.group(snapshot?.players ?? [])
+        // Display names go through the block list, so a blocked player stays masked here.
+        let names = Dictionary(store.players.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        List {
+            if sections.isEmpty {
+                Text("No scores yet.")
+                    .foregroundStyle(HuntColor.muted)
+            }
+            ForEach(sections) { section in
+                Section(section.title) {
+                    ForEach(section.rows) { row in
+                        rosterRow(row, names: names, snapshot: snapshot, now: now)
+                    }
+                }
+            }
+        }
+    }
 
+    private func rosterRow(
+        _ row: RosterGrouping.Row,
+        names: [String: String],
+        snapshot: PlayerViewDTO?,
+        now: Date
+    ) -> some View {
+        let player = row.player
+        let id = player.playerId.uuidString
+        let name = names[id] ?? player.displayName
+        let isYou = player.playerId == snapshot?.you.playerId
+        let reading = snapshot.flatMap { view in
+            FixFreshness.reading(
+                location: player.location,
+                status: player.status,
+                expectsFix: FixFreshness.viewerExpectsFix(
+                    viewerID: view.you.playerId,
+                    viewerRole: view.you.role,
+                    viewerStatus: view.you.status,
+                    playerID: player.playerId,
+                    playerRole: player.role,
+                    phase: view.phase
+                ),
+                pingIntervalS: FixFreshness.pingInterval(timers: view.timers),
+                now: now
+            )
+        }
+        return HStack {
+            Text("\(row.rank)")
+                .font(.headline.monospacedDigit())
+                .frame(width: 24, alignment: .leading)
+                .foregroundStyle(HuntColor.signal)
+            PlayerAvatar(name: name, playerID: id, size: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(isYou ? "\(name) (you)" : name)
+                    if player.isHost {
+                        Image(systemName: "crown.fill")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(HuntColor.signal)
+                            .accessibilityLabel("Host")
+                    }
+                    if row.tagged {
+                        Text("Tagged")
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 6)
+                            .overlay(Capsule().stroke(HuntColor.signal, lineWidth: 1))
+                            .foregroundStyle(HuntColor.signal)
+                    }
+                }
+                if let note = RosterGrouping.statusNote(player.status) {
+                    Text(note)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(HuntColor.muted)
+                }
+            }
+            Spacer()
+            if let reading {
+                FixBarsView(reading: reading)
+            }
+            Text("\(row.points)")
+                .font(.headline.monospacedDigit())
+        }
+        .contextMenu {
+            if !isYou {
+                if let url = store.reportMailURL(playerID: id, displayName: name) {
+                    Button("Report") { openURL(url) }
+                }
+                Button("Block", role: .destructive) {
+                    pendingBlock = PendingBlock(id: id, name: name)
+                }
+            }
+        }
+    }
+}
 private struct EventLogSheet: View {
     var events: [TimelineEventDTO]
     var dismiss: () -> Void
