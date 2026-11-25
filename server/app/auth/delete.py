@@ -42,7 +42,7 @@ async def delete_account(
     for game_id in hosted_game_ids:
         if manager is not None:
             manager.sessions.pop(game_id, None)
-            manager.sockets.pop(game_id, None)
+            manager.drop_game_sockets(game_id)
         await session.execute(delete(GameEventRow).where(GameEventRow.game_id == game_id))
         await session.execute(delete(GamePlayerRow).where(GamePlayerRow.game_id == game_id))
     if hosted_game_ids:

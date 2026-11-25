@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.engine.geo import GeoPoint
 from tests.conftest import make_test_app
 from tests.engine.helpers import meters
+from tests.persist_helpers import persist_like_the_tick
 from tests.sim.test_full_games import _hdr, _open_game
 
 
@@ -27,9 +28,11 @@ def _send_fix(client: TestClient, game_id: str, token: str, point: GeoPoint) -> 
                 },
             }
         )
-        # Sync on ping so persist_location finishes before the socket closes (no view on location).
+        # Sync on ping so the location is applied before the flush below.
         ws.send_json({"type": "ping", "data": {}})
         assert ws.receive_json()["type"] == "pong"
+
+        persist_like_the_tick(client, ws, game_id)
 
 
 def test_restart_rebuilds_mid_game_phase_roles_points_and_locations(tmp_path) -> None:

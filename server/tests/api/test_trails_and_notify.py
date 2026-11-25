@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.notify import notifier
 from tests.conftest import make_test_app
 from tests.engine.helpers import meters
+from tests.persist_helpers import persist_like_the_tick
 from tests.sim.test_full_games import _hdr, _open_game
 
 
@@ -32,6 +33,7 @@ def _send_fix(client: TestClient, game_id: str, token: str, point) -> None:
         )
         ws.send_json({"type": "ping", "data": {}})
         assert ws.receive_json()["type"] == "pong"
+        persist_like_the_tick(client, ws, game_id)
 
 
 def test_host_trail_read_writes_audit_without_logging_coordinates(tmp_path, caplog) -> None:

@@ -99,6 +99,58 @@
   min-width: 0;
 }
 
+.live-map .identity-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+/* Socket meter. Filled bars are solid, empty ones are outlines, and a "!" marks the two
+   worst states, so the meaning never depends on color alone. */
+.live-map .signal-bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 44px;
+  min-height: 44px;
+  margin: -0.4rem 0;
+  padding: 0.55rem 0.5rem;
+  border: 0;
+  background: transparent;
+  color: #5ec27a;
+  cursor: pointer;
+}
+
+.live-map .signal-bars--slow {
+  color: #f0c75e;
+}
+
+.live-map .signal-bars--reconnecting,
+.live-map .signal-bars--unstable,
+.live-map .signal-bars--down {
+  color: #ff7a6b;
+}
+
+.live-map .signal-bars__bar {
+  width: 4px;
+  border: 1px solid currentColor;
+  border-radius: 1px;
+  box-sizing: border-box;
+  background: transparent;
+}
+
+.live-map .signal-bars__bar--on {
+  background: currentColor;
+}
+
+.live-map .signal-bars__flag {
+  align-self: center;
+  margin-left: 2px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .live-map .eyebrow {
   margin: 0;
   color: #9aa0ad;

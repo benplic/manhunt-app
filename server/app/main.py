@@ -188,6 +188,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 with contextlib.suppress(asyncio.CancelledError):
                     await background
         await manager.drain_io()
+        # In-flight persists were cancelled above and location fixes are no longer committed
+        # per message, so write each game once more before the engine goes away.
+        await manager.flush_all(persist_one)
         await engine.dispose()
 
     # The public Azure ingress should not serve the interactive schema.
@@ -295,13 +298,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(presets_router)
     app.include_router(modules_router)
     app.include_router(bind_preset_save(get_session, current_user))
-    async def persist_location(game) -> None:
-        async with factory() as session:
-            await service.persist_game(session, game, commit=True)
 
     app.include_router(bind_game_routes(get_session, current_user, service))
     app.include_router(bind_demo_routes(get_session, current_user, service, settings_dep))
-    app.include_router(bind_ws(manager, settings_dep, persist_location=persist_location))
+    app.include_router(bind_ws(manager, settings_dep))
     # APPLICATIONINSIGHTS_CONNECTION_STRING is injected by Container Apps when
     # the Bicep Insights resource exists. Portal metrics use it; we do not
     # pull the OpenTelemetry SDK into this process.

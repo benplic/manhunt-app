@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import weakref
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
@@ -21,8 +22,9 @@ from app.engine.qr import make_qr_token, token_ttl
 from app.engine.session import GameSession
 from app.engine.views import build_view
 from app.errors import GameRuleError
-from app.playtest_log import get_playtest_log
+from app.playtest_log import client_fields, get_playtest_log, safe_exc_message
 from app.realtime.clock import WallClock
+from app.realtime.outbox import SEND_TIMEOUT_S, ClientOutbox
 
 LIVE_PHASES = frozenset({"lobby", "head_start", "active", "paused"})
 # Phases where a hunt is running (or could be) and costs a tick every second.
@@ -42,6 +44,8 @@ DEFAULT_IDLE_FREEZE_S = 600.0
 KEEP_ALIVE_EVERY_S = 15.0
 # A detached persist, broadcast or ping that runs longer than this is cancelled.
 IO_TIMEOUT_S = 15.0
+# Whole-shutdown budget for the final persist. Below the usual 10-30 s container grace period.
+SHUTDOWN_FLUSH_TOTAL_S = 10.0
 # Warn every N consecutive ticks a game's previous persist/broadcast was still running.
 SKIP_WARN_EVERY = 10
 
@@ -57,8 +61,11 @@ class SessionManager:
         demo_controls_enabled: bool = True,
         idle_freeze_s: float | None = DEFAULT_IDLE_FREEZE_S,
         monotonic: Callable[[], float] = time.monotonic,
+        send_timeout_s: float = SEND_TIMEOUT_S,
     ) -> None:
         self.clock = clock or WallClock()
+        # Per-socket send bound. Tests shrink it so a stalled socket times out quickly.
+        self.send_timeout_s = send_timeout_s
         self.qr_key = qr_key
         self.demo_controls_enabled = demo_controls_enabled
         # None, 0, or a negative value turns the idle freeze off.
@@ -68,6 +75,14 @@ class SessionManager:
         self._monotonic = monotonic
         self.sessions: dict[UUID, GameSession] = {}
         self.sockets: dict[UUID, dict[UUID, WebSocket]] = defaultdict(dict)
+        # One outbound queue per attached socket; see app.realtime.outbox.
+        self._outboxes: dict[UUID, dict[UUID, ClientOutbox]] = defaultdict(dict)
+        # Sanitized `hello.data.client` per attached socket, added to every ws_* log line.
+        self.clients: dict[UUID, dict[UUID, dict[str, str]]] = defaultdict(dict)
+        # Sockets the server closed after failed sends. Their receive loop then ends with a
+        # normal disconnect, which must not be logged a second time as `client_close`.
+        self.server_closed: weakref.WeakSet[WebSocket] = weakref.WeakSet()
+        self._closers: set[asyncio.Task[None]] = set()
         self._last_push: dict[UUID, float] = {}
         # game_id -> monotonic time of the last socket event or member message.
         self._last_activity: dict[UUID, float] = {}
@@ -119,16 +134,55 @@ class SessionManager:
         await ping()
         return True
 
-    def attach(self, game_id: UUID, player_id: UUID, ws: WebSocket) -> None:
+    def attach(
+        self,
+        game_id: UUID,
+        player_id: UUID,
+        ws: WebSocket,
+        client: dict[str, str] | None = None,
+    ) -> None:
+        # A reconnect replaces the old socket. Stop the old socket's sender so it cannot
+        # keep writing to a dead connection or report a failure for the new one.
+        stale = self._outboxes.get(game_id, {}).pop(player_id, None)
+        if stale is not None:
+            stale.close()
         self.sockets[game_id][player_id] = ws
+        if client:
+            self.clients[game_id][player_id] = client
+        else:
+            self.clients.get(game_id, {}).pop(player_id, None)
         self.note_activity(game_id)
         self._wake_if_frozen(game_id)
 
-    def detach(self, game_id: UUID, player_id: UUID) -> WebSocket | None:
+    def detach(
+        self, game_id: UUID, player_id: UUID, ws: WebSocket | None = None
+    ) -> WebSocket | None:
+        """Remove a player's socket.
+
+        Pass `ws` from a socket's own handler: when the phone has already reconnected, the
+        old handler finishing later must not tear down the new connection.
+        """
+        current = self.sockets.get(game_id, {}).get(player_id)
+        if ws is not None and current is not ws:
+            return None
         socket = self.sockets.get(game_id, {}).pop(player_id, None)
+        outbox = self._outboxes.get(game_id, {}).pop(player_id, None)
+        if outbox is not None:
+            outbox.close()
+        self.clients.get(game_id, {}).pop(player_id, None)
         # The idle clock starts when the last phone leaves, not when the game began.
         self.note_activity(game_id)
         return socket
+
+    def drop_game_sockets(self, game_id: UUID) -> None:
+        """Forget every socket of a deleted game and stop their senders."""
+        for outbox in self._outboxes.pop(game_id, {}).values():
+            outbox.close()
+        self.sockets.pop(game_id, None)
+        self.clients.pop(game_id, None)
+
+    def client_info(self, game_id: UUID, player_id: UUID) -> dict[str, str] | None:
+        return self.clients.get(game_id, {}).get(player_id)
 
     def note_activity(self, game_id: UUID) -> None:
         """Record that a member did something. Resets the idle-freeze countdown."""
@@ -239,6 +293,11 @@ class SessionManager:
             session.state.qr_by_hider[player.player_id] = (token, expires)
 
     async def broadcast(self, game_id: UUID) -> None:
+        """Queue this tick's frames for every attached socket and return at once.
+
+        Each socket has its own sender (see `ClientOutbox`), so a phone that stopped reading
+        cannot delay the others. Delivery is asynchronous; `settle` waits for it in tests.
+        """
         session = self.sessions.get(game_id)
         if session is None:
             return
@@ -255,41 +314,106 @@ class SessionManager:
                 player_id,
                 demo_controls_enabled=self.demo_controls_enabled,
             )
-            try:
-                for event in events:
-                    if not visible_to(event, player_id):
-                        continue
-                    await ws.send_json(
-                        envelope(
-                            "event",
-                            serialize_event(event),
-                        )
-                    )
-                await ws.send_json(envelope("view", view))
-                qr = session.state.qr_by_hider.get(player_id)
-                player = session.state.players[player_id]
-                if qr and player.role == "hider":
-                    await ws.send_json(
-                        envelope(
-                            "qr_token",
-                            {"token": qr[0], "expires_at": qr[1].isoformat()},
-                        )
-                    )
-            except Exception:
-                log.exception("ws_send_failed game_id=%s player_id=%s", game_id, player_id)
-                get_playtest_log().emit(
-                    "ws_send_failed",
-                    game_id=game_id,
-                    player_id=player_id,
-                    join_code=session.state.join_code,
+            event_frames = [
+                envelope("event", serialize_event(event))
+                for event in events
+                if visible_to(event, player_id)
+            ]
+            qr_frame = None
+            qr = session.state.qr_by_hider.get(player_id)
+            player = session.state.players.get(player_id)
+            if qr and player is not None and player.role == "hider":
+                qr_frame = envelope(
+                    "qr_token",
+                    {"token": qr[0], "expires_at": qr[1].isoformat()},
                 )
-                self.detach(game_id, player_id)
-                get_playtest_log().ws_disconnected(
-                    game_id,
-                    player_id,
-                    join_code=session.state.join_code,
-                    reason="send_failed",
-                )
+            self._outbox_for(game_id, player_id, ws).post(
+                event_frames, envelope("view", view), qr_frame
+            )
+
+    def _outbox_for(self, game_id: UUID, player_id: UUID, ws: WebSocket) -> ClientOutbox:
+        outboxes = self._outboxes[game_id]
+        outbox = outboxes.get(player_id)
+        if outbox is not None and outbox.ws is ws:
+            return outbox
+        if outbox is not None:
+            outbox.close()
+        outbox = ClientOutbox(
+            game_id,
+            player_id,
+            ws,
+            on_failure=self._on_send_failure,
+            monotonic=self._monotonic,
+            send_timeout_s=self.send_timeout_s,
+        )
+        outboxes[player_id] = outbox
+        return outbox
+
+    def _on_send_failure(self, outbox: ClientOutbox, exc: BaseException, send_ms: float) -> None:
+        """Log a failed or timed-out send; detach only after the grace in `ClientOutbox`."""
+        game_id, player_id = outbox.game_id, outbox.player_id
+        session = self.sessions.get(game_id)
+        join_code = session.state.join_code if session is not None else None
+        client = self.client_info(game_id, player_id)
+        will_detach = outbox.should_detach
+        log.warning(
+            "ws_send_failed game_id=%s player_id=%s exc_type=%s failures=%d send_ms=%.0f",
+            game_id,
+            player_id,
+            type(exc).__name__,
+            outbox.consecutive_failures,
+            send_ms,
+        )
+        get_playtest_log().emit(
+            "ws_send_failed",
+            game_id=game_id,
+            player_id=player_id,
+            join_code=join_code,
+            exc_type=type(exc).__name__,
+            exc_message=safe_exc_message(exc),
+            send_ms=round(send_ms),
+            consecutive_failures=outbox.consecutive_failures,
+            will_detach=will_detach,
+            **client_fields(client),
+        )
+        if not will_detach:
+            return
+        # Only the socket that failed may be removed; a reconnect may already own the slot.
+        if self.detach(game_id, player_id, outbox.ws) is None:
+            return
+        get_playtest_log().ws_disconnected(
+            game_id,
+            player_id,
+            join_code=join_code,
+            reason="send_failed",
+            client=client,
+            exc=exc,
+            send_ms=send_ms,
+        )
+        # Dropping it from the map is not enough: left open, the phone would keep pinging
+        # a socket that no longer receives views. Close it so the client reconnects.
+        self.server_closed.add(outbox.ws)
+        closer = asyncio.create_task(self._close_quietly(outbox.ws))
+        self._closers.add(closer)
+        closer.add_done_callback(self._closers.discard)
+
+    async def _close_quietly(self, ws: WebSocket) -> None:
+        try:
+            await asyncio.wait_for(ws.close(code=1011), timeout=self.send_timeout_s)
+        except Exception as exc:
+            # The socket is probably already gone; there is nothing more to do for it.
+            log.debug("ws_close_failed exc_type=%s", type(exc).__name__)
+
+    async def settle(self, game_id: UUID | None = None, *, timeout: float = 5.0) -> None:
+        """Wait for queued frames to be sent. For tests and shutdown, not the tick path."""
+        outboxes = (
+            self._outboxes.get(game_id, {}).values()
+            if game_id is not None
+            else [o for per_game in self._outboxes.values() for o in per_game.values()]
+        )
+        tasks = [o.task for o in outboxes if o.task is not None and o.sending]
+        if tasks:
+            await asyncio.wait(tasks, timeout=timeout)
 
     def _spawn_once(
         self,
@@ -392,10 +516,57 @@ class SessionManager:
         Call on shutdown, before the database engine is disposed.
         """
         tasks = list(self._inflight.values())
+        for per_game in self._outboxes.values():
+            for outbox in per_game.values():
+                outbox.close()
+                if outbox.task is not None:
+                    tasks.append(outbox.task)
+        tasks.extend(self._closers)
         for task in tasks:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def flush_all(
+        self,
+        persist: Callable[[GameSession], Awaitable[None]],
+        *,
+        per_game_timeout_s: float = IO_TIMEOUT_S,
+        total_timeout_s: float = SHUTDOWN_FLUSH_TOTAL_S,
+    ) -> int:
+        """Write every game that may hold unsaved state, once, with hard time bounds.
+
+        Shutdown only. Location fixes are staged in memory between ticks, so a clean stop
+        saves them here. An ended game that is already saved is skipped, and a hung database
+        cannot outlast `total_timeout_s`, because a SIGKILL from the orchestrator would lose
+        the very data this is trying to save. Returns how many games were written.
+        """
+        deadline = self._monotonic() + total_timeout_s
+        written = 0
+        for game_id, session in list(self.sessions.items()):
+            if self._persist_is_clean(game_id, session):
+                continue
+            remaining = deadline - self._monotonic()
+            if remaining <= 0:
+                log.warning("shutdown_flush_deadline game_id=%s", game_id)
+                break
+            try:
+                await asyncio.wait_for(
+                    self._persist_and_mark(session, persist),
+                    timeout=min(per_game_timeout_s, remaining),
+                )
+                written += 1
+            except TimeoutError:
+                log.warning("shutdown_flush_timeout game_id=%s", game_id)
+            except Exception as exc:
+                # Type only: a traceback could carry statement parameters (coordinates).
+                # TODO: decide whether a failed shutdown flush should page someone.
+                log.error(
+                    "shutdown_flush_failed game_id=%s exc_type=%s",
+                    game_id,
+                    type(exc).__name__,
+                )
+        return written
 
     def _schedule_io(
         self,

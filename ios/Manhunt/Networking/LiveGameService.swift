@@ -237,6 +237,16 @@ final class LiveGameService: GameService {
         socket.disconnect()
     }
 
+    /// Foreground check: drops a socket that went silent while the phone was locked.
+    func reconnectIfSilent() {
+        socket.reconnectIfSilent()
+    }
+
+    /// Feeds the four-bar connection meter.
+    func socketHealth() -> SocketHealth {
+        socket.health()
+    }
+
     func fetchModules() async throws -> [VisualModule] {
         let response: ModulesResponse = try await client.get("/v1/modules")
         return ModuleForm.modules(from: response)
