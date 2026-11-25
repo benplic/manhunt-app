@@ -9,6 +9,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
@@ -131,6 +132,8 @@ class GameService:
         self.join_limiter = join_limiter or JoinRateLimiter()
         # Serialize persist+commit per live game so tick and HTTP cannot double-insert.
         self._persist_locks: dict[UUID, asyncio.Lock] = {}
+        # One host rematch at a time per ended game.
+        self._rematch_locks: dict[UUID, asyncio.Lock] = {}
 
     def _persist_lock(self, game_id: UUID) -> asyncio.Lock:
         lock = self._persist_locks.get(game_id)
@@ -323,6 +326,8 @@ class GameService:
         member = await session.get(GamePlayerRow, (game_id, user.id))
         if member is None:
             raise ApiError(ErrorCode.NOT_A_MEMBER, "You are not in this game.", status_code=403)
+        # Any member HTTP call counts as the group still being here.
+        self.manager.note_activity(game_id)
         return row, member
 
     async def require_host(self, session: AsyncSession, game_id: UUID, user: User) -> GameRow:
@@ -568,43 +573,108 @@ class GameService:
             ) from exc
         return await self._join_rematch_lobby(session, user, rematch_id)
 
+    def _rematch_lock(self, ended_game_id: UUID) -> asyncio.Lock:
+        lock = self._rematch_locks.get(ended_game_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._rematch_locks[ended_game_id] = lock
+        return lock
+
+    async def _rematch_code(self, session: AsyncSession, ended: GameRow) -> str:
+        """The join code for a rematch lobby: the ended game's own, when it is free.
+
+        The code was released the moment the hunt ended, because lookups and the partial
+        unique index both ignore ended/abandoned rows. A different live game may have
+        picked it up since, in which case the host gets a fresh code and the clients
+        show whatever the response says.
+        """
+        if ended.join_code == SAMPLE_CODE:
+            # PARK42 is the reserved demo code. join() treats any live PARK42 row as the
+            # sample and may retire it, so a real lobby must never sit on it.
+            return await self._unique_code(session)
+        taken = await session.scalar(
+            select(GameRow.id).where(
+                GameRow.join_code == ended.join_code,
+                GameRow.status.notin_(["ended", "abandoned"]),
+                GameRow.id != ended.id,
+            )
+        )
+        if taken is None:
+            return ended.join_code
+        log.info(
+            "rematch_code_taken game_id=%s code=%s held_by=%s", ended.id, ended.join_code, taken
+        )
+        return await self._unique_code(session)
+
     async def _host_rematch(
         self, session: AsyncSession, user: User, row: GameRow
     ) -> GameSession:
-        existing = (row.result or {}).get("rematch_game_id")
-        if existing:
-            # Idempotent: host tapping twice returns the same lobby.
-            return await self._join_rematch_lobby(session, user, UUID(str(existing)), as_host=True)
+        ended_id = row.id
+        # Copy what we need now. A rollback below expires ORM instances, and touching
+        # an expired attribute on an async session raises instead of reloading.
+        host_id, host_name = user.id, user.display_name
+        # Serialize per ended game so two taps (or host + retry) create one lobby.
+        # TODO: this lock is per process. With more than one replica, the partial unique
+        # index on join_code is the backstop and the IntegrityError path picks a new code.
+        async with self._rematch_lock(ended_id):
+            # Another request may have committed while we waited, from its own session.
+            await session.refresh(row)
+            existing = (row.result or {}).get("rematch_game_id")
+            if existing:
+                # Idempotent: host tapping twice returns the same lobby.
+                return await self._join_rematch_lobby(
+                    session, user, UUID(str(existing)), as_host=True
+                )
 
-        join_code = await self._unique_code(session)
-        seed = random.SystemRandom().randint(1, 2**31 - 1)
-        new_row = GameRow(
-            id=uuid4(),
-            join_code=join_code,
-            host_id=user.id,
-            status="lobby",
-            arena_snapshot=deepcopy(row.arena_snapshot),
-            preset_snapshot=deepcopy(row.preset_snapshot),
-            seed=seed,
-            inputs=[],
-        )
-        session.add(new_row)
-        session.add(GamePlayerRow(game_id=new_row.id, user_id=user.id, role="unassigned"))
-        payload = dict(row.result or {})
-        payload["rematch_game_id"] = str(new_row.id)
-        row.result = payload
-        await session.commit()
-        game = self.manager.register(
-            new_row.id,
-            new_row.arena_snapshot,
-            new_row.preset_snapshot,
-            seed,
-            join_code,
-        )
-        game.add_player(user.id, user.display_name, is_host=True)
-        await self.persist_inputs(session, game)
-        await session.commit()
-        return game
+            arena_snapshot = deepcopy(row.arena_snapshot)
+            preset_snapshot = deepcopy(row.preset_snapshot)
+            seed = random.SystemRandom().randint(1, 2**31 - 1)
+            join_code = await self._rematch_code(session, row)
+            new_id = uuid4()
+            for attempt in range(2):
+                session.add(
+                    GameRow(
+                        id=new_id,
+                        join_code=join_code,
+                        host_id=host_id,
+                        status="lobby",
+                        arena_snapshot=arena_snapshot,
+                        preset_snapshot=preset_snapshot,
+                        seed=seed,
+                        inputs=[],
+                    )
+                )
+                session.add(GamePlayerRow(game_id=new_id, user_id=host_id, role="unassigned"))
+                ended_row = await session.get(GameRow, ended_id)
+                if ended_row is not None:
+                    # Merge into whatever is stored now, not the copy taken before the awaits.
+                    ended_row.result = {**(ended_row.result or {}), "rematch_game_id": str(new_id)}
+                try:
+                    await session.commit()
+                    break
+                except IntegrityError:
+                    # Another live game took the code between our check and the commit.
+                    await session.rollback()
+                    if attempt == 1:
+                        raise ApiError(
+                            ErrorCode.INTERNAL,
+                            "Could not allocate a join code.",
+                            status_code=500,
+                        ) from None
+                    log.warning("rematch_code_race game_id=%s code=%s", ended_id, join_code)
+                    join_code = await self._unique_code(session)
+            game = self.manager.register(new_id, arena_snapshot, preset_snapshot, seed, join_code)
+            game.add_player(host_id, host_name, is_host=True)
+            await self.persist_inputs(session, game)
+            await session.commit()
+            get_playtest_log().emit(
+                "rematch_created",
+                game_id=ended_id,
+                player_id=host_id,
+                join_code=join_code,
+                new_game_id=new_id,
+            )
+            return game
 
     async def _join_rematch_lobby(
         self,
@@ -839,7 +909,10 @@ class GameService:
                 ) from exc
             row.status = game.state.phase
             if game.state.result:
+                # Merge, never replace: the row also carries rematch_game_id, which only
+                # the rematch flow writes, and this runs on every persist of an ended game.
                 row.result = {
+                    **(row.result or {}),
                     "winner": game.state.result.winner,
                     "reason": game.state.result.reason,
                 }
@@ -879,6 +952,10 @@ class GameService:
             if event.seq <= floor:
                 continue
             payload: dict = {"text": event.text, "tone": event.tone}
+            if event.hide_from_actor and event.player_id is not None:
+                # Stored so the timeline can drop it for the actor after a restart.
+                payload["hide_from_actor"] = True
+                payload["actor_id"] = str(event.player_id)
             if event.sensitive:
                 if key is None:
                     continue

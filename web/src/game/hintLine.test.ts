@@ -21,13 +21,19 @@ describe('hintLine', () => {
     )
   })
 
-  it('formats a hider hint toward a seeker and hides warmth when there is none', () => {
+  it('shows no line at all when the warmth is hidden', () => {
+    expect(hintLine('hider', null)).toBeNull()
+    expect(hintLine('hider', undefined)).toBeNull()
+    expect(hintLine('hider', '')).toBeNull()
+    expect(hintLine('hider', {})).toBeNull()
+    expect(hintLine('spectator', {})).toBeNull()
+  })
+
+  it('formats a hider hint toward a seeker', () => {
     expect(hintLine('hider', { band: 'hot', meters: 30, name: 'Jordan', bearing_deg: 90 })).toBe(
       'Jordan is hot, 30 m, E',
     )
     expect(hintLine('hider', { band: 'warm', meters: 70 })).toBe('A seeker is warm, 70 m')
-    expect(hintLine('hider', null)).toBe('Warmth is hidden from you.')
-    expect(hintLine('hider', undefined)).toBe('Warmth is hidden from you.')
   })
 
   it('returns null when there is no hint', () => {

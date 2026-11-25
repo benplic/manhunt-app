@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     # on in the home profile, which home-server.sh publishes through a tunnel.
     manhunt_dev_auth_secret: str = ""
     manhunt_tick_loop: bool = True
+    # Seconds with no connected phone and no member message before a running hunt
+    # stops ticking. 0 disables. A reconnect wakes it. 10 minutes is a placeholder
+    # default until the host-facing policy is decided.
+    manhunt_idle_freeze_s: float = 600.0
     manhunt_trail_key: str = "ab" * 32
     manhunt_trail_key_id: str = "v1"
     manhunt_trail_retention_days: int = 7

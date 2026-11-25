@@ -364,7 +364,7 @@ def test_circle_play_area_roundtrip_regenerates_ring_and_validates_radius() -> N
             "boundary": [],
             "boundary_circle": {
                 "center": {"lat": center.lat, "lon": center.lon},
-                "radius_m": 2500.0,
+                "radius_m": 3001.0,
             },
             "zones": [],
         }

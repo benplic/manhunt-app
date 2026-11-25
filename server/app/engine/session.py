@@ -56,6 +56,25 @@ class GameSession:
         self.sample_start_after_s: int | None = None
         self.sample_waited_s = 0
         self.demo: Any = None
+        # Set by the realtime layer when nobody has been connected for a long time.
+        # A frozen hunt is skipped by the tick loop. Not persisted: a restart rebuilds
+        # it unfrozen and the idle countdown starts over.
+        self.idle_frozen = False
+
+    def wake_from_idle(self) -> None:
+        """Resume after an idle freeze without a fake signal-loss storm.
+
+        Signal loss compares the clock against each player's last fix. After a freeze
+        that gap is the whole idle time, so everyone would flip to "went dark" on the
+        first tick. Restart the silence window at the wake instead. Logged as an input
+        so a crash rebuild applies the same rebase at the same point.
+        """
+        self.idle_frozen = False
+        now = self.clock.now()
+        for player in self.state.players.values():
+            if player.last_location_at is not None:
+                player.last_location_at = now
+        self._note_input("idle_wake", {})
 
     def module_settings(self, module_id: str) -> dict[str, Any]:
         return self.state.preset.get("modules", {}).get(module_id, {})
@@ -196,6 +215,7 @@ class GameSession:
                 {"text": f"{player.display_name} sent a last fix."},
                 player_id=player_id,
                 tone="safety",
+                hide_from_actor=True,
             )
 
     def set_synthetic_location(self, player_id: UUID, reading: LocationReading) -> None:
@@ -344,6 +364,7 @@ class GameSession:
         player_id: UUID | None = None,
         tone: str = "info",
         sensitive: bool = False,
+        hide_from_actor: bool = False,
     ) -> GameEvent:
         event = GameEvent(
             seq=self.state.next_seq,
@@ -352,6 +373,7 @@ class GameSession:
             tone=tone,
             player_id=player_id,
             sensitive=sensitive,
+            hide_from_actor=hide_from_actor,
             created_at=self.clock.now(),
             text=str(payload.get("text", "")),
         )

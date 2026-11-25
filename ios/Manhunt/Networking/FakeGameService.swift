@@ -174,7 +174,10 @@ final class FakeGameService: GameService {
     func joinSync(code: String) throws -> PlayerViewDTO {
         joinCalls += 1
         let normalized = JoinCode.normalize(code)
-        guard let game = games.values.first(where: { $0.joinCode == normalized }) else {
+        // A rematch lobby reuses the ended game's code, so prefer the live game.
+        // Falling back to an ended one keeps the old lookup behavior for existing tests.
+        let live = games.values.first(where: { $0.joinCode == normalized && $0.phase != .ended })
+        guard let game = live ?? games.values.first(where: { $0.joinCode == normalized }) else {
             throw ServiceError(code: .gameNotFound, message: "No game is using that code.")
         }
         return game.view()
@@ -269,9 +272,11 @@ final class FakeGameService: GameService {
             let id = UUID()
             let hostID = you?.id ?? old.players.first(where: \.isHost)?.id ?? UUID()
             let hostName = you?.displayName ?? old.players.first(where: \.isHost)?.name ?? "You"
+            // Same code as the ended game, like the server. PARK42 stays reserved.
+            let rematchCode = old.joinCode == "PARK42" ? JoinCode.generate(using: &rng) : old.joinCode
             let game = FakeGame(
                 id: id,
-                joinCode: JoinCode.generate(using: &rng),
+                joinCode: rematchCode,
                 youAreHost: true,
                 players: [
                     FakePlayer(id: hostID, name: hostName, role: .unassigned, isHost: true),

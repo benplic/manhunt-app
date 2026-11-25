@@ -1,10 +1,24 @@
 import Foundation
 
 enum ArenaValidator {
+    /// Play circle radius limits. Keep in sync with the server (`PLAY_CIRCLE_*_M`)
+    /// and the web radius inputs.
+    static let minPlayRadiusMeters: Double = 30
+    static let maxPlayRadiusMeters: Double = 3000
+
+    /// Shown wherever the radius range is explained to a player.
+    static let radiusRangeMessage = "Play area radius must be between 30 m and 3,000 m."
+
+    static func isValidPlayRadius(_ radiusMeters: Double) -> Bool {
+        radiusMeters.isFinite
+            && radiusMeters >= minPlayRadiusMeters
+            && radiusMeters <= maxPlayRadiusMeters
+    }
+
     static func issues(in arena: Arena) -> [ArenaIssue] {
         var found: [ArenaIssue] = []
         if let circle = arena.boundaryCircle {
-            if !circle.radiusMeters.isFinite || circle.radiusMeters < 30 || circle.radiusMeters > 2000 {
+            if !isValidPlayRadius(circle.radiusMeters) {
                 found.append(.playAreaRadiusInvalid)
                 return found
             }

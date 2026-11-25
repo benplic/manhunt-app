@@ -15,12 +15,13 @@ final class Phase3Tests: XCTestCase {
         XCTAssertEqual(HintCopy.line(role: .seeker, hint: HintDTO(band: nil, meters: nil, name: nil, bearingDeg: nil)), "No hint yet.")
     }
 
-    func testHiderSeesASeekerHintAndStillHidesWarmthWhenThereIsNone() {
+    func testHiderSeesASeekerHintAndNoLineAtAllWhenWarmthIsHidden() {
         let hint = HintDTO(band: "burning", meters: 4, name: "Jordan", bearingDeg: 90)
         XCTAssertEqual(HintCopy.line(role: .hider, hint: hint), "Jordan is burning, 4 m, E")
         let unnamed = HintDTO(band: "warm", meters: 70, name: nil, bearingDeg: nil)
         XCTAssertEqual(HintCopy.line(role: .hider, hint: unnamed), "A seeker is warm, 70 m")
-        XCTAssertEqual(HintCopy.line(role: .hider, hint: nil), "Warmth is hidden from you.")
+        XCTAssertNil(HintCopy.line(role: .hider, hint: nil))
+        XCTAssertNil(HintCopy.line(role: .hider, hint: HintDTO(band: nil, meters: nil, name: nil, bearingDeg: nil)))
     }
 
     func testHintHelpMatchesRevealMode() {

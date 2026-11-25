@@ -590,6 +590,22 @@ final class AppStoreTests: XCTestCase {
         XCTAssertNotEqual(store.joinCode, "")
     }
 
+    // The server reuses the ended game's join code for the rematch lobby.
+    @MainActor
+    func testRematchKeepsTheEndedGamesJoinCode() {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.randomizeRoles(seekerCount: 1)
+        _ = store.startMatch()
+        let endedCode = store.joinCode
+        store.endMatch()
+        store.rematch()
+        XCTAssertEqual(store.screen, .lobby)
+        XCTAssertEqual(store.joinCode, endedCode)
+    }
+
     @MainActor
     func testRematchClearsAStaleTagAnnouncementBeforeTheNewLobby() {
         let fake = FakeGameService()

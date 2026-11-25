@@ -69,8 +69,9 @@ struct LiveGameView: View {
                 if !store.isDemoGame && (store.locationAccuracy == .denied || store.locationAccuracy == .reduced) {
                     locationBlock
                 }
+                // Safety banners ("went dark") are one-at-a-time alerts now. The rest are state.
                 if HeadStartChrome.showsFloatingNotice(chrome),
-                   let banner = store.match?.snapshot.banners.last {
+                   let banner = store.match?.snapshot.banners.last(where: { $0.tone != "safety" }) {
                     self.banner(title: banner.title, detail: banner.detail, tint: tone(banner.tone))
                         .transition(.move(edge: .top).combined(with: .opacity))
                         .allowsHitTesting(false)
@@ -127,8 +128,12 @@ struct LiveGameView: View {
                     .foregroundStyle(HuntColor.paper)
                     .transition(.move(edge: .top).combined(with: .opacity))
                 } else if HeadStartChrome.showsFloatingNotice(chrome),
-                          let update = store.liveUpdate {
-                    LiveUpdatePill(triggerKey: update.id.uuidString, text: update.text, tone: update.tone)
+                          let alert = store.alerts.current,
+                          alert.kind == .update {
+                    // One alert at a time. `showID` makes a resumed alert appear (and be
+                    // announced) again. The ping flash draws itself via PingFlashOverlay.
+                    LiveUpdatePill(triggerKey: "\(store.alerts.showID)", text: alert.text, tone: alert.tone)
+                        .id(store.alerts.showID)
                         .allowsHitTesting(false)
                 } else if HeadStartChrome.showsFloatingNotice(chrome),
                           store.match?.snapshot.banners.isEmpty != false,
@@ -231,8 +236,20 @@ struct LiveGameView: View {
                 UINotificationFeedbackGenerator().notificationOccurred(.warning)
             }
         }
+        // The alert clock only runs while its surface can be seen (not during a map pick or
+        // the full-map head-start lock), so no alert is used up unseen.
+        .onChange(of: alertSurfaceVisible(chrome)) { _, visible in
+            store.alerts.setSuspended(!visible)
+        }
+        .onAppear {
+            store.alerts.setSuspended(!alertSurfaceVisible(chrome))
+        }
 
         PingFlashOverlay(pulse: store.pingPulse)
+    }
+
+    private func alertSurfaceVisible(_ chrome: HeadStartChrome.Kind) -> Bool {
+        HeadStartChrome.showsFloatingNotice(chrome) && !store.decoyPicking && !store.demoPicking
     }
 
     private var topBar: some View {
@@ -318,12 +335,15 @@ struct LiveGameView: View {
                         .monospacedDigit()
                         .contentTransition(.numericText())
                         .animation(.snappy, value: store.shownPoints)
-                    Text(HintCopy.line(
+                    // No line when the warmth is hidden: the row collapses, no empty gap.
+                    if let hintLine = HintCopy.line(
                         role: store.match?.snapshot.you.role ?? .unassigned,
                         hint: store.match?.snapshot.you.hint
-                    ))
-                        .font(.footnote)
-                        .foregroundStyle(HuntColor.muted)
+                    ) {
+                        Text(hintLine)
+                            .font(.footnote)
+                            .foregroundStyle(HuntColor.muted)
+                    }
                 }
                 Spacer()
             }

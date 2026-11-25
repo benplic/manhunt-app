@@ -129,6 +129,28 @@ final class GameRulesTests: XCTestCase {
         XCTAssertEqual(ArenaValidator.issues(in: tiny), [])
     }
 
+    func testValidatorPlayCircleRadiusCapIsThreeKilometers() {
+        // Only the radius check matters here, so the square's ring stands in for the circle's.
+        func arena(radius: Double) -> Arena {
+            var circleArena = Fixtures.square()
+            circleArena.boundaryCircle = CircleBoundary(
+                center: Fixtures.meters(x: 0, y: 0),
+                radiusMeters: radius
+            )
+            return circleArena
+        }
+
+        XCTAssertTrue(ArenaValidator.issues(in: arena(radius: 29.9)).contains(.playAreaRadiusInvalid))
+        XCTAssertFalse(ArenaValidator.issues(in: arena(radius: 30)).contains(.playAreaRadiusInvalid))
+        XCTAssertFalse(ArenaValidator.issues(in: arena(radius: 2000)).contains(.playAreaRadiusInvalid))
+        XCTAssertFalse(ArenaValidator.issues(in: arena(radius: 2001)).contains(.playAreaRadiusInvalid))
+        XCTAssertFalse(ArenaValidator.issues(in: arena(radius: 3000)).contains(.playAreaRadiusInvalid))
+        XCTAssertTrue(ArenaValidator.issues(in: arena(radius: 3001)).contains(.playAreaRadiusInvalid))
+        XCTAssertTrue(ArenaValidator.issues(in: arena(radius: .nan)).contains(.playAreaRadiusInvalid))
+        XCTAssertTrue(ArenaValidator.issues(in: arena(radius: .infinity)).contains(.playAreaRadiusInvalid))
+        XCTAssertTrue(ArenaValidator.radiusRangeMessage.contains("3,000"))
+    }
+
     func testOutOfBoundsWaitsForAccuracyAndIgnoresReadingsWorseThanThirtyMeters() {
         let boundary = Fixtures.square().boundary
         let inside = Fixtures.meters(x: 100, y: 100)

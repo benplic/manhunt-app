@@ -6,6 +6,7 @@ import { parseJoinPayload, sanitizeJoinCode } from '../api/joinCode'
 import { SessionExpiredError, withAuthRetry } from '../api/session'
 import type { PlayerView } from '../api/types'
 import { clearSession, loadSession } from '../auth/storage'
+import { arenaRadiusError, MAX_ARENA_RADIUS_M, MIN_ARENA_RADIUS_M } from '../geo/arenaRadius'
 import { Account } from './Account'
 import { JoinScan } from './JoinScan'
 import './Home.css'
@@ -49,6 +50,7 @@ export function Home({ onSignedOut, onEnteredGame, bannerNote = null, onClearBan
   const session = loadSession()
   const [joinCode, setJoinCode] = useState(() => joinFromLocation())
   const [radiusM, setRadiusM] = useState(DEFAULT_ARENA_RADIUS_M)
+  const radiusError = arenaRadiusError(radiusM)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [scanning, setScanning] = useState(false)
@@ -179,17 +181,27 @@ export function Home({ onSignedOut, onEnteredGame, bannerNote = null, onClearBan
           Play circle radius (m)
           <input
             type="number"
-            min={30}
-            max={2000}
+            min={MIN_ARENA_RADIUS_M}
+            max={MAX_ARENA_RADIUS_M}
             step={50}
             value={radiusM}
             onChange={(e) => setRadiusM(Number(e.target.value))}
+            aria-invalid={radiusError !== null}
           />
         </label>
         <p className="hint">
           Centers a {radiusM} m circle on your GPS. You can change it again in the lobby.
         </p>
-        <button type="button" onClick={() => void onCreate()} disabled={busy}>
+        {radiusError ? (
+          <p className="error" role="alert">
+            {radiusError}
+          </p>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => void onCreate()}
+          disabled={busy || radiusError !== null}
+        >
           Create game
         </button>
       </section>

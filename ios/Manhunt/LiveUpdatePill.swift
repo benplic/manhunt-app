@@ -8,6 +8,7 @@ struct LiveUpdatePill: View {
     var tone: String
 
     @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 10) {
@@ -34,6 +35,9 @@ struct LiveUpdatePill: View {
 
     private func triggerFeedback() {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        // Announce each showing once, including one that returns after an interruption.
+        UIAccessibility.post(notification: .announcement, argument: text)
+        guard !reduceMotion else { return }
         withAnimation(.easeOut(duration: 0.16)) { pulse = true }
         withAnimation(.easeOut(duration: 0.25).delay(0.16)) { pulse = false }
     }

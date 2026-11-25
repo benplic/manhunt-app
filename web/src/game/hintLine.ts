@@ -14,10 +14,8 @@ export function cardinal(degrees: number): string {
  * Rendering that dict as a React child unmounts the whole app (black screen).
  */
 export function hintLine(role: string, hint: unknown): string | null {
-  // Classic Seeker reveal is Off, so a hider with no payload keeps the old line.
-  if (role === 'hider' && (hint == null || hint === '')) {
-    return 'Warmth is hidden from you.'
-  }
+  // A hider with no payload (Classic seeker reveal is Off) gets no line at all. The
+  // caller hides the whole hint row for null, so no empty gap is left behind.
   if (hint == null || hint === '') {
     return null
   }
@@ -28,11 +26,11 @@ export function hintLine(role: string, hint: unknown): string | null {
     return null
   }
   if (role !== 'seeker' && role !== 'hider') {
-    return 'Warmth is hidden from you.'
+    return null
   }
   const payload = hint as HintObject
   if (!payload.band) {
-    return role === 'hider' ? 'Warmth is hidden from you.' : 'No hint yet.'
+    return role === 'hider' ? null : 'No hint yet.'
   }
   const name = payload.name || (role === 'hider' ? 'A seeker' : 'A hider')
   const meters = payload.meters == null || Number.isNaN(Number(payload.meters)) ? '?' : String(payload.meters)

@@ -272,7 +272,7 @@ final class ArenaEditorModel {
             if let center = pendingBoundaryCircleCenter {
                 let radius = ArenaGeometry.meters(from: center, to: point)
                 if radius < 1 {
-                    notice = "Pan outward to set the circle radius (30 m to 2,000 m)."
+                    notice = "Pan outward to set the circle radius (30 m to 3,000 m)."
                     return
                 }
                 snapshot()
@@ -281,8 +281,8 @@ final class ArenaEditorModel {
                 boundary = Polygon(vertices: Self.circleRing(center: center, radiusMeters: radius))
                 pendingBoundaryCircleCenter = nil
                 reclipZones()
-                if radius < 30 || radius > 2000 {
-                    notice = "Play area radius must be between 30 m and 2,000 m."
+                if !ArenaValidator.isValidPlayRadius(radius) {
+                    notice = ArenaValidator.radiusRangeMessage
                 }
             } else {
                 snapshot()

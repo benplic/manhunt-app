@@ -566,7 +566,328 @@ describe('LiveMap', () => {
     expect(onLeave).toHaveBeenCalledOnce()
   })
 
-  it('clears PINGED after 1.2s even when the same reveal keeps updating', () => {
+  it('queues the ping flash behind a tag-priority alert instead of dropping it', () => {
+    vi.useFakeTimers()
+    const reveal = {
+      reveal_id: 'r2',
+      player_id: 'h1',
+      lat: 40.11,
+      lon: -73.11,
+      radius_m: 30,
+      expires_in_s: 10,
+      display_name: 'Riley',
+    }
+    const props = {
+      socket: { sendLocation: vi.fn() } as never,
+      qrToken: null,
+      note: null,
+      onView: () => undefined,
+      onLeave: () => undefined,
+      onSignedOut: () => undefined,
+      watchLocation: () => () => undefined,
+    }
+    const hider: PlayerView = {
+      ...view,
+      you: { ...view.you, role: 'hider', is_host: false },
+    }
+    const { rerender } = render(<LiveMap view={{ ...hider, reveals: [] }} {...props} />)
+    // Out of bounds (priority 1) takes the slot, then a ping (priority 3) arrives.
+    rerender(
+      <LiveMap
+        view={{
+          ...hider,
+          reveals: [],
+          you: { ...hider.you, bounds: { phase: 'countdown', remaining_s: 9 } },
+        }}
+        {...props}
+      />,
+    )
+    expect(screen.getByText(/out of bounds\. walk back in/i)).toBeInTheDocument()
+    rerender(
+      <LiveMap
+        view={{
+          ...hider,
+          reveals: [reveal],
+          you: { ...hider.you, bounds: { phase: 'countdown', remaining_s: 8 } },
+        }}
+        {...props}
+      />,
+    )
+    expect(screen.queryByText('PINGED')).not.toBeInTheDocument()
+    expect(screen.getByText(/out of bounds\. walk back in/i)).toBeInTheDocument()
+
+    act(() => {
+      vi.advanceTimersByTime(4000)
+    })
+    expect(screen.getByText('PINGED')).toBeInTheDocument()
+    expect(screen.queryByText(/out of bounds\. walk back in/i)).not.toBeInTheDocument()
+
+    act(() => {
+      vi.advanceTimersByTime(4000)
+    })
+    expect(screen.queryByText('PINGED')).not.toBeInTheDocument()
+    vi.useRealTimers()
+  })
+
+  it('shows one alert at a time, each for 4 seconds', () => {
+    vi.useFakeTimers()
+    const props = {
+      socket: { sendLocation: vi.fn() } as never,
+      qrToken: null,
+      note: null,
+      onView: () => undefined,
+      onLeave: () => undefined,
+      onSignedOut: () => undefined,
+      watchLocation: () => () => undefined,
+    }
+    const banner = (id: string, title: string, tone: string) => ({
+      banner_id: id,
+      tone,
+      title,
+      detail: '',
+      player_id: id,
+    })
+    render(
+      <LiveMap
+        view={{
+          ...view,
+          banners: [banner('b1', 'Riley went dark', 'safety'), banner('b2', 'Jordan went dark', 'safety')],
+        }}
+        {...props}
+      />,
+    )
+    expect(screen.getByText('Riley went dark')).toBeInTheDocument()
+    expect(screen.queryByText('Jordan went dark')).not.toBeInTheDocument()
+    expect(document.querySelectorAll('.banners .banner')).toHaveLength(1)
+
+    act(() => {
+      vi.advanceTimersByTime(4000)
+    })
+    expect(screen.getByText('Jordan went dark')).toBeInTheDocument()
+    expect(screen.queryByText('Riley went dark')).not.toBeInTheDocument()
+    vi.useRealTimers()
+  })
+
+  it('does not alert again for a banner that stays in the view', () => {
+    vi.useFakeTimers()
+    const props = {
+      socket: { sendLocation: vi.fn() } as never,
+      qrToken: null,
+      note: null,
+      onView: () => undefined,
+      onLeave: () => undefined,
+      onSignedOut: () => undefined,
+      watchLocation: () => () => undefined,
+    }
+    const banners = [
+      { banner_id: 'b1', tone: 'safety', title: 'Riley went dark', detail: '', player_id: 'p1' },
+    ]
+    const { rerender } = render(<LiveMap view={{ ...view, banners }} {...props} />)
+    act(() => {
+      vi.advanceTimersByTime(4000)
+    })
+    expect(screen.queryByText('Riley went dark')).not.toBeInTheDocument()
+    rerender(<LiveMap view={{ ...view, banners: [...banners] }} {...props} />)
+    expect(screen.queryByText('Riley went dark')).not.toBeInTheDocument()
+    vi.useRealTimers()
+  })
+
+  it('keeps the alert out of the layout flow so the map never shrinks', () => {
+    const props = {
+      socket: { sendLocation: vi.fn() } as never,
+      qrToken: null,
+      note: null,
+      onView: () => undefined,
+      onLeave: () => undefined,
+      onSignedOut: () => undefined,
+      watchLocation: () => () => undefined,
+    }
+    const { container, rerender } = render(<LiveMap view={view} {...props} />)
+    const anchor = container.querySelector('.alert-anchor')
+    expect(anchor).toBeTruthy()
+    expect(anchor?.querySelector('.banner')).toBeNull()
+    const beforeChildren = container.querySelector('main')?.children.length
+
+    rerender(
+      <LiveMap
+        view={{
+          ...view,
+          banners: [
+            { banner_id: 'b1', tone: 'safety', title: 'Riley went dark', detail: '', player_id: 'p1' },
+          ],
+        }}
+        {...props}
+      />,
+    )
+    expect(container.querySelector('.alert-anchor .banners .banner')).toBeTruthy()
+    // The overlay lives inside the zero-height anchor. No sibling was added to the column.
+    expect(container.querySelector('main')?.children.length).toBe(beforeChildren)
+  })
+
+  it('turns one went-dark event into one alert, not one per source', () => {
+    vi.useFakeTimers()
+    const props = {
+      socket: { sendLocation: vi.fn() } as never,
+      qrToken: null,
+      note: null,
+      onView: () => undefined,
+      onLeave: () => undefined,
+      onSignedOut: () => undefined,
+      watchLocation: () => () => undefined,
+    }
+    const dark: PlayerView = {
+      ...view,
+      you: { ...view.you, status: 'signal_lost', role: 'hider', is_host: false },
+      banners: [
+        {
+          banner_id: 'b-dark',
+          tone: 'safety',
+          title: 'Casey went dark',
+          detail: 'Last fix is on the map.',
+          player_id: view.you.player_id,
+        },
+      ],
+    }
+    render(<LiveMap view={dark} {...props} />)
+
+    // The status effect and the server banner share one key, so only one is queued.
+    expect(document.querySelectorAll('.banners .banner')).toHaveLength(1)
+    act(() => {
+      vi.advanceTimersByTime(4000)
+    })
+    expect(document.querySelectorAll('.banners .banner')).toHaveLength(0)
+    vi.useRealTimers()
+  })
+
+  it('does not use up an alert while the Scores panel covers the map', async () => {
+    vi.useFakeTimers()
+    const props = {
+      socket: { sendLocation: vi.fn() } as never,
+      qrToken: null,
+      note: null,
+      onView: () => undefined,
+      onLeave: () => undefined,
+      onSignedOut: () => undefined,
+      watchLocation: () => () => undefined,
+    }
+    const withBanner: PlayerView = {
+      ...view,
+      banners: [
+        { banner_id: 'b1', tone: 'safety', title: 'Riley went dark', detail: '', player_id: 'p9' },
+      ],
+    }
+    render(<LiveMap view={withBanner} {...props} />)
+    expect(screen.getByText('Riley went dark')).toBeInTheDocument()
+
+    act(() => {
+      screen.getByRole('button', { name: /scores/i }).click()
+    })
+    act(() => {
+      vi.advanceTimersByTime(60_000)
+    })
+    act(() => {
+      screen.getByRole('button', { name: /close/i }).click()
+    })
+
+    // Still there, with its full 4 s ahead.
+    expect(screen.getByText('Riley went dark')).toBeInTheDocument()
+    act(() => {
+      vi.advanceTimersByTime(3999)
+    })
+    expect(screen.getByText('Riley went dark')).toBeInTheDocument()
+    act(() => {
+      vi.advanceTimersByTime(1)
+    })
+    expect(screen.queryByText('Riley went dark')).not.toBeInTheDocument()
+    vi.useRealTimers()
+  })
+
+  it('keeps ongoing-state banners in the HUD instead of a 4 s alert', () => {
+    vi.useFakeTimers()
+    const spawn: PlayerView = {
+      ...view,
+      banners: [
+        { banner_id: 's1', tone: 'warning', title: 'Stay in spawn', detail: '', player_id: 'u1' },
+      ],
+    }
+    render(
+      <LiveMap
+        view={spawn}
+        socket={{ sendLocation: vi.fn() } as never}
+        qrToken={null}
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    expect(document.querySelector('.hud')).toHaveTextContent('Stay in spawn')
+    expect(document.querySelectorAll('.banners .banner')).toHaveLength(0)
+    act(() => {
+      vi.advanceTimersByTime(60_000)
+    })
+    expect(document.querySelector('.hud')).toHaveTextContent('Stay in spawn')
+    vi.useRealTimers()
+  })
+
+  it('keeps one always-mounted live region and makes tag-level alerts assertive', () => {
+    const props = {
+      socket: { sendLocation: vi.fn() } as never,
+      qrToken: null,
+      note: null,
+      onView: () => undefined,
+      onLeave: () => undefined,
+      onSignedOut: () => undefined,
+      watchLocation: () => () => undefined,
+    }
+    const { container, rerender } = render(<LiveMap view={view} {...props} />)
+    const region = container.querySelector('.alert-anchor .banners')
+    expect(region).toHaveAttribute('aria-live', 'polite')
+
+    rerender(
+      <LiveMap
+        view={{
+          ...view,
+          banners: [
+            { banner_id: 'b1', tone: 'danger', title: 'Tagged', detail: '', player_id: 'p1' },
+          ],
+        }}
+        {...props}
+      />,
+    )
+    // Same element: it was never unmounted, so the new text is announced.
+    expect(container.querySelector('.alert-anchor .banners')).toBe(region)
+    expect(region).toHaveAttribute('aria-live', 'assertive')
+    expect(region).toHaveTextContent('Tagged')
+  })
+
+  it('shows the persistent out-of-bounds line in the HUD, not as an alert', () => {
+    const hider: PlayerView = {
+      ...view,
+      you: {
+        ...view.you,
+        role: 'hider',
+        is_host: false,
+        bounds: { phase: 'countdown', remaining_s: 12 },
+      },
+    }
+    render(
+      <LiveMap
+        view={hider}
+        socket={{ sendLocation: vi.fn() } as never}
+        qrToken={null}
+        note={null}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+        watchLocation={() => () => undefined}
+      />,
+    )
+    expect(document.querySelector('.hud .hud-hint--warn')).toHaveTextContent(/12s until auto-tag/i)
+  })
+
+  it('keeps one PINGED for 4s even when the same reveal keeps updating', () => {
     vi.useFakeTimers()
     const reveal = {
       reveal_id: 'r1',
@@ -593,7 +914,11 @@ describe('LiveMap', () => {
       <LiveMap view={{ ...view, reveals: [{ ...reveal, expires_in_s: 9 }] }} {...props} />,
     )
     act(() => {
-      vi.advanceTimersByTime(1200)
+      vi.advanceTimersByTime(3999)
+    })
+    expect(screen.getByText('PINGED')).toBeInTheDocument()
+    act(() => {
+      vi.advanceTimersByTime(1)
     })
     expect(screen.queryByText('PINGED')).not.toBeInTheDocument()
     vi.useRealTimers()
