@@ -259,8 +259,9 @@ final class GameSocket: @unchecked Sendable {
             return (generation, old)
         }
         previous?.cancel()
-        let newTask = Task { [weak self] in
-            await self?.run(generation: gen, first: first)
+        let newTask: Task<Void, Never> = Task { [weak self] in
+            guard let self else { return }
+            await self.run(generation: gen, first: first)
         }
         locked { runTask = newTask }
     }
