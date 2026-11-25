@@ -134,3 +134,6 @@ Separate `Task { @MainActor }` blocks do not guarantee that sequential socket
 callbacks reach `AppStore` in receive order. Route all live-service callbacks
 through one main-queue FIFO instead. The regression is
 `testLiveCallbacksKeepFinalTagBeforeImmediatelyFollowingEndedView`.
+
+### 2026-11-25 — iOS suite: a mid-run "TEST FAILED" with 0 failures is a crash
+`xcodebuild test` printed `Executed N tests, with 0 failures` and still ended `** TEST FAILED **`, with `Restarting after unexpected exit, crash, or test timeout` in the log. The host process had segfaulted in `APIClient.once` (`URL(string:relativeTo:)`, `0xdeadbeef`) while `AppStoreTests.testSignInWithAppleHitsTheFake` ran. Thread Sanitizer (`-enableThreadSanitizer YES`) showed the cause: `FakeGameService` was a plain class whose dictionaries and counters were mutated from fire-and-forget `Task`s on several pool threads, so the heap was corrupted and a later, unrelated read crashed. `FakeGameService` is now `@MainActor`; a test that calls it directly must be `@MainActor` too. To find the crash, run `python3` over the newest `~/Library/Logs/DiagnosticReports/Manhunt-*.ips`, or diff `started` against `passed` test names in the log. Do not just rerun until green.
