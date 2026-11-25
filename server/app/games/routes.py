@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.engine.arena import PLAY_CIRCLE_MAX_M, PLAY_CIRCLE_MIN_M
 from app.games.service import GameService
 
 
@@ -24,8 +25,13 @@ class QrIn(BaseModel):
 
 
 class LobbyCircleIn(BaseModel):
-    radius_m: float = Field(ge=30, le=2000)
+    radius_m: float = Field(ge=PLAY_CIRCLE_MIN_M, le=PLAY_CIRCLE_MAX_M)
     center: dict[str, float] | None = None
+
+
+def _public_payload(payload: dict) -> dict:
+    """Drop the internal visibility markers before a stored event goes to a client."""
+    return {k: v for k, v in payload.items() if k not in {"hide_from_actor", "actor_id"}}
 
 
 def _view(service: GameService, game, user_id: UUID) -> dict:
@@ -248,6 +254,14 @@ def bind_game_routes(get_session, current_user, service: GameService):
                 .order_by(GameEventRow.seq)
             )
         ).scalars()
-        return {"events": [{"seq": r.seq, "type": r.type, "payload": r.payload} for r in rows]}
+        me = str(user.id)
+        return {
+            "events": [
+                {"seq": r.seq, "type": r.type, "payload": _public_payload(r.payload)}
+                for r in rows
+                # Mirrors engine.events.visible_to for rows read back from the database.
+                if not (r.payload.get("hide_from_actor") and r.payload.get("actor_id") == me)
+            ]
+        }
 
     return router

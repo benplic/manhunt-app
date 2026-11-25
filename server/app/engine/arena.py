@@ -24,7 +24,8 @@ from app.engine.geo import (
 
 PLAY_CIRCLE_STEPS = 64
 PLAY_CIRCLE_MIN_M = 30.0
-PLAY_CIRCLE_MAX_M = 2000.0
+# Keep in sync with the iOS ArenaValidator and the web radius inputs.
+PLAY_CIRCLE_MAX_M = 3000.0
 
 
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { ApiError } from '../api/client'
@@ -25,6 +25,7 @@ import {
 import { hintLine } from '../game/hintLine'
 import { pointInPlayArea } from '../map/pointInPlayArea'
 import { glidePoint, PIN_GLIDE_MS } from '../map/pinGlide'
+import { useAlert } from '../game/useAlert'
 import { newRevealIds } from '../map/pingFlash'
 import {
   chipIsTappable,
@@ -50,7 +51,7 @@ import {
 } from '../map/zones'
 import { ConfirmDialog } from '../game/ConfirmDialog'
 import { blockPlayer, displayNameFor, reportMailto } from '../social/blockList'
-import type { ActiveEffect, ArenaZone, PlayerView } from '../api/types'
+import type { ActiveEffect, ArenaZone, Banner, PlayerView } from '../api/types'
 import { EventLog } from './EventLog'
 import { QrScan } from './QrScan'
 import { QrShow } from './QrShow'
@@ -138,6 +139,11 @@ function boundsMessage(view: PlayerView): string | null {
   return `Boundary: ${bounds.phase}`
 }
 
+/** Safety and danger banners are one-off news. The rest describe a state that lasts. */
+function isAlertBanner(banner: Banner): boolean {
+  return banner.tone === 'safety' || banner.tone === 'danger'
+}
+
 function darkMessage(view: PlayerView): string | null {
   if (view.you.status === 'signal_lost') {
     return 'You went dark. Keep this tab visible and the screen on.'
@@ -206,15 +212,23 @@ export function LiveMap({
   const zoneLayersRef = useRef<Map<string, L.Circle | L.Polygon>>(new Map())
   /** Last arenaKey we framed — re-fit only when the play area identity changes. */
   const fittedArenaKeyRef = useRef<string>('')
-  const [localNote, setLocalNote] = useState<string | null>(null)
+  // An object, not a string, so the same message set twice is two distinct alerts.
+  const [localNoteState, setLocalNoteState] = useState<{ id: number; text: string } | null>(null)
+  const localNoteSeq = useRef(0)
+  const setLocalNote = useCallback((text: string | null) => {
+    localNoteSeq.current += 1
+    setLocalNoteState(text ? { id: localNoteSeq.current, text } : null)
+  }, [])
   const [accuracyM, setAccuracyM] = useState<number | null>(null)
   const [panel, setPanel] = useState<Panel>('map')
   const [busyHost, setBusyHost] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [busyDock, setBusyDock] = useState(false)
   const [powerPick, setPowerPick] = useState<PowerPick>(null)
-  const [pingFlash, setPingFlash] = useState<string | null>(null)
-  const pingTimerRef = useRef<number | null>(null)
+  // The slot's clock stops while Scores or Log covers the map, so nothing is used up unseen.
+  const { shown: shownAlert, enqueue: enqueueAlert } = useAlert({ paused: panel !== 'map' })
+  /** Banner ids already queued, so a banner that stays in the view alerts only once. */
+  const seenBannerIdsRef = useRef<Set<string>>(new Set())
   const [pendingLeave, setPendingLeave] = useState(false)
   const [pendingBlock, setPendingBlock] = useState<{ id: string; name: string } | null>(null)
   /** Bumped when the local block list changes so leaderboard names re-mask. */
@@ -236,7 +250,6 @@ export function LiveMap({
       }),
     [view.arena?.zones, view.spawn_lock?.zones, view.phase, emphasizeSpawn],
   )
-  const banners = view.banners ?? []
   const isHider = view.you.role === 'hider'
   const isSeeker = view.you.role === 'seeker'
   const isHost = view.you.is_host
@@ -254,7 +267,6 @@ export function LiveMap({
   const tauntCooldown = view.you.taunt_cooldown_s ?? 0
   const tauntEnabled = view.you.taunt_enabled !== false
   const youActive = view.you.status === 'active'
-  const youEliminated = view.you.status === 'eliminated'
   const canTaunt =
     isHider && view.phase === 'active' && tauntEnabled && youActive
   // Server hint is a dict. Never render it as a React child — that unmounts the app.
@@ -445,24 +457,89 @@ export function LiveMap({
     const selfPing = (view.reveals ?? []).some(
       (r) => added.includes(r.reveal_id) && r.player_id === view.you.player_id,
     )
-    setPingFlash(selfPing ? 'PING' : 'PINGED')
-    if (pingTimerRef.current != null) {
-      window.clearTimeout(pingTimerRef.current)
-    }
-    pingTimerRef.current = window.setTimeout(() => {
-      pingTimerRef.current = null
-      setPingFlash(null)
-    }, 1200)
-  }, [view.reveals, view.you.player_id])
+    // Priority 3. Queued behind tag, out-of-bounds, and went-dark alerts, never dropped.
+    enqueueAlert({
+      key: selfPing ? 'ping:self' : 'ping:other',
+      text: selfPing ? 'PING' : 'PINGED',
+      tone: 'warn',
+      priority: 3,
+    })
+  }, [view.reveals, view.you.player_id, enqueueAlert])
 
-  useEffect(
-    () => () => {
-      if (pingTimerRef.current != null) {
-        window.clearTimeout(pingTimerRef.current)
+  // Safety and danger banners from the server (a player went dark, ...). Each banner id
+  // alerts once. A player going dark shares one key with their own `dark:` alert below and
+  // with repeats, so a flapping signal collapses into a single queue entry. Other banners
+  // ("Stay in spawn") describe an ongoing state and stay in the HUD instead.
+  useEffect(() => {
+    const seen = seenBannerIdsRef.current
+    const current = new Set<string>()
+    for (const banner of view.banners ?? []) {
+      current.add(banner.banner_id)
+      if (seen.has(banner.banner_id) || !isAlertBanner(banner)) {
+        continue
       }
-    },
-    [],
-  )
+      enqueueAlert({
+        key:
+          banner.tone === 'safety' && banner.player_id
+            ? `dark:${banner.player_id}`
+            : `banner:${banner.player_id ?? 'game'}:${banner.title}`,
+        text: banner.detail ? `${banner.title} — ${banner.detail}` : banner.title,
+        tone: banner.tone === 'safety' ? 'safety' : 'danger',
+        priority: banner.tone === 'safety' ? 2 : 1,
+      })
+    }
+    seenBannerIdsRef.current = current
+  }, [view.banners, enqueueAlert])
+
+  // Your own state changes. The persistent text stays in the HUD; the alert is the nudge.
+  const youStatus = view.you.status
+  const youId = view.you.player_id
+  useEffect(() => {
+    if (youStatus === 'eliminated') {
+      enqueueAlert({
+        key: 'out:self',
+        text: "You're out — A seeker tagged you. Stay safe and wait for the hunt to end.",
+        tone: 'danger',
+        priority: 1,
+      })
+    } else if (youStatus === 'signal_lost') {
+      enqueueAlert({
+        // Same key the server banner for this player uses, so one event is one alert.
+        key: `dark:${youId}`,
+        text: 'Signal lost. Check that your screen is on.',
+        tone: 'safety',
+        priority: 2,
+      })
+    }
+  }, [youStatus, youId, enqueueAlert])
+
+  const boundsPhase = view.you.bounds?.phase ?? 'inside'
+  useEffect(() => {
+    if (boundsPhase === 'inside') {
+      return
+    }
+    enqueueAlert({
+      // One key for every outside phase, so warning -> countdown refreshes one entry.
+      key: 'oob:self',
+      text: boundsPhase === 'penalized' ? 'Tagged out of bounds.' : 'Out of bounds. Walk back in.',
+      tone: 'danger',
+      priority: 1,
+    })
+  }, [boundsPhase, enqueueAlert])
+
+  // One-off messages from actions (power denied, tag accepted, ...). Lowest priority.
+  // Depends on the state object, so setting the same text again alerts again.
+  useEffect(() => {
+    if (!localNoteState) {
+      return
+    }
+    enqueueAlert({
+      key: `note:${localNoteState.text}`,
+      text: localNoteState.text,
+      tone: 'info',
+      priority: 4,
+    })
+  }, [localNoteState, enqueueAlert])
 
   useEffect(() => {
     const map = mapRef.current
@@ -801,10 +878,14 @@ export function LiveMap({
     })
   }
 
-  // Filter socket "too fast" noise out of the main alert strip.
+  // Filter socket "too fast" noise out of the HUD.
   const socketNote =
     note && note.toLowerCase().includes('too fast') ? null : note
-  const alert = wentDark ?? oobNote ?? socketNote ?? localNote
+  // Persistent state (not an alert): stays until the condition clears.
+  const statusLine = wentDark ?? oobNote ?? socketNote
+  const statusIsWarn = Boolean(wentDark || oobNote)
+  // Ongoing-state banners (spawn lock, safe time up) stay visible; only news is an alert.
+  const stateBanners = (view.banners ?? []).filter((banner) => !isAlertBanner(banner))
 
   const ranked = [...(view.players ?? [])].sort(
     (a, b) => (b.points_earned ?? b.points ?? 0) - (a.points_earned ?? a.points ?? 0),
@@ -847,7 +928,6 @@ export function LiveMap({
           {zoneTimer?.shrinks_in_s != null && playBoundary?.kind === 'circle' ? (
             <span className="hud-sub">Shrink {formatClock(zoneTimer.shrinks_in_s)}</span>
           ) : null}
-          {pingFlash ? <span className="hud-flash">{pingFlash}</span> : null}
           <span className="hud-sub">{view.you.points ?? 0} pts</span>
           {accuracyM != null ? (
             <span className={`hud-sub${accuracyM > 30 ? ' hud-sub--warn' : ''}`}>
@@ -856,6 +936,20 @@ export function LiveMap({
           ) : (
             <span className="hud-sub hud-sub--warn">GPS…</span>
           )}
+          {/* aria-live off: the matching one-shot alert is what a screen reader announces. */}
+          {statusLine ? (
+            <span
+              className={`hud-hint${statusIsWarn ? ' hud-hint--warn' : ''}`}
+              aria-live="off"
+            >
+              {statusLine}
+            </span>
+          ) : null}
+          {stateBanners.map((banner) => (
+            <span key={banner.banner_id} className="hud-hint hud-hint--warn" aria-live="off">
+              {banner.detail ? `${banner.title} — ${banner.detail}` : banner.title}
+            </span>
+          ))}
           {hintText ? <span className="hud-hint">{hintText}</span> : null}
           {effectLines.map((line) => (
             <span key={line} className="hud-sub hud-sub--effect">
@@ -865,26 +959,26 @@ export function LiveMap({
         </div>
       ) : null}
 
-      {youEliminated && !overlayOpen ? (
-        <div className="banners">
-          <p className="banner banner--danger" role="status">
-            <strong>You&apos;re out</strong>
-            {' — '}
-            A seeker tagged you. Stay safe and wait for the hunt to end.
-          </p>
-        </div>
-      ) : null}
-
-      {banners.length > 0 && !overlayOpen ? (
-        <div className="banners">
-          {banners.map((banner) => (
-            <p key={banner.banner_id} className={`banner banner--${banner.tone}`}>
-              <strong>{banner.title}</strong>
-              {banner.detail ? ` — ${banner.detail}` : ''}
+      {/* Zero-height anchor: the alert overlays the map and never changes its height. */}
+      {/*
+        The live region is always mounted and only its text changes: many screen readers
+        skip a region that is created together with its content. Tag, out-of-bounds and
+        safety alerts are assertive; ping and updates are polite. The key makes a resumed
+        alert a new node, so it is announced again.
+      */}
+      <div className="alert-anchor">
+        <div
+          className={`banners${shownAlert && !overlayOpen ? '' : ' banners--empty'}`}
+          aria-live={shownAlert && shownAlert.priority <= 2 ? 'assertive' : 'polite'}
+          aria-atomic="true"
+        >
+          {shownAlert && !overlayOpen ? (
+            <p key={shownAlert.showId} className={`banner banner--${shownAlert.tone}`}>
+              {shownAlert.text}
             </p>
-          ))}
+          ) : null}
         </div>
-      ) : null}
+      </div>
 
       <div
         className={`map-frame${overlayOpen ? ' map-frame--hidden' : ''}`}
@@ -895,11 +989,6 @@ export function LiveMap({
 
       {!overlayOpen ? (
         <footer className="bottom-stack">
-          {alert ? (
-            <p className={`alert${oobNote || wentDark ? ' alert--warn' : ''}`} role="alert">
-              {alert}
-            </p>
-          ) : null}
           {toast ? (
             <p className="toast" role="status">
               {toast}

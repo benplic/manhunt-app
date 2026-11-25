@@ -2,11 +2,12 @@ import Foundation
 
 /// Dock line for a hot/cold hint. The server owns the band, meters, and bearing.
 enum HintCopy {
-    static func line(role: PlayerRole, hint: HintDTO?) -> String {
-        // Classic Seeker reveal is Off, so a hider with no payload still sees the old line.
+    /// Nil means "show nothing". A hider with no payload (Classic seeker reveal is Off)
+    /// gets no line, and the caller collapses the whole row.
+    static func line(role: PlayerRole, hint: HintDTO?) -> String? {
         if role == .hider {
             guard let hint, let band = hint.band else {
-                return "Warmth is hidden from you."
+                return nil
             }
             return sentence(
                 name: hint.name ?? "A seeker",

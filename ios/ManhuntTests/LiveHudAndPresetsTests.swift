@@ -481,7 +481,7 @@ final class LiveHudAndPresetsTests: XCTestCase {
     }
 
     @MainActor
-    func testLiveUpdateFiltersNoiseAndExpiresAfterTwelveSeconds() {
+    func testLiveUpdateFiltersNoiseAndExpiresAfterFourSeconds() {
         let store = AppStore.makePreview()
         let t0 = Date(timeIntervalSince1970: 1_000)
 
@@ -506,7 +506,7 @@ final class LiveHudAndPresetsTests: XCTestCase {
             ),
             now: t0
         )
-        XCTAssertNil(store.liveUpdate)
+        XCTAssertNil(store.alerts.current)
 
         store.recordLiveEvent(
             LiveEventDTO(
@@ -515,14 +515,94 @@ final class LiveHudAndPresetsTests: XCTestCase {
             ),
             now: t0
         )
-        XCTAssertEqual(store.liveUpdate?.text, "Zone shrinks to 250 m in 1 min.")
-        XCTAssertEqual(store.liveUpdate?.tone, "warning")
+        XCTAssertEqual(store.alerts.current?.text, "Zone shrinks to 250 m in 1 min.")
+        XCTAssertEqual(store.alerts.current?.tone, "warning")
 
-        store.clearExpiredLiveUpdate(now: t0.addingTimeInterval(11))
-        XCTAssertNotNil(store.liveUpdate)
+        store.clearExpiredLiveUpdate(now: t0.addingTimeInterval(3.9))
+        XCTAssertNotNil(store.alerts.current)
 
-        store.clearExpiredLiveUpdate(now: t0.addingTimeInterval(12.5))
-        XCTAssertNil(store.liveUpdate)
+        store.clearExpiredLiveUpdate(now: t0.addingTimeInterval(4))
+        XCTAssertNil(store.alerts.current)
+    }
+
+    @MainActor
+    func testYourOwnLastFixAlertIsNotShownButAnotherPlayersIs() {
+        let store = AppStore.makePreview()
+        let view = Fixtures.liveView(elapsed: 10, nextReveal: 30, role: .hider)
+        store.apply(view)
+        let me = view.you.playerId
+        let t0 = Date(timeIntervalSince1970: 1_000)
+
+        store.recordLiveEvent(
+            LiveEventDTO(
+                seq: 30, type: "final_ping", text: "Casey sent a last fix.", tone: "safety",
+                playerId: me, announcement: nil, subjectName: nil
+            ),
+            now: t0
+        )
+        XCTAssertNil(store.alerts.current)
+
+        store.recordLiveEvent(
+            LiveEventDTO(
+                seq: 31, type: "final_ping", text: "Riley sent a last fix.", tone: "safety",
+                playerId: UUID(), announcement: nil, subjectName: nil
+            ),
+            now: t0
+        )
+        XCTAssertEqual(store.alerts.current?.text, "Riley sent a last fix.")
+    }
+
+    @MainActor
+    func testALowerPriorityEventWaitsBehindATagAlertInsteadOfBeingSkipped() {
+        let store = AppStore.makePreview()
+        let t0 = Date(timeIntervalSince1970: 1_000)
+
+        store.recordLiveEvent(
+            LiveEventDTO(
+                seq: 10, type: "out_of_bounds", text: "Casey is out of bounds.", tone: "danger",
+                playerId: nil, announcement: nil, subjectName: nil
+            ),
+            now: t0
+        )
+        store.recordLiveEvent(
+            LiveEventDTO(
+                seq: 11, type: "zone_warning", text: "Zone shrinks soon.", tone: "warning",
+                playerId: nil, announcement: nil, subjectName: nil
+            ),
+            now: t0.addingTimeInterval(1)
+        )
+
+        XCTAssertEqual(store.alerts.current?.text, "Casey is out of bounds.")
+        XCTAssertEqual(store.alerts.queued.map(\.text), ["Zone shrinks soon."])
+
+        store.clearExpiredLiveUpdate(now: t0.addingTimeInterval(4))
+        XCTAssertEqual(store.alerts.current?.text, "Zone shrinks soon.")
+
+        store.clearExpiredLiveUpdate(now: t0.addingTimeInterval(8))
+        XCTAssertNil(store.alerts.current)
+    }
+
+    @MainActor
+    func testPingFlashWaitsBehindAHigherPriorityAlertThenPlays() {
+        let store = AppStore.makePreview()
+        let t0 = Date(timeIntervalSince1970: 1_000)
+
+        store.recordLiveEvent(
+            LiveEventDTO(
+                seq: 20, type: "tag", text: "Riley was tagged.", tone: "danger",
+                playerId: nil, announcement: nil, subjectName: nil
+            ),
+            now: t0
+        )
+        store.apply(Fixtures.liveView(elapsed: 59, nextReveal: 1, role: .hider), now: t0)
+        store.apply(Fixtures.liveView(elapsed: 60, nextReveal: 60, role: .hider), now: t0.addingTimeInterval(1))
+
+        // The tag alert has the slot, so the flash has not started yet.
+        XCTAssertNil(store.pingPulse)
+        XCTAssertEqual(store.alerts.queued.count, 1)
+
+        store.clearExpiredLiveUpdate(now: t0.addingTimeInterval(4))
+        XCTAssertEqual(store.pingPulse?.role, .hider)
     }
 
     @MainActor
@@ -544,7 +624,7 @@ final class LiveHudAndPresetsTests: XCTestCase {
             now: t0
         )
         XCTAssertNil(store.tagAnnouncement)
-        XCTAssertEqual(store.liveUpdate?.text, "Return to the play area.")
+        XCTAssertEqual(store.alerts.current?.text, "Return to the play area.")
 
         store.recordLiveEvent(
             LiveEventDTO(
@@ -823,7 +903,7 @@ final class LiveHudAndPresetsTests: XCTestCase {
             ),
             now: Date(timeIntervalSince1970: 2_000)
         )
-        XCTAssertNil(store.liveUpdate)
+        XCTAssertNil(store.alerts.current)
     }
 }
 

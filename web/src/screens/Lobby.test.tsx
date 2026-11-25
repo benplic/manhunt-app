@@ -67,6 +67,53 @@ describe('Lobby screen', () => {
     window.localStorage.clear()
   })
 
+  it('allows radii up to 3,000 m and blocks anything beyond', async () => {
+    const user = userEvent.setup()
+    setLobbyCircle.mockResolvedValue(lobbyView())
+    render(
+      <Lobby
+        view={lobbyView()}
+        onView={() => undefined}
+        onLeave={() => undefined}
+        onSignedOut={() => undefined}
+      />,
+    )
+    const radius = screen.getByLabelText(/radius \(m\)/i)
+    expect(radius).toHaveAttribute('min', '30')
+    expect(radius).toHaveAttribute('max', '3000')
+    const apply = screen.getByRole('button', { name: /apply radius/i })
+
+    for (const [value, allowed] of [
+      ['2000', true],
+      ['2001', true],
+      ['3000', true],
+      ['3001', false],
+      ['29', false],
+      ['', false],
+    ] as const) {
+      await user.clear(radius)
+      if (value) {
+        await user.type(radius, value)
+      }
+      if (allowed) {
+        expect(apply).toBeEnabled()
+        expect(screen.queryByText(/between 30 m and 3,000 m/i)).not.toBeInTheDocument()
+      } else {
+        expect(apply).toBeDisabled()
+        expect(screen.getByText(/between 30 m and 3,000 m/i)).toBeInTheDocument()
+      }
+    }
+
+    await user.clear(radius)
+    await user.type(radius, '3000')
+    await user.click(apply)
+    await waitFor(() => {
+      expect(setLobbyCircle).toHaveBeenCalledWith(
+        expect.objectContaining({ gameId: 'game-1', radiusM: 3000 }),
+      )
+    })
+  })
+
   it('asks before leaving', async () => {
     const user = userEvent.setup()
     const onLeave = vi.fn()

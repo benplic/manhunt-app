@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.auth.tokens import parse_token
+from app.engine.events import visible_to
 from app.engine.session import consume_location_reset, movement_too_fast, note_presence
 from app.engine.state import LocationReading
 from app.errors import ApiError, GameRuleError
@@ -71,7 +72,7 @@ def bind_ws(manager: SessionManager, get_settings, persist_location=None):
             except (TypeError, ValueError):
                 last_seq = 0
             for event in session.state.event_log:
-                if event.seq <= last_seq or event.sensitive:
+                if event.seq <= last_seq or not visible_to(event, user_id):
                     continue
                 await ws.send_json(
                     envelope(
@@ -144,6 +145,7 @@ def bind_ws(manager: SessionManager, get_settings, persist_location=None):
         try:
             while True:
                 message = await ws.receive_json()
+                manager.note_activity(game_id)
                 kind = message.get("type")
                 payload = message.get("data") or {}
                 if kind == "ping":

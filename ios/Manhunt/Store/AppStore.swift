@@ -34,13 +34,6 @@ struct MatchHandle {
     var clockAnchorAt = Date()
 }
 
-struct LiveUpdate: Equatable {
-    var id: UUID
-    var text: String
-    var tone: String
-    var receivedAt: Date
-}
-
 struct PingPulse: Equatable {
     var id = UUID()
     var role: PlayerRole
@@ -106,13 +99,17 @@ final class AppStore {
     var locationAccuracy: LocationReporter.Accuracy = .notDetermined
     var pasteToken = ""
     var tagMessage: String?
-    var liveUpdate: LiveUpdate?
+    /// The one visible live alert and the priority queue behind it. Lower-priority alerts
+    /// wait here while a higher one shows; they are never dropped for that reason.
+    let alerts = AlertPresenter()
+    /// Snapshot banner ids already alerted, so a banner that stays in the view alerts once.
+    private var seenBannerIDs: Set<UUID> = []
+    private var sceneWasBackground = false
     var tagAnnouncement: TagAnnouncement?
     private(set) var pendingTagAnnouncements: [TagAnnouncement] = []
     var pingPulse: PingPulse?
     var flashlightOn = false
     var timeline: [TimelineEventDTO] = []
-    private var liveUpdateExpiryTask: Task<Void, Never>?
     private var tagAnnouncementExpiryTask: Task<Void, Never>?
     private var tagAnnouncementStartedAt: Date?
     private var seenTagAnnouncementSequences: Set<Int> = []
@@ -179,6 +176,13 @@ final class AppStore {
         }
         if let fake {
             arenas = fake.storedArenas
+        }
+        // The ping flash plays when its alert takes the slot, so it waits behind a tag
+        // or out-of-bounds alert instead of flashing over it.
+        alerts.onShow = { [weak self] alert in
+            if case let .ping(role) = alert.kind {
+                self?.pingPulse = PingPulse(role: role)
+            }
         }
         location.onUpdate = { [weak self] loc in
             guard let self else { return }
@@ -490,7 +494,7 @@ final class AppStore {
         editor.issues.map { issue in
             switch issue {
             case .playAreaTooSmall: return "Play area needs at least three points."
-            case .playAreaRadiusInvalid: return "Play area radius must be between 30 m and 2,000 m."
+            case .playAreaRadiusInvalid: return ArenaValidator.radiusRangeMessage
             case let .selfIntersection(name): return "\(name) crosses itself."
             case let .outsidePlayArea(name): return "\(name) leaves the play area."
             }
@@ -557,6 +561,13 @@ final class AppStore {
 
     /// Best-effort last ping when the hunt is backgrounded or the host ends it.
     func handleScenePhase(isBackground: Bool) {
+        // .inactive -> .active (Control Center, a call banner) is not a return from the
+        // background, so only trim the queue after a real background stay.
+        if !isBackground, sceneWasBackground {
+            // Back from the background: show the few best queued alerts, not the backlog.
+            alerts.resumeFromBackground()
+        }
+        sceneWasBackground = isBackground
         if isBackground {
             turnOffFlashlight()
             if screen == .live {
@@ -625,24 +636,53 @@ final class AppStore {
             enqueueTagAnnouncement(announcement, now: now)
         }
 
+        // Safety net: the server already withholds your own "sent a last fix" event.
+        // Matched on ids, never on text.
+        if event.type == "final_ping", let sender = event.playerId,
+           sender == match?.snapshot.you.playerId {
+            return
+        }
+
         guard PauseChrome.shouldToast(eventTitle: event.type) else { return }
         let ignored: Set<String> = ["started", "player_joined", "location"]
         let trimmed = event.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !ignored.contains(event.type), !trimmed.isEmpty else { return }
-        let update = LiveUpdate(
-            id: UUID(),
-            text: trimmed,
-            tone: event.tone,
-            receivedAt: now
+        alerts.enqueue(
+            LiveAlert(
+                text: trimmed,
+                tone: event.tone,
+                priority: Self.alertPriority(forEventType: event.type),
+                subjectKey: Self.alertSubjectKey(
+                    forEventType: event.type,
+                    playerID: event.playerId,
+                    seq: event.seq
+                ),
+                createdAt: now
+            ),
+            now: now
         )
-        liveUpdate = update
-        liveUpdateExpiryTask?.cancel()
-        liveUpdateExpiryTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(12))
-            guard !Task.isCancelled, let self else { return }
-            if self.liveUpdate?.id == update.id {
-                self.liveUpdate = nil
-            }
+    }
+
+    /// Subject plus type. A player going dark arrives as both a `signal_lost` event and a
+    /// safety banner, so both use `dark:<player id>` and collapse into one alert. Events
+    /// with no player id use the event's own sequence so two of them never merge.
+    static func alertSubjectKey(forEventType type: String, playerID: UUID?, seq: Int? = nil) -> String {
+        let subject = playerID?.uuidString ?? "game"
+        if type == "signal_lost" {
+            return "dark:\(subject)"
+        }
+        if playerID == nil, let seq {
+            return "\(type):\(seq)"
+        }
+        return "\(type):\(subject)"
+    }
+
+    /// Tag and out-of-bounds outrank a player going dark, which outranks everything else.
+    static func alertPriority(forEventType type: String) -> AlertPriority {
+        switch type {
+        case "tag", "out_of_bounds": return .tagOrBounds
+        case "signal_lost", "signal_loss_penalty", "final_ping": return .safety
+        default: return .update
         }
     }
 
@@ -691,11 +731,32 @@ final class AppStore {
         seenTagAnnouncementSequences = []
     }
 
-    func clearExpiredLiveUpdate(now: Date = Date()) {
-        guard let liveUpdate else { return }
-        if now.timeIntervalSince(liveUpdate.receivedAt) >= 12 {
-            self.liveUpdate = nil
+    /// Safety banners ("went dark") alert once per banner id and collapse per player, so a
+    /// flapping signal cannot flood the queue. Other banners stay in the top column.
+    private func enqueueNewSafetyBanners(in view: PlayerViewDTO, now: Date) {
+        let current = Set(view.banners.map(\.bannerId))
+        defer { seenBannerIDs = current }
+        for banner in view.banners where banner.tone == "safety" && !seenBannerIDs.contains(banner.bannerId) {
+            alerts.enqueue(
+                LiveAlert(
+                    text: banner.detail.isEmpty ? banner.title : "\(banner.title). \(banner.detail)",
+                    tone: banner.tone,
+                    priority: .safety,
+                    // Same key as the `signal_lost` event for this player: one event, one alert.
+                    subjectKey: Self.alertSubjectKey(
+                        forEventType: "signal_lost",
+                        playerID: banner.playerId
+                    ),
+                    createdAt: now
+                ),
+                now: now
+            )
         }
+    }
+
+    /// Ends the visible alert after its 4 seconds and shows the next queued one.
+    func clearExpiredLiveUpdate(now: Date = Date()) {
+        alerts.advance(now: now)
     }
 
     /// Short-lived toast for demo/errors. Snapshot banners stay on their own UI.
@@ -743,8 +804,8 @@ final class AppStore {
         joinDraft = ""
         joinMessage = nil
         note = nil
-        liveUpdate = nil
-        liveUpdateExpiryTask?.cancel()
+        alerts.reset()
+        seenBannerIDs = []
         clearTagAnnouncements()
         noteExpiryTask?.cancel()
     }
@@ -769,8 +830,8 @@ final class AppStore {
         pingPulse = nil
         screen = .home
         note = nil
-        liveUpdate = nil
-        liveUpdateExpiryTask?.cancel()
+        alerts.reset()
+        seenBannerIDs = []
         clearTagAnnouncements()
         noteExpiryTask?.cancel()
         guard let gameID else { return }
@@ -1429,7 +1490,7 @@ final class AppStore {
         case "play_area_too_small":
             return "Play area needs at least three points."
         case "play_area_radius_invalid":
-            return "Play area radius must be between 30 m and 2,000 m."
+            return ArenaValidator.radiusRangeMessage
         default:
             return error.message
         }
@@ -1847,8 +1908,21 @@ final class AppStore {
     func apply(_ view: PlayerViewDTO, now: Date = Date()) {
         clearConnectionHiccup(restoreSituation: true)
         if PingDetector.didPing(previous: match?.snapshot, next: view) {
-            pingPulse = PingPulse(role: view.you.role)
+            // Priority 3. `alerts.onShow` starts the flash once this alert has the slot.
+            let isHider = view.you.role == .hider
+            alerts.enqueue(
+                LiveAlert(
+                    text: isHider ? "PINGED" : "PING",
+                    tone: "warning",
+                    priority: .ping,
+                    subjectKey: "ping:\(view.you.role.rawValue)",
+                    createdAt: now,
+                    kind: .ping(view.you.role)
+                ),
+                now: now
+            )
         }
+        enqueueNewSafetyBanners(in: view, now: now)
         let anchor = ClockLead.anchor(
             previous: match?.snapshot,
             previousAnchor: match?.clockAnchorAt,
@@ -1869,8 +1943,7 @@ final class AppStore {
             location.stop()
             live?.disconnect()
             note = nil
-            liveUpdate = nil
-            liveUpdateExpiryTask?.cancel()
+            alerts.reset()
             noteExpiryTask?.cancel()
             screen = .results
             Task { await loadTimeline() }
@@ -2084,8 +2157,8 @@ final class AppStore {
         live?.disconnect()
         match = nil
         pingPulse = nil
-        liveUpdate = nil
-        liveUpdateExpiryTask?.cancel()
+        alerts.reset()
+        seenBannerIDs = []
         clearTagAnnouncements()
         withAnimation(.snappy(duration: 0.35)) {
             screen = .home
@@ -2382,7 +2455,7 @@ final class AppStore {
     private func issueCopy(_ issue: ArenaIssue) -> String {
         switch issue {
         case .playAreaTooSmall: return "Play area needs at least three points."
-        case .playAreaRadiusInvalid: return "Play area radius must be between 30 m and 2,000 m."
+        case .playAreaRadiusInvalid: return ArenaValidator.radiusRangeMessage
         case let .selfIntersection(name): return "\(name) crosses itself."
         case let .outsidePlayArea(name): return "\(name) leaves the play area."
         }

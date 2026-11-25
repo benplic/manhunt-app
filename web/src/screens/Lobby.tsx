@@ -15,6 +15,7 @@ import { SUPPORT_EMAIL } from '../api/legal'
 import { SessionExpiredError, withAuthRetry } from '../api/session'
 import type { PlayerView } from '../api/types'
 import { ConfirmDialog } from '../game/ConfirmDialog'
+import { arenaRadiusError, MAX_ARENA_RADIUS_M, MIN_ARENA_RADIUS_M } from '../geo/arenaRadius'
 import { blockPlayer, displayNameFor, reportMailto } from '../social/blockList'
 import './Lobby.css'
 
@@ -42,6 +43,7 @@ export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props)
   const [joinQr, setJoinQr] = useState<string | null>(null)
   const radiusNow = view.arena?.boundary_circle?.radius_m ?? DEFAULT_ARENA_RADIUS_M
   const [radiusDraft, setRadiusDraft] = useState(radiusNow)
+  const radiusDraftError = arenaRadiusError(radiusDraft)
   const [note, setNote] = useState<string | null>(null)
   const isHost = view.you.is_host
   const alert = error ?? note ?? socketNote ?? null
@@ -337,22 +339,33 @@ export function Lobby({ view, onView, onLeave, onSignedOut, socketNote }: Props)
             Radius (m)
             <input
               type="number"
-              min={30}
-              max={2000}
+              min={MIN_ARENA_RADIUS_M}
+              max={MAX_ARENA_RADIUS_M}
               step={50}
               value={radiusDraft}
               onChange={(e) => setRadiusDraft(Number(e.target.value))}
+              aria-invalid={radiusDraftError !== null}
             />
           </label>
+          {radiusDraftError ? (
+            <p className="error" role="alert">
+              {radiusDraftError}
+            </p>
+          ) : null}
           <button
             type="button"
             className="secondary"
-            disabled={busy || radiusDraft === radiusNow}
+            disabled={busy || radiusDraft === radiusNow || radiusDraftError !== null}
             onClick={() => void onApplyRadius()}
           >
             Apply radius
           </button>
-          <button type="button" className="secondary" disabled={busy} onClick={() => void onUseGpsCenter()}>
+          <button
+            type="button"
+            className="secondary"
+            disabled={busy || radiusDraftError !== null}
+            onClick={() => void onUseGpsCenter()}
+          >
             Use my GPS as center
           </button>
         </section>

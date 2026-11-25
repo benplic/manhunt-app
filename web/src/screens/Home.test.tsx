@@ -98,6 +98,67 @@ describe('Home screen', () => {
     })
   })
 
+  it('caps the create radius at 3,000 m', async () => {
+    const user = userEvent.setup()
+    render(<Home onSignedOut={() => undefined} onEnteredGame={() => undefined} />)
+    const radius = screen.getByLabelText(/play circle radius/i)
+    expect(radius).toHaveAttribute('min', '30')
+    expect(radius).toHaveAttribute('max', '3000')
+    const create = screen.getByRole('button', { name: /create game/i })
+
+    for (const [value, allowed] of [
+      ['2000', true],
+      ['2001', true],
+      ['3000', true],
+      ['3001', false],
+      ['29', false],
+      ['', false],
+    ] as const) {
+      await user.clear(radius)
+      if (value) {
+        await user.type(radius, value)
+      }
+      if (allowed) {
+        expect(create).toBeEnabled()
+        expect(screen.queryByText(/between 30 m and 3,000 m/i)).not.toBeInTheDocument()
+      } else {
+        expect(create).toBeDisabled()
+        expect(screen.getByText(/between 30 m and 3,000 m/i)).toBeInTheDocument()
+      }
+    }
+    expect(createGame).not.toHaveBeenCalled()
+  })
+
+  it('creates a 3,000 m game', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('navigator', {
+      geolocation: {
+        getCurrentPosition: (success: PositionCallback) => {
+          success({
+            coords: { latitude: 40.66, longitude: -73.96, accuracy: 12 },
+            timestamp: Date.now(),
+          } as GeolocationPosition)
+        },
+      },
+    })
+    createGame.mockResolvedValue({
+      game_id: 'game-3k',
+      join_code: 'ABCDEF',
+      phase: 'lobby',
+      you: { player_id: 'u1', role: 'hider', status: 'active', is_host: true },
+      players: [],
+    })
+    render(<Home onSignedOut={() => undefined} onEnteredGame={() => undefined} />)
+    const radius = screen.getByLabelText(/play circle radius/i)
+    await user.clear(radius)
+    await user.type(radius, '3000')
+    await user.click(screen.getByRole('button', { name: /create game/i }))
+
+    await waitFor(() => {
+      expect(createGame).toHaveBeenCalledWith(expect.objectContaining({ radiusM: 3000 }))
+    })
+  })
+
   it('refreshes once then signs out when the session is dead', async () => {
     const user = userEvent.setup()
     const onSignedOut = vi.fn()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -21,6 +22,7 @@ from app.config import Settings, get_settings
 from app.db.models import GameRow
 from app.db.session import create_schema, lifespan_resources
 from app.demo.routes import bind_demo_routes
+from app.engine.session import GameSession
 from app.errors import ApiError, ErrorCode, GameRuleError
 from app.games.routes import bind_game_routes
 from app.games.service import GameService
@@ -55,6 +57,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     manager = SessionManager(
         qr_key=settings.manhunt_qr_signing_key,
         demo_controls_enabled=settings.demo_controls_enabled,
+        idle_freeze_s=settings.manhunt_idle_freeze_s,
     )
     service = GameService(manager)
 
@@ -108,8 +111,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         )
                     except Exception:
                         # A single broken trail (e.g. move_safe to a missing zone)
-                        # must not keep the home server from booting.
-                        log.exception("game_rebuild_failed game_id=%s", row.id)
+                        # must not keep the home server from booting. Abandoning it
+                        # also stops it from failing again on every later restart.
+                        log.exception(
+                            "game_rebuild_failed game_id=%s join_code=%s previous_status=%s "
+                            "action=marked_abandoned",
+                            row.id,
+                            row.join_code,
+                            row.status,
+                        )
+                        get_playtest_log().emit(
+                            "game_rebuild_failed",
+                            game_id=row.id,
+                            join_code=row.join_code,
+                            previous_status=row.status,
+                            action="marked_abandoned",
+                        )
                         row.status = "abandoned"
                         continue
                     manager.sessions[row.id] = game
@@ -125,17 +142,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except Exception:
                 log.exception("trail_purge_failed")
 
-        async def persist_all() -> None:
-            # One session/commit per game so a single failure cannot dirty the rest.
-            for game in list(manager.sessions.values()):
-                async with factory() as session:
-                    try:
-                        await service.persist_game(session, game, commit=True)
-                    except Exception:
-                        await session.rollback()
-                        log.exception(
-                            "persist_game_failed game_id=%s", game.state.game_id
-                        )
+        async def persist_one(game: GameSession) -> None:
+            # The tick loop runs this detached, one at a time per game, so a slow
+            # database cannot stretch game time. One session/commit per game so a
+            # single failure cannot dirty the rest. Errors propagate on purpose: the
+            # session context rolls back, and the manager logs the failure and retries
+            # (it only marks an ended game as saved after this returns cleanly).
+            async with factory() as session:
+                await service.persist_game(session, game, commit=True)
 
         async def keep_alive() -> None:
             # Loopback HTTP so ACA request concurrency stays above zero.
@@ -150,7 +164,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         purge_task = None
         if settings.manhunt_tick_loop:
             task = asyncio.create_task(
-                manager.tick_loop(True, keep_alive=keep_alive, persist=persist_all)
+                manager.tick_loop(True, keep_alive=keep_alive, persist=persist_one)
             )
 
             async def daily_purge() -> None:
@@ -164,10 +178,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
             purge_task = asyncio.create_task(daily_purge())
         yield
-        if task:
-            task.cancel()
-        if purge_task:
-            purge_task.cancel()
+        for background in (task, purge_task):
+            if background:
+                background.cancel()
+        for background in (task, purge_task):
+            if background:
+                # Wait for the loop to stop so it cannot start new work, then for the
+                # detached persist/broadcast it left behind, before the engine goes away.
+                with contextlib.suppress(asyncio.CancelledError):
+                    await background
+        await manager.drain_io()
         await engine.dispose()
 
     # The public Azure ingress should not serve the interactive schema.
@@ -182,6 +202,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.manager = manager
+    app.state.game_service = service
     app.state.session_factory = factory
 
     # Static web client (Vite / Cloudflare Pages) talks to this API cross-origin.
@@ -264,7 +285,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         active = sum(
             1
             for s in manager.sessions.values()
-            if s.state.phase in {"lobby", "head_start", "active", "paused"}
+            if s.state.phase in {"lobby", "head_start", "active", "paused"} and not s.idle_frozen
         )
         return {"status": "ok", "active_games": active}
 

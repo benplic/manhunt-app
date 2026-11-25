@@ -22,7 +22,9 @@ from app.db.base import Base  # noqa: E402
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Keep app loggers alive. The default would silence every logger created before
+    # a migration runs, including the manhunt.* ones the tests assert on.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

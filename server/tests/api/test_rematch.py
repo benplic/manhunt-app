@@ -87,7 +87,7 @@ def test_rematch_opens_a_new_lobby_with_same_rules(client: TestClient) -> None:
     assert new_id != game_id
     assert body["you"]["is_host"] is True
     assert len(body["players"]) == 1
-    assert body["join_code"] != ended["join_code"]
+    assert body["join_code"] == ended["join_code"]
 
     # Ended game stays ended and untouched.
     old = client.get(f"/v1/games/{game_id}", headers=headers).json()
@@ -98,7 +98,7 @@ def test_rematch_opens_a_new_lobby_with_same_rules(client: TestClient) -> None:
     assert new_session.state.preset["modules"]["head_start"]["duration"] == 15
     assert new_session.state.preset["id"] == original_preset["id"]
 
-    # Guest can join the new lobby with the new code.
+    # Guest can join the new lobby with the code they already know.
     guest_join = client.post(
         "/v1/games/join",
         json={"join_code": body["join_code"]},
