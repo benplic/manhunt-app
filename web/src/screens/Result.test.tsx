@@ -9,6 +9,9 @@ const rematchGame = vi.fn()
 
 vi.mock('../api/games', () => ({
   rematchGame: (...args: unknown[]) => rematchGame(...args),
+  fetchGameEvents: async () => ({
+    events: [{ seq: 1, type: 'tag', payload: { text: 'Riley was tagged.' } }],
+  }),
 }))
 
 vi.mock('../api/session', () => ({
@@ -64,6 +67,24 @@ describe('Result screen', () => {
     )
     expect(screen.getByText(/seekers win/i)).toBeInTheDocument()
     expect(screen.getByText(/all hiders were tagged/i)).toBeInTheDocument()
+  })
+
+  it('folds the event log away until it is opened', async () => {
+    const user = userEvent.setup()
+    const { container } = render(
+      <Result
+        view={endedView}
+        onDone={() => undefined}
+        onRematch={() => undefined}
+        onSignedOut={() => undefined}
+      />,
+    )
+    const log = await screen.findByText(/event log \(/i)
+    const details = container.querySelector('details.event-log-section')
+    expect(details).not.toHaveAttribute('open')
+
+    await user.click(log)
+    expect(details).toHaveAttribute('open')
   })
 
   it('calls onDone when leaving the result', async () => {

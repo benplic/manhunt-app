@@ -115,8 +115,8 @@ export function Result({ view, onDone, onRematch, onSignedOut }: Props) {
         </section>
       ) : null}
       {events && events.length > 0 ? (
-        <section className="event-log-section">
-          <h2>Event log</h2>
+        <details className="event-log-section">
+          <summary>Event log ({events.length})</summary>
           <ol>
             {events.map((event) => (
               <li key={event.seq}>
@@ -126,7 +126,7 @@ export function Result({ view, onDone, onRematch, onSignedOut }: Props) {
               </li>
             ))}
           </ol>
-        </section>
+        </details>
       ) : null}
     </main>
   )
