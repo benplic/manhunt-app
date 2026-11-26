@@ -136,6 +136,12 @@ class GameSession:
         roles = {p.role for p in self.state.players.values()}
         if "hider" not in roles or "seeker" not in roles:
             raise GameRuleError(ErrorCode.NEED_BOTH_ROLES)
+        # The lobby says everyone not picked as a seeker hides. Without this, a player who
+        # joined after roles were set keeps role "unassigned" and every tag they attempt is
+        # refused with WRONG_ROLE. Deterministic, so a replayed `start` lands on the same roles.
+        for player in self.state.players.values():
+            if player.role == "unassigned":
+                player.role = "hider"
         for module in self.modules:
             module.on_start(self)
         self.emit("started", {"text": "The hunt is on."})

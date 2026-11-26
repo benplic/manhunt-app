@@ -273,6 +273,14 @@ class GameService:
             if (count or 0) >= MAX_GAME_PLAYERS:
                 raise ApiError(ErrorCode.GAME_FULL, "This lobby is full.", status_code=409)
             game = self._live(row)
+            # Check before the membership row is written. A refused join after the commit
+            # left a seat the live game never had, and every later view of it raised a 500.
+            if game.state.phase != "lobby":
+                raise ApiError(
+                    ErrorCode.WRONG_PHASE,
+                    "This hunt has already started.",
+                    status_code=409,
+                )
             self._reject_duplicate_display_name(game, user)
             session.add(GamePlayerRow(game_id=row.id, user_id=user.id))
             await session.commit()
