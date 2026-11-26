@@ -1,3 +1,4 @@
+/* A radial gradient, not a hard inset line: clear in the middle, red toward the edges. */
 .tag-announcement {
   position: fixed;
   inset: 0;
@@ -8,9 +9,19 @@
   pointer-events: none;
   color: #fff;
   text-align: center;
-  background: transparent;
-  box-shadow: inset 0 0 0 8px rgba(255, 38, 38, 0.95);
-  animation: tag-announcement-edge 500ms ease-in-out infinite alternate;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 38, 38, 0) 30%,
+    rgba(255, 38, 38, 0.4) 65%,
+    rgba(255, 38, 38, 0.92) 100%
+  );
+  /* No fill-mode: once the fade-in ends, the leaving opacity below takes over. */
+  animation: tag-announcement-in 180ms ease-out;
+  transition: opacity 450ms ease-out;
+}
+
+.tag-announcement--leaving {
+  opacity: 0;
 }
 
 .tag-announcement p {
@@ -27,13 +38,13 @@
   animation: tag-announcement-text 240ms ease-out both;
 }
 
-@keyframes tag-announcement-edge {
+@keyframes tag-announcement-in {
   from {
-    box-shadow: inset 0 0 0 5px rgba(255, 38, 38, 0.65);
+    opacity: 0;
   }
 
   to {
-    box-shadow: inset 0 0 30px 12px rgba(255, 38, 38, 1);
+    opacity: 1;
   }
 }
 
@@ -53,5 +64,9 @@
   .tag-announcement,
   .tag-announcement p {
     animation: none;
+  }
+
+  .tag-announcement {
+    transition: none;
   }
 }

@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { act, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { TagAnnouncementOverlay } from './TagAnnouncementOverlay'
 
 describe('TagAnnouncementOverlay', () => {
@@ -19,5 +19,28 @@ describe('TagAnnouncementOverlay', () => {
   it('renders nothing without a current announcement', () => {
     const { container } = render(<TagAnnouncementOverlay announcement={null} />)
     expect(container).toBeEmptyDOMElement()
+  })
+
+  describe('fade out', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('keeps the last flash mounted while it fades, then removes it', () => {
+      vi.useFakeTimers()
+      const { rerender } = render(
+        <TagAnnouncementOverlay announcement={{ seq: 9, text: 'Sam was tagged!' }} />,
+      )
+      rerender(<TagAnnouncementOverlay announcement={null} />)
+
+      const fading = screen.getByRole('status')
+      expect(fading).toHaveTextContent('Sam was tagged!')
+      expect(fading).toHaveClass('tag-announcement--leaving')
+
+      act(() => {
+        vi.advanceTimersByTime(450)
+      })
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    })
   })
 })

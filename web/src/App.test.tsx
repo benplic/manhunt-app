@@ -282,6 +282,8 @@ describe('App rejoin', () => {
       'Morgan was tagged out of bounds!',
     )
     await act(() => vi.advanceTimersByTimeAsync(2_000))
+    // The flash fades for 450 ms before it leaves the DOM.
+    await act(() => vi.advanceTimersByTimeAsync(450))
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
     vi.useRealTimers()
   })
@@ -319,6 +321,8 @@ describe('App rejoin', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Riley was tagged!')
 
     await act(() => vi.advanceTimersByTimeAsync(1))
+    // The flash fades for 450 ms before it leaves the DOM.
+    await act(() => vi.advanceTimersByTimeAsync(450))
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
@@ -366,6 +370,8 @@ describe('App rejoin', () => {
     await act(() => vi.advanceTimersByTimeAsync(1))
     expect(screen.getByRole('status')).toHaveTextContent('Morgan was tagged!')
     await act(() => vi.advanceTimersByTimeAsync(2_000))
+    // The flash fades for 450 ms before it leaves the DOM.
+    await act(() => vi.advanceTimersByTimeAsync(450))
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 

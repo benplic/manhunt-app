@@ -25,47 +25,62 @@ struct TagAnnouncement: Equatable, Identifiable {
     }
 }
 
+/// Full-screen tag flash. The edge is a blurred stroke, so it fades into the map instead of
+/// ending in a hard line, and the whole flash fades out. It stays mounted for that fade, so
+/// the screen does not snap clear when the queue slot ends.
 struct TagAnnouncementOverlay: View {
     var announcement: TagAnnouncement?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var didAnimate = false
+    /// The flash on screen. Kept after `announcement` clears, so it can fade out.
+    @State private var shown: TagAnnouncement?
+    @State private var visible = false
+    @State private var hideTask: Task<Void, Never>?
+
+    /// Long enough for the fade to finish before the view is cleared.
+    private static let fadeOutSeconds: Double = 0.5
 
     var body: some View {
         ZStack {
-            if let announcement {
+            if let shown {
                 Rectangle()
-                    .strokeBorder(HuntColor.danger, lineWidth: 28)
-                    .shadow(color: HuntColor.danger, radius: 18)
-                    .opacity(reduceMotion ? 0.85 : (didAnimate ? 0.45 : 1))
+                    .strokeBorder(HuntColor.danger, lineWidth: 40)
+                    .blur(radius: 22)
+                    .opacity(0.95)
+                    .ignoresSafeArea()
 
-                Text(announcement.text)
+                Text(shown.text)
                     .font(HuntFont.title(40))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(HuntColor.paper)
                     .shadow(color: .black.opacity(0.9), radius: 10)
                     .padding(32)
-                    .scaleEffect(reduceMotion ? 1 : (didAnimate ? 1 : 0.9))
-                    .opacity(reduceMotion ? 1 : (didAnimate ? 1 : 0.6))
+                    .scaleEffect(visible || reduceMotion ? 1 : 0.94)
                     .accessibilityAddTraits(.isStaticText)
             }
         }
-        .ignoresSafeArea()
+        .opacity(visible ? 1 : 0)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.35), value: visible)
         .allowsHitTesting(false)
         .sensoryFeedback(.warning, trigger: announcement?.id)
-        .onAppear { present(announcement) }
-        .onChange(of: announcement?.id) { _, _ in
-            present(announcement)
-        }
+        .onAppear { update(to: announcement) }
+        .onChange(of: announcement) { _, new in update(to: new) }
     }
 
-    private func present(_ announcement: TagAnnouncement?) {
-        guard let announcement else { return }
-        didAnimate = false
-        UIAccessibility.post(notification: .announcement, argument: announcement.text)
-        guard !reduceMotion else { return }
-        withAnimation(.easeOut(duration: 0.35)) {
-            didAnimate = true
+    @MainActor
+    private func update(to new: TagAnnouncement?) {
+        hideTask?.cancel()
+        guard let new else {
+            visible = false
+            hideTask = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(Self.fadeOutSeconds))
+                guard !Task.isCancelled else { return }
+                shown = nil
+            }
+            return
         }
+        shown = new
+        UIAccessibility.post(notification: .announcement, argument: new.text)
+        visible = true
     }
 }
