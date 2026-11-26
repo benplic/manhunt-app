@@ -3,8 +3,20 @@ import Foundation
 /// Thin REST client. First request of a session waits up to 60 s so a sleeping
 /// Azure replica (Phase 2) or a slow home Docker boot can finish waking.
 final class APIClient: @unchecked Sendable {
-    var baseURL: URL
-    var token: String?
+    /// `baseURL` and `token` are written on the main actor and read from request tasks on other
+    /// executors. The lock keeps each read to a whole value. An unlocked read of a URL that is
+    /// being replaced crashed the iOS suite inside `URL(string:relativeTo:)`.
+    private let stateLock = NSLock()
+    private var _baseURL: URL
+    private var _token: String?
+    var baseURL: URL {
+        get { stateLock.withLock { _baseURL } }
+        set { stateLock.withLock { _baseURL = newValue } }
+    }
+    var token: String? {
+        get { stateLock.withLock { _token } }
+        set { stateLock.withLock { _token = newValue } }
+    }
     /// Party secret for POST /v1/auth/dev. Empty on local servers that do not require it.
     var devAuthSecret: String?
     /// Called once per request on 401. Return after rotating access_token.
@@ -13,7 +25,7 @@ final class APIClient: @unchecked Sendable {
     private var hasCompletedFirstRequest = false
 
     init(baseURL: URL, session: URLSession = .shared) {
-        self.baseURL = baseURL
+        self._baseURL = baseURL
         self.session = session
     }
 
