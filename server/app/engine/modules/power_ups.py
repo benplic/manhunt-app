@@ -216,8 +216,6 @@ def _rescuable(target) -> bool:
     Convert tags leave a hider hunting as a seeker, so Rescue turns them back. Eliminate
     tags (Classic default and the PARK42 demo) leave no converted seeker, so Rescue brings
     an eliminated hider back into the hunt instead.
-    TODO: confirm with Scott that Rescue should revive eliminated hiders. The catalog copy
-    says "Bring a tagged player back", but the original spec only described convert-mode.
     """
     if target.role == "seeker":
         return target.converted_from_hider and target.status == "active"
