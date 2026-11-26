@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ResultsView: View {
     @Environment(AppStore.self) private var store
+    /// The event log starts folded away so the scores stay on top. A tap opens it.
+    @State private var eventLogOpen = false
 
     var body: some View {
         let result = store.match?.snapshot.result
@@ -60,25 +62,31 @@ struct ResultsView: View {
                 }
 
                 if !store.timeline.isEmpty {
-                    Text("EVENT LOG")
-                        .font(.caption.weight(.bold))
-                        .tracking(1.2)
-                        .foregroundStyle(HuntColor.muted)
-                    VStack(alignment: .leading, spacing: 8) {
-                        ForEach(TimelineOrder.sorted(store.timeline)) { event in
-                            HStack(alignment: .top, spacing: 8) {
-                                Circle().fill(HuntColor.signal).frame(width: 6, height: 6).padding(.top, 6)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(event.type.replacingOccurrences(of: "_", with: " "))
-                                        .font(.caption.weight(.bold))
-                                        .foregroundStyle(HuntColor.muted)
-                                    Text(event.payload.text ?? event.type)
+                    DisclosureGroup(isExpanded: $eventLogOpen) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(TimelineOrder.sorted(store.timeline)) { event in
+                                HStack(alignment: .top, spacing: 8) {
+                                    Circle().fill(HuntColor.signal).frame(width: 6, height: 6).padding(.top, 6)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(event.type.replacingOccurrences(of: "_", with: " "))
+                                            .font(.caption.weight(.bold))
+                                            .foregroundStyle(HuntColor.muted)
+                                        Text(event.payload.text ?? event.type)
+                                    }
                                 }
+                                .font(.subheadline)
+                                .foregroundStyle(HuntColor.paper)
                             }
-                            .font(.subheadline)
-                            .foregroundStyle(HuntColor.paper)
                         }
+                        .padding(.top, 8)
+                    } label: {
+                        Text("EVENT LOG (\(store.timeline.count))")
+                            .font(.caption.weight(.bold))
+                            .tracking(1.2)
+                            .foregroundStyle(HuntColor.muted)
                     }
+                    .tint(HuntColor.muted)
+                    .accessibilityIdentifier("results-event-log")
                 }
             }
             .padding(20)

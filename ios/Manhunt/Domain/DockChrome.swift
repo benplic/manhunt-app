@@ -14,6 +14,14 @@ enum DockChrome: Equatable {
         spawnHolding: Bool = false,
         seekerOutsideSpawn: Bool = false
     ) -> DockChrome {
+        // Nobody without a team gets a tag button. The server now seats late joiners as hiders
+        // at start, so this only covers a view from before that change.
+        if role == .unassigned {
+            return .headStartWaiting(
+                title: "Waiting for a team",
+                subtitle: "The host has not put you on a team yet"
+            )
+        }
         guard phase == .headStart else {
             return role == .hider ? .activeHider : .activeTagging
         }

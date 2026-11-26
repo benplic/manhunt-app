@@ -709,6 +709,10 @@ final class LiveHudAndPresetsTests: XCTestCase {
 
         XCTAssertEqual(DockChrome.state(phase: .active, role: .seeker, remainingS: nil), .activeTagging)
         XCTAssertEqual(DockChrome.state(phase: .active, role: .hider, remainingS: nil), .activeHider)
+        XCTAssertEqual(
+            DockChrome.state(phase: .active, role: .unassigned, remainingS: nil),
+            .headStartWaiting(title: "Waiting for a team", subtitle: "The host has not put you on a team yet")
+        )
 
         let heldOutside = DockChrome.state(
             phase: .headStart,

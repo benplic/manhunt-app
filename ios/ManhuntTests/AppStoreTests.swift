@@ -750,7 +750,7 @@ final class AppStoreTests: XCTestCase {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
         XCTAssertGreaterThan(store.shownPoints, before)
-        XCTAssertEqual(store.note, "Taunt sent. Seekers can see you for a few seconds.")
+        XCTAssertNil(store.note, "the server's taunt event announces it, so there is no extra note")
     }
 
     @MainActor
@@ -933,10 +933,48 @@ final class AppStoreTests: XCTestCase {
         store.buyPower(chip)
         XCTAssertFalse(store.showRescuePicker)
         let deadline = Date().addingTimeInterval(1)
-        while store.note?.contains("Rescue") != true, Date() < deadline {
+        while fake.purchasedPowers != ["rescue"], Date() < deadline {
             try await Task.sleep(nanoseconds: 20_000_000)
         }
-        XCTAssertEqual(store.note?.contains("Rescue"), true)
+        XCTAssertEqual(fake.purchasedPowers, ["rescue"])
+    }
+
+    @MainActor
+    func testRescueTargetsAreConvertedSeekersAndEliminatedHidersOnly() throws {
+        let fake = FakeGameService()
+        let store = AppStore(service: fake)
+        store.signInPreview()
+        store.createMatch(arenaID: Arena.sampleSquare().id, presetID: "classic")
+        store.randomizeRoles(seekerCount: 1)
+        _ = store.startMatch()
+        guard let gameID = store.match?.snapshot.gameId,
+              let youID = store.match?.snapshot.you.playerId
+        else {
+            return XCTFail("Expected a match")
+        }
+        _ = try fake.setRoleSync(gameID: gameID, playerID: youID, role: .hider)
+        var view = try fake.advanceToActive(gameID: gameID)
+        store.apply(view)
+        // The sample roster has one guest besides the host, so check each state on that guest.
+        guard let guest = store.match?.snapshot.players.first(where: { $0.playerId != youID })?.playerId
+        else {
+            return XCTFail("Expected a guest")
+        }
+
+        view = try fake.setRoleSync(gameID: gameID, playerID: guest, role: .seeker)
+        store.apply(view)
+        XCTAssertTrue(store.rescueablePlayers.isEmpty, "a plain seeker is not a rescue target")
+
+        view = try fake.markConvertedFromHider(gameID: gameID, playerID: guest)
+        store.apply(view)
+        XCTAssertEqual(store.rescueablePlayers.map(\.playerId), [guest], "a converted seeker can be rescued")
+
+        view = try fake.setRoleSync(gameID: gameID, playerID: guest, role: .hider)
+        store.apply(view)
+        view = try fake.markEliminated(gameID: gameID, playerID: guest)
+        store.apply(view)
+        XCTAssertEqual(store.rescueablePlayers.map(\.playerId), [guest], "an eliminated hider can be rescued")
+        XCTAssertFalse(store.rescueablePlayers.contains { $0.playerId == youID })
     }
 
     @MainActor

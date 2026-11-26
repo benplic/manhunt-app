@@ -69,36 +69,55 @@ final class AlertPresenterTests: XCTestCase {
 
     func testALowerPriorityAlertSurvivesAStreamOfHigherPriorityOnes() {
         var queue = AlertQueue()
-        queue.enqueue(alert("pill", .update), now: at(0))
-        queue.enqueue(alert("tag-1", .tagOrBounds), now: at(0.1))
-        queue.enqueue(alert("tag-2", .tagOrBounds), now: at(0.2))
-        queue.enqueue(alert("tag-3", .tagOrBounds), now: at(0.3))
+        queue.enqueue(alert("tag-0", .tagOrBounds), now: at(0))
+        queue.enqueue(alert("pill", .update), now: at(0.1))
+        queue.enqueue(alert("tag-1", .tagOrBounds), now: at(0.2))
+        queue.enqueue(alert("tag-2", .tagOrBounds), now: at(0.3))
+        queue.enqueue(alert("tag-3", .tagOrBounds), now: at(0.4))
 
-        XCTAssertEqual(drain(&queue, from: 0.3), ["tag-1", "tag-2", "tag-3", "pill"])
+        XCTAssertEqual(drain(&queue, from: 0.4), ["tag-0", "tag-1", "tag-2", "tag-3", "pill"])
     }
 
-    func testAHigherPriorityAlertTakesTheSlotAndTheInterruptedOneResumesWithFullTime() {
+    func testAHigherPriorityAlertTakesTheSlotAndTheInterruptedSafetyAlertResumesWithFullTime() {
         var queue = AlertQueue()
-        queue.enqueue(alert("ping", .ping), now: at(0))
+        queue.enqueue(alert("dark", .safety), now: at(0))
         queue.enqueue(alert("tag", .tagOrBounds), now: at(1.5))
 
         XCTAssertEqual(queue.current?.alert.subjectKey, "tag")
-        XCTAssertEqual(queue.queued.map(\.subjectKey), ["ping"])
+        XCTAssertEqual(queue.queued.map(\.subjectKey), ["dark"])
 
         queue.advance(now: at(5.5))
-        XCTAssertEqual(queue.current?.alert.subjectKey, "ping")
+        XCTAssertEqual(queue.current?.alert.subjectKey, "dark")
         XCTAssertEqual(queue.current?.shownAt, at(5.5))
         XCTAssertEqual(queue.nextWakeAt, at(9.5))
     }
 
+    // Regression: "Seekers released" came back after a ping interrupted it, and a taunt
+    // pill did the same. A pill or ping already on screen is seen, so it is not replayed.
+    func testAnInterruptedPillOrPingIsNotShownAgain() {
+        var queue = AlertQueue()
+        queue.enqueue(alert("released", .update), now: at(0))
+        queue.enqueue(alert("ping", .ping), now: at(1))
+
+        XCTAssertEqual(queue.current?.alert.subjectKey, "ping")
+        XCTAssertTrue(queue.queued.isEmpty)
+        XCTAssertEqual(drain(&queue, from: 1), ["ping"])
+
+        var pingQueue = AlertQueue()
+        pingQueue.enqueue(alert("ping", .ping), now: at(0))
+        pingQueue.enqueue(alert("tag", .tagOrBounds), now: at(1))
+        XCTAssertTrue(pingQueue.queued.isEmpty)
+        XCTAssertEqual(drain(&pingQueue, from: 1), ["tag"])
+    }
+
     func testTheInterruptedAlertGoesToTheFrontOfItsOwnTier() {
         var queue = AlertQueue()
-        queue.enqueue(alert("ping-a", .ping), now: at(0))
-        queue.enqueue(alert("ping-b", .ping), now: at(0.1))
+        queue.enqueue(alert("dark-a", .safety), now: at(0))
+        queue.enqueue(alert("dark-b", .safety), now: at(0.1))
         queue.enqueue(alert("pill", .update), now: at(0.2))
         queue.enqueue(alert("tag", .tagOrBounds), now: at(0.3))
 
-        XCTAssertEqual(queue.queued.map(\.subjectKey), ["ping-a", "ping-b", "pill"])
+        XCTAssertEqual(queue.queued.map(\.subjectKey), ["dark-a", "dark-b", "pill"])
     }
 
     func testAnEqualPriorityAlertDoesNotInterrupt() {
@@ -110,11 +129,11 @@ final class AlertPresenterTests: XCTestCase {
 
     func testAResumedAlertGetsANewShowIDSoVoiceOverAnnouncesItAgain() {
         var queue = AlertQueue()
-        queue.enqueue(alert("ping", .ping), now: at(0))
+        queue.enqueue(alert("dark", .safety), now: at(0))
         let first = queue.current?.showID
         queue.enqueue(alert("tag", .tagOrBounds), now: at(0.1))
         queue.advance(now: at(4.1))
-        XCTAssertEqual(queue.current?.alert.subjectKey, "ping")
+        XCTAssertEqual(queue.current?.alert.subjectKey, "dark")
         XCTAssertNotEqual(queue.current?.showID, first)
     }
 
@@ -377,7 +396,7 @@ final class AlertPresenterTests: XCTestCase {
         presenter.advance(now: at(5))
         presenter.advance(now: at(9))
 
-        XCTAssertEqual(shown, ["ping", "tag", "ping"])
+        XCTAssertEqual(shown, ["ping", "tag"], "the interrupted ping is seen, not replayed")
         XCTAssertNil(presenter.current)
     }
 

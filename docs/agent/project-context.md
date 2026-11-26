@@ -223,6 +223,10 @@ Scott, about 4:32 PM America/New_York: do not drop unseen alerts. Queue them, an
 
 Scott's answers, America/New_York, about 6:16 PM. Repeats of the same news for one player (for example many "went dark" events) show as one alert entry. A tag takes priority: it interrupts a ping flash instead of waiting for its 4 seconds. Both match the current queue code on iOS and web.
 
+### 2026-11-26 — Rescue revives eliminated hiders; event log folds on Results
+
+Scott, America/New_York, answering the question form: Rescue targets are converted seekers still hunting and eliminated hiders, in every mode (`_rescuable` on the server). The original convert-only wording is superseded. The event log folds open on tap on the Results screens (iOS and web). The live Log chip keeps its sheet.
+
 ## Not settled
 
 Nothing from that question remains open. Ask again only when he states a new goal.

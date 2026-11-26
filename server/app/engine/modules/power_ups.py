@@ -210,17 +210,32 @@ def _require_target(spec: dict[str, Any], kwargs: dict[str, Any]) -> None:
         raise GameRuleError(ErrorCode.NEEDS_TARGET)
 
 
+def _rescuable(target) -> bool:
+    """A converted seeker still hunting, or an eliminated hider.
+
+    Convert tags leave a hider hunting as a seeker, so Rescue turns them back. Eliminate
+    tags (Classic default and the PARK42 demo) leave no converted seeker, so Rescue brings
+    an eliminated hider back into the hunt instead.
+    """
+    if target.role == "seeker":
+        return target.converted_from_hider and target.status == "active"
+    return target.role == "hider" and target.status == "eliminated"
+
+
 def _rescue(s: GameSession, kwargs: dict[str, Any]) -> None:
     target_id = UUID(str(kwargs["target_player_id"]))
     target = s.state.players.get(target_id)
-    if target is None or target.role != "seeker" or not target.converted_from_hider:
-        raise GameRuleError(ErrorCode.TARGET_NOT_ACTIVE)
-    if target.status != "active":
+    if target is None or not _rescuable(target):
         raise GameRuleError(ErrorCode.TARGET_NOT_ACTIVE)
     settings = s.module_settings("power_ups")
     immunity_s = int(settings.get("rescue_duration", CATALOG["rescue"]["duration"]))
     target.role = "hider"
+    target.status = "active"
     target.converted_from_hider = False
+    # A revived hider must not carry the old out-of-bounds countdown into the next tick.
+    target.bounds_phase = "inside"
+    target.bounds_remaining_s = None
+    target.oob_revealed = False
     target.shield_until_s = s.state.game_elapsed_s + immunity_s
     add_effect(s, owner_id=target_id, type="shield", duration_s=immunity_s)
     s.emit(

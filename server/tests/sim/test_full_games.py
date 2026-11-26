@@ -56,9 +56,15 @@ def _open_game(client: TestClient, overrides: dict | None = None):
     view = client.get(f"/v1/games/{gid}", headers=_hdr(host["access_token"])).json()
     hider_id = next(p["player_id"] for p in view["players"] if p["display_name"] == "Hider")
     seeker_id = next(p["player_id"] for p in view["players"] if p["display_name"] == "Seeker")
+    host_id = next(p["player_id"] for p in view["players"] if p["display_name"] == "Host")
+    # The host is a second seeker. Left unassigned, start() now makes them a hider, and
+    # that extra hider would stop the all-caught win these scenarios assert.
     roles = client.post(
         f"/v1/games/{gid}/roles",
-        json={"mode": "manual", "assignments": {hider_id: "hider", seeker_id: "seeker"}},
+        json={
+            "mode": "manual",
+            "assignments": {hider_id: "hider", seeker_id: "seeker", host_id: "seeker"},
+        },
         headers=_hdr(host["access_token"]),
     )
     assert roles.status_code == 200, roles.text

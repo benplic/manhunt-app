@@ -461,3 +461,52 @@ def test_shrink_now_fires_next_shrink_and_shifts_schedule() -> None:
     with pytest.raises(GameRuleError) as exc:
         session.purchase(hider, "shrink_now")
     assert exc.value.code == ErrorCode.WRONG_ROLE
+
+
+def test_rescue_revives_an_eliminated_hider_in_eliminate_games() -> None:
+    session, clock = make_session(
+        overrides={
+            "head_start": {"enabled": True, "duration": 1},
+            "signal_loss": {"silence": 600},
+            "tag_policy": {"result": "eliminate"},
+            "power_ups": {"rescue_enabled": True, "rescue_cost": 120, "rescue_duration": 60},
+        }
+    )
+    rescuer, tagged, seeker, other = uuid4(), uuid4(), uuid4(), uuid4()
+    session.add_player(rescuer, "Riley", is_host=True)
+    session.add_player(tagged, "Casey", is_host=False)
+    session.add_player(seeker, "Jordan", is_host=False)
+    session.add_player(other, "Morgan", is_host=False)
+    session.set_role(rescuer, "hider")
+    session.set_role(tagged, "hider")
+    session.set_role(other, "hider")
+    session.set_role(seeker, "seeker")
+    session.start()
+    run_for(session, clock, 1)
+    for pid, point in ((rescuer, meters(100, 100)), (tagged, meters(100, 101)),
+                       (seeker, meters(100, 102)), (other, meters(150, 150))):
+        session.record_location(pid, reading(point, clock))
+    session.claim_tag(TagClaim(seeker, tagged, qr_token=_qr(session, clock, tagged)))
+    tagged_player = session.state.players[tagged]
+    assert tagged_player.status == "eliminated"
+    assert session.state.phase == "active"
+
+    tagged_player.bounds_phase = "penalized"
+    session.state.players[rescuer].points = 200
+    session.purchase(rescuer, "rescue", target_player_id=str(tagged))
+
+    assert tagged_player.status == "active"
+    assert tagged_player.role == "hider"
+    assert tagged_player.bounds_phase == "inside"
+    assert tagged_player.shield_until_s == session.state.game_elapsed_s + 60
+
+
+def test_rescue_still_rejects_an_active_hider() -> None:
+    session, clock, hider, seeker = two_player_hunt(overrides={"signal_loss": {"silence": 600}})
+    session.record_location(hider, reading(meters(100, 100), clock))
+    session.record_location(seeker, reading(meters(40, 40), clock))
+    session.state.players[seeker].role = "hider"
+    session.state.players[seeker].points = 200
+    with pytest.raises(GameRuleError) as exc:
+        session.purchase(seeker, "rescue", target_player_id=str(hider))
+    assert exc.value.code == ErrorCode.TARGET_NOT_ACTIVE
