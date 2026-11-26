@@ -5,8 +5,9 @@
  * - One alert is visible at a time, for ALERT_SHOW_MS.
  * - A lower- or equal-priority alert that arrives while another is showing WAITS in the
  *   queue. It is never skipped or overwritten.
- * - A higher-priority alert takes the slot at once. The one it interrupted goes back to
- *   the front of its own tier and later shows again for its full time.
+ * - A higher-priority alert takes the slot at once. An interrupted safety or tag alert goes
+ *   back to the front of its own tier and later shows again for its full time. An interrupted
+ *   ping or live-update pill was already seen, so it is not replayed.
  * - A higher-priority alert also jumps ahead of every lower-priority alert in the queue.
  * - Within one priority the order is first in, first out.
  * - An alert the player has not seen is NEVER dropped (decided by the user, 2026-11-25).
@@ -77,7 +78,11 @@ export class AlertQueue {
     }
 
     if (alert.priority < current.priority) {
-      this.requeueFront(current)
+      // A pill or ping already on screen is seen. Replaying it after a ping or tag repeated
+      // the same news, so only safety and tag alerts come back after an interruption.
+      if (current.priority < 3) {
+        this.requeueFront(current)
+      }
       this.show(alert, now)
       return
     }

@@ -39,8 +39,9 @@ struct LiveAlert: Equatable, Identifiable, Sendable {
 /// - One alert shows at a time, for `showDuration`.
 /// - An alert of equal or lower priority than the one showing WAITS. It is never skipped.
 /// - A higher-priority alert takes the slot at once, and jumps ahead of every lower-priority
-///   alert in the queue. The interrupted alert returns to the front of its own tier and
-///   later shows again for its full time.
+///   alert in the queue. An interrupted safety or tag alert returns to the front of its own
+///   tier and later shows again for its full time. An interrupted ping or live-update pill was
+///   already seen, so it is not replayed.
 /// - First in, first out within one priority.
 /// - An alert nobody has seen is NEVER dropped (decided by the user, 2026-11-25). There is
 ///   no cap, no expiry, and no trim after the app was in the background. The only merge is
@@ -118,7 +119,11 @@ struct AlertQueue {
         }
 
         if alert.priority < showing.alert.priority {
-            requeueFront(showing.alert)
+            // A pill or ping that was already on screen is not replayed. Replaying it after a
+            // ping or tag repeated the same news ("Seekers released" came back after a ping).
+            if showing.alert.priority < .ping {
+                requeueFront(showing.alert)
+            }
             return show(alert, now: now)
         }
 

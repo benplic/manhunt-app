@@ -59,38 +59,55 @@ describe('AlertQueue', () => {
 
   it('does not drop a queued lower-priority alert while a higher one keeps arriving', () => {
     const queue = new AlertQueue()
-    queue.enqueue(alert('ping', 3), 0)
+    queue.enqueue(alert('tag-0', 1), 0)
+    queue.enqueue(alert('ping', 3), 50)
     queue.enqueue(alert('tag-1', 1), 100)
     queue.enqueue(alert('tag-2', 1), 200)
     queue.enqueue(alert('tag-3', 1), 300)
 
     const { order } = drain(queue, 300)
-    expect(order).toEqual(['tag-1', 'tag-2', 'tag-3', 'ping'])
+    expect(order).toEqual(['tag-0', 'tag-1', 'tag-2', 'tag-3', 'ping'])
   })
 
-  it('lets a higher-priority alert take the slot and resumes the interrupted one', () => {
+  it('lets a higher-priority alert take the slot and resumes an interrupted safety alert', () => {
     const queue = new AlertQueue()
-    queue.enqueue(alert('ping', 3), 0)
+    queue.enqueue(alert('dark', 2), 0)
     queue.enqueue(alert('tag', 1), 1500)
 
     expect(queue.current?.key).toBe('tag')
-    expect(queue.queued.map((q) => q.key)).toEqual(['ping'])
+    expect(queue.queued.map((q) => q.key)).toEqual(['dark'])
 
     queue.advance(1500 + ALERT_SHOW_MS)
-    expect(queue.current?.key).toBe('ping')
+    expect(queue.current?.key).toBe('dark')
     // Full 4 seconds again, not the 2.5 s that were left.
     expect(queue.current?.shownAt).toBe(1500 + ALERT_SHOW_MS)
     expect(queue.nextWakeAt()).toBe(1500 + 2 * ALERT_SHOW_MS)
   })
 
-  it('puts the interrupted alert at the front of its own tier', () => {
+  // Regression: "Seekers released" came back after a ping interrupted it.
+  it('does not replay an interrupted pill or ping after the alert that interrupted it', () => {
+    const pill = new AlertQueue()
+    pill.enqueue(alert('released', 4), 0)
+    pill.enqueue(alert('ping', 3), 1000)
+    expect(pill.current?.key).toBe('ping')
+    expect(pill.queued).toEqual([])
+    expect(drain(pill, 1000).order).toEqual(['ping'])
+
+    const ping = new AlertQueue()
+    ping.enqueue(alert('ping', 3), 0)
+    ping.enqueue(alert('tag', 1), 1000)
+    expect(ping.queued).toEqual([])
+    expect(drain(ping, 1000).order).toEqual(['tag'])
+  })
+
+  it('puts an interrupted safety alert at the front of its own tier', () => {
     const queue = new AlertQueue()
-    queue.enqueue(alert('ping-a', 3), 0)
-    queue.enqueue(alert('ping-b', 3), 100)
+    queue.enqueue(alert('dark-a', 2), 0)
+    queue.enqueue(alert('dark-b', 2), 100)
     queue.enqueue(alert('pill', 4), 200)
     queue.enqueue(alert('tag', 1), 300)
 
-    expect(queue.queued.map((q) => q.key)).toEqual(['ping-a', 'ping-b', 'pill'])
+    expect(queue.queued.map((q) => q.key)).toEqual(['dark-a', 'dark-b', 'pill'])
   })
 
   it('does not interrupt for an equal-priority alert', () => {
@@ -102,11 +119,11 @@ describe('AlertQueue', () => {
 
   it('gives a resumed alert a new showId so screen readers announce it again', () => {
     const queue = new AlertQueue()
-    queue.enqueue(alert('ping', 3), 0)
+    queue.enqueue(alert('dark', 2), 0)
     const first = queue.current?.showId
     queue.enqueue(alert('tag', 1), 100)
     queue.advance(100 + ALERT_SHOW_MS)
-    expect(queue.current?.key).toBe('ping')
+    expect(queue.current?.key).toBe('dark')
     expect(queue.current?.showId).not.toBe(first)
   })
 
@@ -171,12 +188,12 @@ describe('AlertQueue', () => {
     expect(queue.queued.map((q) => q.key)).toEqual(['showing', 'dark-2', 'ping', 'pill'])
   })
 
-  it('shows an interrupted alert again after the one that interrupted it', () => {
+  it('shows an interrupted safety alert again after the one that interrupted it', () => {
     const queue = new AlertQueue()
-    queue.enqueue(alert('ping', 3), 0)
+    queue.enqueue(alert('dark', 2), 0)
     queue.enqueue(alert('tag', 1), 3000)
     queue.advance(3000 + ALERT_SHOW_MS)
-    expect(queue.current?.key).toBe('ping')
+    expect(queue.current?.key).toBe('dark')
   })
 
   it('ten events in one second are all shown, one at a time, in priority order', () => {
@@ -204,8 +221,8 @@ describe('AlertQueue', () => {
       queue.advance(now)
     }
 
-    // pill, ping and dark:riley each took the slot briefly and were interrupted, then
-    // resumed. Duplicates collapsed. Nothing was lost, and the order is by priority.
+    // The first pill and ping were on screen only briefly, then interrupted, and were not
+    // replayed. dark:riley resumed. Duplicates collapsed. Nothing unseen was lost.
     expect(seen).toEqual([
       'tag:morgan',
       'oob:jordan',

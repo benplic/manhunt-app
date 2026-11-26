@@ -74,7 +74,7 @@ describe('useAlert', () => {
     const { result } = renderHook(() => useAlert())
 
     act(() => {
-      result.current.enqueue(alert('ping', 3))
+      result.current.enqueue(alert('dark', 2))
     })
     act(() => {
       vi.advanceTimersByTime(1000)
@@ -85,11 +85,11 @@ describe('useAlert', () => {
     act(() => {
       vi.advanceTimersByTime(ALERT_SHOW_MS)
     })
-    expect(result.current.shown?.key).toBe('ping')
+    expect(result.current.shown?.key).toBe('dark')
     act(() => {
       vi.advanceTimersByTime(ALERT_SHOW_MS - 1)
     })
-    expect(result.current.shown?.key).toBe('ping')
+    expect(result.current.shown?.key).toBe('dark')
     act(() => {
       vi.advanceTimersByTime(1)
     })
@@ -126,7 +126,7 @@ describe('useAlert', () => {
   it('gives a new showId to a resumed alert', () => {
     const { result } = renderHook(() => useAlert())
     act(() => {
-      result.current.enqueue(alert('ping', 3))
+      result.current.enqueue(alert('dark', 2))
     })
     const first = result.current.shown?.showId
     act(() => {
@@ -135,7 +135,7 @@ describe('useAlert', () => {
     act(() => {
       vi.advanceTimersByTime(ALERT_SHOW_MS)
     })
-    expect(result.current.shown?.key).toBe('ping')
+    expect(result.current.shown?.key).toBe('dark')
     expect(result.current.shown?.showId).not.toBe(first)
   })
 

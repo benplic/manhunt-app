@@ -240,6 +240,14 @@ struct LiveGameView: View {
         // (the compiler warns "code after 'return' will never be executed"), so the ping
         // flash and its haptic were never mounted. `AlertPresenter.onShow` sets the pulse.
         .overlay { PingFlashOverlay(pulse: store.pingPulse) }
+        // Notes are one-line messages. Without this expiry a note stayed on the pill and came
+        // back after every alert, which read as a duplicate.
+        .task(id: store.note) {
+            guard store.note != nil else { return }
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            store.note = nil
+        }
     }
 
     private func alertSurfaceVisible(_ chrome: HeadStartChrome.Kind) -> Bool {
