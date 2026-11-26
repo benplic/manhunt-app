@@ -415,11 +415,13 @@ final class AppStore {
         }
     }
 
+    /// An unassigned viewer is not a seeker. Mapping them to seeker showed Scan tag, and every
+    /// scan then failed with "Only seekers can tag."
     var viewingRole: VisualRole {
         switch match?.snapshot.you.role {
         case .hider: return .hider
-        case .seeker: return .seeker
-        default: return .seeker
+        case .unassigned: return .unassigned
+        case .seeker, nil: return .seeker
         }
     }
 
@@ -1311,8 +1313,8 @@ final class AppStore {
         Task {
             do {
                 let view = try await service.taunt(gameID: id)
+                // No success note: the server's taunt event is the one announcement, for everyone.
                 apply(view)
-                note = "Taunt sent. Seekers can see you for a few seconds."
             } catch let error as ServiceError {
                 note = Self.copy(for: error.code)
             } catch {
@@ -1724,10 +1726,14 @@ final class AppStore {
 
     /// Seekers who were converted from hiders and can be rescued.
     /// Blocked players stay eligible — rescue UI shows their anonymized name via `players`.
+    /// Converted seekers still hunting, and eliminated hiders. Matches `_rescuable` on the server.
     var rescueablePlayers: [PlayerDTO] {
         guard let match else { return [] }
+        let me = match.snapshot.you.playerId
         return match.snapshot.players.filter {
-            $0.role == .seeker && $0.status == .active && $0.convertedFromHider
+            guard $0.playerId != me else { return false }
+            return ($0.role == .seeker && $0.status == .active && $0.convertedFromHider)
+                || ($0.role == .hider && $0.status == .eliminated)
         }
     }
 
@@ -1891,7 +1897,8 @@ final class AppStore {
                     mapPickPowerID = nil
                     moveSafeZoneId = nil
                 }
-                note = "\(chip.title) armed. \(chip.detail)."
+                // No success note: the server's purchase event announces it, so it is not shown twice.
+                note = nil
             } catch let error as ServiceError {
                 // Stay in pick mode on TARGET_OUTSIDE so the player can drop again.
                 // Prefer the server message (Tracker mode denial, disabled power, etc.).

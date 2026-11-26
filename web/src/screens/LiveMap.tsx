@@ -97,11 +97,13 @@ function powerUpRequest(view: PlayerView, row: { id: string; cost: number; role:
   }
 }
 
+/** Matches the server's `_rescuable`: an eliminated hider, or a converted seeker still hunting. */
 function rescueCandidates(view: PlayerView) {
   return (view.players ?? []).filter(
     (p) =>
       p.player_id !== view.you.player_id &&
-      (p.status === 'eliminated' || (p.role === 'seeker' && p.status === 'active')),
+      ((p.role === 'hider' && p.status === 'eliminated') ||
+        (p.role === 'seeker' && p.status === 'active' && p.converted_from_hider === true)),
   )
 }
 
@@ -856,6 +858,10 @@ export function LiveMap({
       return
     }
     if (requiresPlayerTarget(row.id)) {
+      if (rescueCandidates(view).length === 0) {
+        setLocalNote('No one to rescue yet.')
+        return
+      }
       setPowerPick({ step: 'rescue', powerId: row.id })
       return
     }
@@ -1223,7 +1229,6 @@ export function LiveMap({
             onClose={() => setPanel('map')}
             onTagged={(next) => {
               onView(next)
-              setLocalNote('Tag accepted.')
               setToast('Tag accepted.')
               setPanel('map')
             }}

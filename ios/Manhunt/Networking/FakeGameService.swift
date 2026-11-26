@@ -14,6 +14,8 @@ final class FakeGameService: GameService {
     private(set) var signInCalls = 0
     private(set) var deleteAccountCalls = 0
     private(set) var lastSignInDisplayName: String?
+    /// Power ids the fake accepted, in order. Tests assert a purchase reached the service.
+    private(set) var purchasedPowers: [String] = []
     private(set) var lastSignInAge: Int?
     private var signedIn: UserDTO?
 
@@ -493,6 +495,7 @@ final class FakeGameService: GameService {
         if powerID == "rescue", targetPlayerId == nil {
             throw ServiceError(code: .needsTarget, message: "Rescue needs a player.")
         }
+        purchasedPowers.append(powerID)
         return game.view()
     }
 
@@ -647,6 +650,13 @@ final class FakeGameService: GameService {
     }
 
     /// Test helper: mark a player as a convert-tag seeker for Rescue picker coverage.
+    func markEliminated(gameID: UUID, playerID: UUID) throws -> PlayerViewDTO {
+        try mutate(gameID) { game in
+            guard let index = game.players.firstIndex(where: { $0.id == playerID }) else { return }
+            game.players[index].status = .eliminated
+        }
+    }
+
     func markConvertedFromHider(gameID: UUID, playerID: UUID) throws -> PlayerViewDTO {
         try mutate(gameID) { game in
             guard let index = game.players.firstIndex(where: { $0.id == playerID }) else { return }
